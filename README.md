@@ -1,8 +1,77 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Gharplot - Real Estate Mobile App
+
+A comprehensive **React Native** real estate application for property listings, bookings, and services. Built with modern UI components and real-time chat functionality.
+
+## Features
+
+- 🏠 **Property Listings**: Browse, search, and filter properties
+- 📋 **Add/Sell Properties**: List your property with detailed information
+- 💬 **Real-time Chat**: Communicate with property owners and service providers
+- 📅 **Appointment Booking**: Schedule property visits and services
+- 🔐 **OTP Authentication**: Secure phone number verification
+- 📍 **Location Services**: GPS-based property search
+- 🔔 **Push Notifications**: Firebase Cloud Messaging integration
+- 👤 **User Profiles**: Manage personal information and preferences
+- 💾 **Saved Properties**: Bookmark favorite listings
+- 🛠️ **Service Categories**: Browse various property-related services
+
+## Tech Stack
+
+- **Frontend**: React Native
+- **Navigation**: React Navigation
+- **State Management**: React Hooks
+- **Authentication**: OTP-based phone verification
+- **Real-time Chat**: Socket.io
+- **Push Notifications**: Firebase Cloud Messaging (FCM)
+- **Location**: React Native Geolocation
+- **UI Components**: Ionicons, LinearGradient
 
 # Getting Started
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+> **Note**: Make sure you have completed the [React Native Development Environment Setup](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+
+## Prerequisites
+
+- Node.js (>= 16)
+- React Native CLI
+- Android Studio (for Android development)
+- Xcode (for iOS development, macOS only)
+- Firebase project with FCM configured
+
+## Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/Bhoomi-TechZone/bhoomi-99acers-shivam.git
+   cd bhoomi-99acers-shivam
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   # or
+   yarn install
+   ```
+
+3. **iOS Setup** (macOS only)
+   ```bash
+   cd ios
+   bundle install
+   bundle exec pod install
+   cd ..
+   ```
+
+4. **Firebase Configuration**
+   - Add `google-services.json` to `android/app/`
+   - Add `GoogleService-Info.plist` to `ios/Gharplot/`
+   - Follow the [FCM Setup Guide](FCM_SETUP_GUIDE.md)
+
+5. **Environment Variables**
+   Create a `.env` file in the root directory:
+   ```
+   API_BASE_URL=your_backend_api_url
+   SOCKET_URL=your_socket_server_url
+   ```
 
 ## Step 1: Start Metro
 
@@ -82,16 +151,56 @@ You've successfully run and modified your React Native App. :partying_face:
 - If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
 - If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
 
-# Troubleshooting
+## App Structure
+
+```
+src/
+├── components/          # Reusable UI components
+├── screens/            # Application screens
+├── navigation/         # Navigation configuration
+├── services/          # API services and integrations
+├── utils/             # Utility functions
+├── hooks/             # Custom React hooks
+├── constants/         # App constants and themes
+├── assets/            # Images and static files
+└── profile/           # User profile related screens
+```
+
+## Available Scripts
+
+- `npm start` - Start Metro bundler
+- `npm run android` - Run on Android emulator/device
+- `npm run ios` - Run on iOS simulator/device
+- `npm test` - Run tests
+- `npm run lint` - Run ESLint
+
+## Configuration Files
+
+- `FCM_SETUP_GUIDE.md` - Firebase Cloud Messaging setup
+- `LOCATION_SETUP_GUIDE.md` - Location services configuration
+- `OTP_LOGIN_FLOW_FIXED.md` - OTP authentication implementation
+- `PHONE_LOGIN_VALIDATION.md` - Phone number validation guide
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## Troubleshooting
 
 If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
 
-# Learn More
+For app-specific issues, check the documentation files:
+- `crash_log.txt` - Application crash logs
+- `SERVICE_FLOW_FIXES.md` - Service flow related fixes
 
-To learn more about React Native, take a look at the following resources:
+## License
 
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+This project is licensed under the MIT License.
+
+## Contact
+
+For any queries or support, please contact the development team.

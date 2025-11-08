@@ -4,7 +4,11 @@ buildscript {
         minSdkVersion = 24
         compileSdkVersion = 36
         targetSdkVersion = 36
-        ndkVersion = "27.1.12297006"
+    // Use the NDK version expected by React Native / native toolchain.
+    // The build output requested 'Preferred NDK version is 27.0.12077973' so
+    // pin to that exact version to avoid the "NDK not configured" failure.
+    // Install this via SDK Manager (see instructions below) before building.
+    ndkVersion = "27.0.12077973"
         kotlinVersion = "2.1.20"
     }
     repositories {
@@ -15,6 +19,8 @@ buildscript {
         classpath("com.android.tools.build:gradle")
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+        // Add Google Services plugin for Firebase
+        classpath("com.google.gms:google-services:4.4.0")
     }
 }
 

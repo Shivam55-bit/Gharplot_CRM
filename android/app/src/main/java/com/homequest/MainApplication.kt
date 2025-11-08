@@ -1,4 +1,4 @@
-package com.homequest
+package com.gharplot  // ✅ Updated package name
 
 import android.app.Application
 import com.facebook.react.PackageList

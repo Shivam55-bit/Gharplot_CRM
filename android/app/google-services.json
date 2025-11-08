@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "430399940783",
+    "project_id": "gharplot-a1e5b",
+    "storage_bucket": "gharplot-a1e5b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:430399940783:android:810e986c7526d272610c5a",
+        "android_client_info": {
+          "package_name": "com.gharplot"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDmEuTKr6xxeAiz68Y99ZXBrd-YBz5P4cE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
