@@ -179,13 +179,14 @@ export const getAllOtherProperties = async () => {
  * @param {Array} files Optional array of file objects returned by image picker
  */
 export const addProperty = async (data = {}, files = []) => {
-    const endpointUrl = `${BASE_URL.replace(/\/+$/, '')}/property/add`;
+    // Use the correct API endpoint pattern matching other services
+    const endpointUrl = `${BASE_URL.replace(/\/+$/, '')}/api/property/create`;
 
     // If there are no files, use the JSON POST helper which handles token and errors
     if (!files || files.length === 0) {
         // reuse post helper from api.js (expects endpoint path without base)
         try {
-            return await post('property/add', data);
+            return await post('api/property/create', data);
         } catch (err) {
             console.error('[propertyapi] addProperty (json) failed:', err);
             throw err;

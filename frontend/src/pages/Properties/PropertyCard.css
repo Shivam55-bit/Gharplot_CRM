@@ -1,0 +1,625 @@
+/* ===============================
+   Modern Property Card Styles
+   =============================== */
+.prop-card {
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+  cursor: pointer;
+  border: 1px solid #e2e8f0;
+  height: fit-content;
+}
+
+.prop-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  border-color: #cbd5e1;
+}
+
+/* ===============================
+   Property Image/Thumbnail
+   =============================== */
+.prop-thumb {
+  position: relative;
+  width: 100%;
+  height: 180px;
+  overflow: hidden;
+  background: #f1f5f9;
+  contain: layout style paint;
+}
+
+.prop-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease, opacity 0.3s ease-in-out;
+  will-change: transform, opacity;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.prop-card:hover .prop-thumb img {
+  transform: scale(1.03);
+}
+
+/* Loading placeholder for images */
+.image-loading-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.loading-spinner {
+  width: 30px;
+  height: 30px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #3498db;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.5), transparent 50%);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  padding: 0.75rem;
+}
+
+.prop-card:hover .overlay {
+  opacity: 1;
+}
+
+.btn-view {
+  background: rgba(255, 255, 255, 0.9);
+  color: #1e293b;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  backdrop-filter: blur(4px);
+}
+
+.btn-view:hover {
+  background: white;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* ===============================
+   Property Information
+   =============================== */
+.prop-info {
+  padding: 1rem;
+}
+
+.prop-body {
+  padding: 1rem;
+}
+
+.prop-location,
+.prop-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0 0 0.4rem 0;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.prop-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+  color: #334155;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+}
+
+.detail-label {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.detail-value {
+  color: #334155;
+  font-weight: 600;
+}
+
+.prop-price {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #059669;
+  margin: 0.5rem 0;
+}
+
+.prop-meta {
+  color: #64748b;
+  font-size: 0.8rem;
+  margin-bottom: 0.4rem;
+  display: flex;
+  gap: 0.2rem;
+  flex-wrap: wrap;
+  font-weight: 500;
+}
+
+.prop-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #334155;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #f1f5f9;
+}
+
+.posted-date {
+  color: #64748b !important;
+  font-size: 0.75rem !important;
+  font-weight: 500 !important;
+}
+
+.property-purpose {
+  color: #3b82f6 !important;
+  font-size: 0.75rem !important;
+  font-weight: 600 !important;
+}
+
+.prop-type-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  color: white;
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.prop-type-badge.residential {
+  background: linear-gradient(135deg, #10b981, #059669);
+}
+
+.prop-type-badge.commercial {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+}
+
+/* ===============================
+   Action Buttons
+   =============================== */
+.prop-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #f1f5f9;
+}
+
+.action-btn {
+  flex: 1;
+  padding: 0.4rem 0.6rem;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn-sold {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fed7aa;
+}
+
+.btn-sold:hover {
+  background: #fde68a;
+  border-color: #fdba74;
+}
+
+.btn-delete {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+.btn-delete:hover {
+  background: #fecaca;
+  border-color: #fca5a5;
+}
+
+.sold-tag {
+  background: #dc2626;
+  color: white;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  margin-left: 0.3rem;
+}
+
+/* ===============================
+   Sold State
+   =============================== */
+.prop-card.sold {
+  opacity: 0.7;
+  position: relative;
+}
+
+.prop-card.sold::after {
+  content: "SOLD";
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  background: #dc2626;
+  color: white;
+  padding: 0.2rem 0.6rem;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  z-index: 2;
+}
+
+/* ===============================
+   Modal Styles
+   =============================== */
+.modal {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 9999 !important;
+}
+
+.modal-backdrop {
+  z-index: 9998 !important;
+  background: rgba(0, 0, 0, 0.7) !important;
+  backdrop-filter: blur(5px);
+}
+
+/* Compact Delete Modal - Higher Z-index */
+.compact-delete-modal {
+  z-index: 10050 !important;
+}
+
+.compact-delete-modal .modal-content {
+  z-index: 10051 !important;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Delete Modal Backdrop - Darkest overlay to cover view-details modal */
+.modal.show .compact-delete-modal ~ .modal-backdrop,
+.compact-delete-modal + .modal-backdrop {
+  z-index: 10049 !important;
+  background: rgba(0, 0, 0, 0.92) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+}
+
+.modal-dialog {
+  margin: auto !important;
+  max-width: 1200px !important;
+  width: 95% !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000 !important;
+}
+
+.modal-content {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Hide scrollbar for modal */
+.modal-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+  max-height: 75vh;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+  background: #f8fafc;
+}
+
+.modal-body::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+.modal-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-bottom: none;
+  padding: 1rem 1.5rem;
+}
+
+/* Custom close button - Complete control */
+.custom-close-btn {
+  position: absolute;
+  top: 50%;
+  right: 1rem;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: white;
+  font-size: 2rem;
+  font-weight: 300;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1060;
+}
+
+.custom-close-btn:hover,
+.custom-close-btn:focus,
+.custom-close-btn:active {
+  color: white;
+  background: none;
+  border: none;
+  outline: none;
+  box-shadow: none;
+}
+
+/* Hide Bootstrap close button completely */
+.modal-header .btn-close {
+  display: none !important;
+}
+
+/* Ensure proper positioning */
+.modal-header {
+  position: relative;
+}
+
+.modal-title {
+  font-weight: 600;
+  font-size: 1.25rem;
+}
+
+.carousel-item img {
+  width: 100%;
+  height: 400px;
+  object-fit: cover;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  transition: opacity 0.3s ease-in-out;
+  background: #f1f5f9;
+}
+
+.carousel-item img[data-error-handled="true"] {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* No images placeholder */
+.no-images-placeholder {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 1rem;
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.carousel-item video {
+  width: 100%;
+  max-height: 400px;
+  object-fit: cover;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  background: #f1f5f9;
+}
+
+.detail-section {
+  margin-bottom: 1.25rem;
+}
+
+.detail-section h6 {
+  color: #1e293b;
+  font-weight: 600;
+  margin-bottom: 0.8rem;
+  font-size: 1rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.6rem;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.4rem;
+  background: #f8fafc;
+  border-radius: 4px;
+  border-left: 2px solid #3b82f6;
+}
+
+.detail-item strong {
+  color: #374151;
+  font-weight: 500;
+  font-size: 0.85rem;
+}
+
+.detail-item span {
+  color: #1f2937;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.details-info {
+  background: white;
+  padding: 1.25rem;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  margin-bottom: 1.25rem;
+}
+
+.details-info h5 {
+  color: #1e293b;
+  font-weight: 700;
+  font-size: 1.25rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid #3b82f6;
+}
+
+.details-info p {
+  margin: 0.6rem 0;
+  color: #334155;
+  font-weight: 500;
+  font-size: 0.9rem;
+  padding: 0.4rem 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.details-info p:last-child {
+  border-bottom: none;
+}
+
+.details-info p strong {
+  color: #64748b;
+  font-weight: 600;
+  min-width: 120px;
+  display: inline-block;
+  font-size: 0.85rem;
+}
+
+.map-container {
+  margin-top: 1.25rem;
+  background: white;
+  padding: 1.25rem;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.map-container h6 {
+  color: #1e293b;
+  font-weight: 600;
+  margin-bottom: 0.8rem;
+  font-size: 1rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.map-container iframe {
+  width: 100%;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* ===============================
+   Responsive Design
+   =============================== */
+@media (max-width: 768px) {
+  .prop-info,
+  .prop-body {
+    padding: 0.8rem;
+  }
+  
+  .prop-actions {
+    flex-direction: column;
+  }
+  
+  .action-btn {
+    padding: 0.6rem;
+    font-size: 0.8rem;
+  }
+  
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .carousel-item img {
+    height: 220px;
+  }
+  
+  .prop-title {
+    font-size: 0.9rem;
+  }
+  
+  .btn-view {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.75rem;
+  }
+  
+  .modal-dialog {
+    margin: 0 0.5rem;
+  }
+  
+  .modal-body {
+    padding: 1rem;
+  }
+  
+  .modal-header {
+    padding: 0.8rem 1rem;
+  }
+  
+  .custom-close-btn {
+    right: 0.8rem;
+    font-size: 1.7rem;
+    width: 25px;
+    height: 25px;
+  }
+  
+  .modal-title {
+    font-size: 1.1rem;
+  }
+}

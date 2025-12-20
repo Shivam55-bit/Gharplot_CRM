@@ -388,9 +388,6 @@ export const getUnreadCount = async (req, res) => {
   }
 };
 
-// Export all existing functions
-export { deleteChat };
-
 /**
  * Bulk notification sender for system messages
  * Useful for sending announcements to all users

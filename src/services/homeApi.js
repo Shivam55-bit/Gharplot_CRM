@@ -246,9 +246,23 @@ export async function getNearbyProperties(latitude, longitude, distance = 20) {
  * Fetch only the IDs of saved properties for the current user.
  * Returns an array of string IDs. This is a lightweight helper used by UI
  * components (e.g., HomeScreen) to mark favorites without fetching full objects.
+ * 
+ * NOTE: This gracefully handles authentication errors by returning empty array
+ * if user is not logged in or token is invalid. This prevents app crashes.
  */
 export async function getSavedPropertiesIds() {
     try {
+        console.log('[HomeAPI] Fetching saved properties IDs...');
+        
+        // Check if user has a token first
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        const token = await AsyncStorage.getItem('userToken');
+        
+        if (!token) {
+            console.log('[HomeAPI] No auth token found - user not logged in. Returning empty list.');
+            return [];
+        }
+        
         const res = await apiGet('/api/properties/saved/all');
         let arr = [];
         if (res && Array.isArray(res.savedProperties)) arr = res.savedProperties;
@@ -256,16 +270,33 @@ export async function getSavedPropertiesIds() {
         else if (Array.isArray(res)) arr = res;
 
         // Map to IDs and filter out falsy values
-        return arr.map(p => p && (p._id || p.id || p.propertyId)).filter(Boolean);
+        const ids = arr.map(p => p && (p._id || p.id || p.propertyId)).filter(Boolean);
+        console.log(`[HomeAPI] Found ${ids.length} saved property IDs`);
+        return ids;
     } catch (err) {
-        console.warn('getSavedPropertiesIds failed:', err.message || err);
+        // Enhanced error logging with user-friendly message
+        console.warn('⚠️ getSavedPropertiesIds failed:', err.message || err);
+        
+        // Check specific error types
+        if (err.message && err.message.includes('403')) {
+            console.warn('⚠️ Authentication error (403) - Token invalid or expired. Returning empty list.');
+        } else if (err.message && err.message.includes('timeout')) {
+            console.warn('⚠️ Network timeout when fetching saved properties. Using empty list.');
+        } else if (err.message && err.message.includes('Network')) {
+            console.warn('⚠️ Network error when fetching saved properties. Using empty list.');
+        } else if (err.message && err.message.includes('401')) {
+            console.warn('⚠️ Unauthorized (401) - User needs to log in. Returning empty list.');
+        }
+        
+        // Return empty array as fallback to prevent app crash
+        // This allows the app to continue functioning even if saved properties cannot be loaded
         return [];
     }
 }
 
 /**
  * Fetch ALL properties from the new API endpoint
- * Endpoint: GET http://abc.ridealmobility.com/api/properties/all
+ * Endpoint: GET https://abc.bhoomitechzone.us/api/properties/all
  * This replaces the recent properties API to show all available properties
  */
 export async function getAllProperties(limit = null) {
@@ -273,7 +304,7 @@ export async function getAllProperties(limit = null) {
         console.log(`🏠 Fetching ALL properties from new API endpoint ${limit ? `(limit: ${limit})` : '(no limit)'}`);
         
         // Use the new API endpoint directly
-        const response = await fetch('http://abc.ridealmobility.com/api/properties/all', {
+        const response = await fetch('https://abc.bhoomitechzone.us/api/properties/all', {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -332,6 +363,76 @@ export async function getServices() {
         return [];
     } catch (err) {
         console.warn('getServices failed:', err && err.message ? err.message : err);
+        
+        // If it's a 404 error, provide mock services data
+        if (err && err.message && err.message.includes('404')) {
+            console.warn('🔄 Services backend not ready, using mock data');
+            return getMockServices();
+        }
+        
         return [];
     }
+}
+
+/**
+ * Mock services data for when backend is not available
+ */
+function getMockServices() {
+    return [
+        {
+            _id: 'service_1',
+            mainService: 'Property Management',
+            name: 'Property Management',
+            description: 'Complete property management services including maintenance, rent collection, and tenant management',
+            price: 5000,
+            duration: '30 days',
+            serviceTypes: ['Maintenance', 'Rent Collection', 'Tenant Management'],
+            category: 'property',
+            isActive: true
+        },
+        {
+            _id: 'service_2', 
+            mainService: 'Home Cleaning',
+            name: 'Home Cleaning',
+            description: 'Professional home cleaning services for apartments and houses',
+            price: 2000,
+            duration: '4 hours',
+            serviceTypes: ['Deep Clean', 'Regular Clean', 'Move-in Clean'],
+            category: 'cleaning',
+            isActive: true
+        },
+        {
+            _id: 'service_3',
+            mainService: 'Property Valuation',
+            name: 'Property Valuation',
+            description: 'Expert property valuation and assessment services',
+            price: 3000,
+            duration: '2-3 days',
+            serviceTypes: ['Market Valuation', 'Legal Valuation', 'Insurance Valuation'],
+            category: 'valuation',
+            isActive: true
+        },
+        {
+            _id: 'service_4',
+            mainService: 'Interior Design',
+            name: 'Interior Design',
+            description: 'Professional interior design and consultation services',
+            price: 15000,
+            duration: '15 days',
+            serviceTypes: ['Consultation', '3D Design', 'Complete Makeover'],
+            category: 'design',
+            isActive: true
+        },
+        {
+            _id: 'service_5',
+            mainService: 'Pest Control',
+            name: 'Pest Control',
+            description: 'Comprehensive pest control services for residential properties',
+            price: 1500,
+            duration: '2-4 hours',
+            serviceTypes: ['Cockroach Control', 'Termite Control', 'Rodent Control'],
+            category: 'maintenance',
+            isActive: true
+        }
+    ];
 }

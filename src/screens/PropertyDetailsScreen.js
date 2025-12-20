@@ -159,6 +159,63 @@ const PropertyDetailsScreen = ({ navigation, route }) => {
     navigation.navigate('PropertyInquiryFormScreen', { property });
   };
 
+  // Handle call button press
+  const handleCallPress = () => {
+    // Get phone number from property owner
+    const owner = property.postedBy || property.userId || property.owner;
+    let phoneNumber = null;
+
+    // Extract phone number from owner object or property
+    if (owner && typeof owner === 'object') {
+      phoneNumber = owner.phone || owner.phoneNumber || owner.contactNumber || owner.mobile;
+    } else if (property.contactNumber) {
+      phoneNumber = property.contactNumber;
+    } else if (property.phone) {
+      phoneNumber = property.phone;
+    }
+
+    if (!phoneNumber) {
+      Alert.alert(
+        'Contact Not Available',
+        'Phone number for this property is not available.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    // Clean phone number (remove spaces, dashes, etc.)
+    const cleanPhone = phoneNumber.replace(/[^0-9+]/g, '');
+
+    Alert.alert(
+      'Call Property Owner',
+      `Would you like to call ${cleanPhone}?`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Call',
+          onPress: () => {
+            const phoneUrl = `tel:${cleanPhone}`;
+            Linking.canOpenURL(phoneUrl)
+              .then((supported) => {
+                if (supported) {
+                  return Linking.openURL(phoneUrl);
+                } else {
+                  Alert.alert('Error', 'Unable to make phone calls on this device.');
+                }
+              })
+              .catch((err) => {
+                console.error('Error opening phone dialer:', err);
+                Alert.alert('Error', 'Failed to open phone dialer.');
+              });
+          }
+        }
+      ]
+    );
+  };
+
   if (loading) {
     return (
       <View style={[styles.container, styles.center]}>
@@ -183,7 +240,20 @@ const PropertyDetailsScreen = ({ navigation, route }) => {
   // Prepare media items for MediaCard with better error handling
   const mediaItems = property.photosAndVideo?.length
     ? property.photosAndVideo.map(media => {
-        const uri = formatImageUrl(media.uri || media) || media.uri || media;
+        // For local properties, bypass formatImageUrl for file:// URIs
+        let uri;
+        const rawUri = media.uri || media;
+        
+        if (typeof rawUri === 'string' && rawUri.startsWith('file://')) {
+          // For local file URIs, use directly without formatting
+          uri = rawUri;
+          console.log('🔍 Using local file URI directly:', rawUri);
+        } else {
+          // For server URIs, use formatImageUrl
+          uri = formatImageUrl(rawUri) || rawUri;
+          console.log('🔍 Using formatted URI:', { original: rawUri, formatted: uri });
+        }
+        
         const isVideoFile = uri?.toLowerCase().includes('.mp4') || 
                            uri?.toLowerCase().includes('.mov') || 
                            uri?.toLowerCase().includes('.avi') ||
@@ -193,9 +263,11 @@ const PropertyDetailsScreen = ({ navigation, route }) => {
         
         console.log('🔍 Processing media:', { 
           originalMedia: media, 
-          uri, 
+          rawUri,
+          finalUri: uri, 
           isVideoFile, 
           type: media.type,
+          isLocal: property.isLocal,
           extension: uri?.split('.').pop()?.toLowerCase()
         });
         
@@ -205,15 +277,33 @@ const PropertyDetailsScreen = ({ navigation, route }) => {
         };
       })
     : property.images?.length 
-    ? property.images.map((imageUrl, index) => {
-        const uri = formatImageUrl(imageUrl) || imageUrl;
+    ? property.images.map((imageData, index) => {
+        // Handle both string URLs and object format for images
+        let uri;
+        const rawUri = typeof imageData === 'string' ? imageData : imageData.uri || imageData.url || imageData;
+        
+        if (typeof rawUri === 'string' && rawUri.startsWith('file://')) {
+          // For local file URIs, use directly without formatting
+          uri = rawUri;
+          console.log('🖼️ Using local file URI directly:', rawUri);
+        } else {
+          // For server URIs, use formatImageUrl
+          uri = formatImageUrl(rawUri) || rawUri;
+          console.log('🖼️ Using formatted URI:', { original: rawUri, formatted: uri });
+        }
+        
         const isVideoFile = uri?.toLowerCase().includes('.mp4') || 
                            uri?.toLowerCase().includes('.mov') || 
                            uri?.toLowerCase().includes('.avi') ||
                            uri?.toLowerCase().includes('.mkv') ||
                            uri?.toLowerCase().includes('.webm');
         
-        console.log('🖼️ Processing image as media:', { uri, isVideoFile });
+        console.log('🖼️ Processing image as media:', { 
+          rawUri, 
+          finalUri: uri, 
+          isVideoFile, 
+          isLocal: property.isLocal 
+        });
         
         return {
           uri: uri,
@@ -376,31 +466,26 @@ const PropertyDetailsScreen = ({ navigation, route }) => {
           </View>
         </View>
 
-        {/* Debug Info for Media (Only in development) */}
-        {__DEV__ && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Media Debug Info</Text>
-            <Text style={styles.sectionText}>
-              Total Media Items: {mediaItems.length}{'\n'}
-              {mediaItems.map((item, index) => 
-                `${index + 1}. ${item.type.toUpperCase()}: ${item.uri?.substring(0, 50)}...`
-              ).join('\n')}
-            </Text>
-          </View>
-        )}
-
         {/* About Section */}
         {property.description ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>About this property</Text>
-            <Text style={styles.sectionText}>{property.description}</Text>
+            <View style={styles.sectionHeader}>
+              <Icon name="document-text" size={20} color={colors.primary} />
+              <Text style={styles.sectionTitle}>About this property</Text>
+            </View>
+            <View style={styles.descriptionCard}>
+              <Text style={styles.sectionText}>{property.description}</Text>
+            </View>
           </View>
         ) : null}
 
         {/* Amenities */}
         {property.amenities?.length ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Amenities</Text>
+            <View style={styles.sectionHeader}>
+              <Icon name="checkmark-circle" size={20} color={colors.primary} />
+              <Text style={styles.sectionTitle}>Amenities & Features</Text>
+            </View>
             <FlatList
               data={property.amenities}
               renderItem={renderAmenity}
@@ -412,57 +497,84 @@ const PropertyDetailsScreen = ({ navigation, route }) => {
           </View>
         ) : null}
 
-        {/* Static Map */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Location on Map</Text>
-          <TouchableOpacity onPress={openInGoogleMaps} activeOpacity={0.9}>
-            <Image source={{ uri: staticMapUrl }} style={styles.mapImage} resizeMode="cover" />
-            <View style={styles.mapOverlay}>
-              <Text style={styles.mapOverlayText}>Tap to open in Google Maps</Text>
+        {/* Location */}
+        {property.propertyLocation && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Icon name="location" size={20} color={colors.primary} />
+              <Text style={styles.sectionTitle}>Location</Text>
             </View>
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity 
+              style={styles.locationCard}
+              onPress={openInGoogleMaps}
+              activeOpacity={0.7}
+            >
+              <View style={styles.locationIconContainer}>
+                <Icon name="pin" size={24} color={colors.primary} />
+              </View>
+              <View style={styles.locationTextContainer}>
+                <Text style={styles.locationAddress}>{property.propertyLocation}</Text>
+                {/* <View style={styles.viewMapRow}>
+                  <Icon name="navigate-circle-outline" size={14} color={colors.primary} />
+                  <Text style={styles.viewMapText}>View on Google Maps</Text>
+                </View> */}
+              </View>
+              <Icon name="chevron-forward" size={20} color={colors.muted} />
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
 
       {/* Bottom Bar */}
       <View style={styles.bottomBarWrap}>
         <View style={styles.bottomBar}>
+          {/* Inquiry Button */}
           <TouchableOpacity 
-            style={[styles.actionBtn, { marginRight: 10 }]}
+            style={[styles.actionBtn, styles.inquiryBtn]}
             onPress={handleInquiryPress}
           >
             <Icon 
               name={inquirySubmitted ? "checkmark-circle-outline" : "document-text-outline"} 
-              size={18} 
+              size={17} 
               color={colors.white} 
             />
             <Text style={styles.actionText}>
-              {inquirySubmitted ? "Inquiry Sent" : "Send Inquiry"}
+              {inquirySubmitted ? "Sent" : "Inquiry"}
             </Text>
           </TouchableOpacity>
 
-          {/* 🎯 FIX APPLIED HERE for "No receiver ID" error */}
+          {/* Call Button */}
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.callBtn]}
+            onPress={handleCallPress}
+          >
+            <Icon name="call" size={17} color={colors.white} />
+            <Text style={styles.actionText}>Call</Text>
+          </TouchableOpacity>
+
+          {/* Chat Button */}
           <TouchableOpacity
             style={[styles.actionBtn, styles.chatBtn]}
             onPress={() => {
-              // Priority check: Full object > simple ID > alternative field
               const chatUser = property.postedBy || property.userId || property.owner; 
 
               if (!chatUser) {
-                console.warn("No property owner/agent information found to start chat.");
-                // You can add an alert/toast here to inform the user
+                Alert.alert(
+                  'Contact Not Available',
+                  'Chat is not available for this property.',
+                  [{ text: 'OK' }]
+                );
                 return;
               }
 
               navigation.navigate("ChatDetailScreen", {
-                // Pass the found user object or ID
                 user: chatUser,
                 propertyId: property._id || property.id,
                 propertyTitle: property.title || "Property",
               });
             }}
           >
-            <Icon name="chatbubble-ellipses-outline" size={18} color={colors.primary} />
+            <Icon name="chatbubble-ellipses-outline" size={17} color={colors.primary} />
             <Text style={[styles.actionText, { color: colors.primary }]}>Chat</Text>
           </TouchableOpacity>
         </View>
@@ -576,80 +688,177 @@ const styles = StyleSheet.create({
   infoCard: {
     backgroundColor: colors.white,
     marginHorizontal: 20,
-    borderRadius: 16,
-    padding: 18,
+    borderRadius: 20,
+    padding: 20,
     shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 18,
-    elevation: 6,
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 20,
+    elevation: 8,
   },
-  priceRow: { flexDirection: "row", justifyContent: "space-between" },
-  priceText: { fontSize: 22, fontWeight: "900", color: colors.primary },
-  locationText: { color: colors.muted, fontSize: 13, flexShrink: 1 },
-  titleText: { fontSize: 20, fontWeight: "800", color: colors.text, marginTop: 8 },
-  detailsRow: { flexDirection: "row", flexWrap: "wrap", marginTop: 12 },
-    detailPill: {
+  priceRow: { 
+    flexDirection: "row", 
+    justifyContent: "space-between",
+    alignItems: 'flex-start',
+  },
+  priceText: { 
+    fontSize: 26, 
+    fontWeight: "900", 
+    color: colors.primary,
+    letterSpacing: -0.5,
+  },
+  locationText: { 
+    color: colors.muted, 
+    fontSize: 12, 
+    flexShrink: 1,
+    marginTop: 4,
+  },
+  titleText: { 
+    fontSize: 22, 
+    fontWeight: "800", 
+    color: colors.text, 
+    marginTop: 10,
+    lineHeight: 28,
+  },
+  detailsRow: { 
+    flexDirection: "row", 
+    flexWrap: "wrap", 
+    marginTop: 16,
+    gap: 10,
+  },
+  detailPill: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(30,144,255,0.08)",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
-    marginRight: 8,
-    marginBottom: 8,
+    backgroundColor: "rgba(30,144,255,0.1)",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
   },
-  detailPillText: { marginLeft: 8, color: colors.primary, fontWeight: "700" },
+  detailPillText: { 
+    marginLeft: 8, 
+    color: colors.primary, 
+    fontWeight: "700",
+    fontSize: 13,
+  },
   propertyMetaRow: { 
     flexDirection: "row", 
     flexWrap: "wrap", 
-    marginTop: 15,
-    paddingTop: 15,
+    marginTop: 18,
+    paddingTop: 18,
     borderTopWidth: 1,
-    borderTopColor: "rgba(107, 114, 128, 0.1)",
+    borderTopColor: "rgba(30, 144, 255, 0.15)",
+    gap: 8,
   },
   metaPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginRight: 8,
-    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 18,
   },
   metaPillText: {
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
+    letterSpacing: 0.3,
   },
-  section: { marginTop: 18, marginHorizontal: 20 },
-  sectionTitle: { fontSize: 16, fontWeight: "800", color: colors.primary, marginBottom: 8 },
-  sectionText: { color: colors.muted, lineHeight: 22, fontSize: 14 },
+  section: { marginTop: 20, marginHorizontal: 20 },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sectionTitle: { 
+    fontSize: 17, 
+    fontWeight: "800", 
+    color: colors.text,
+    marginLeft: 8,
+  },
+  sectionText: { 
+    color: colors.text, 
+    lineHeight: 24, 
+    fontSize: 15,
+  },
+  descriptionCard: {
+    backgroundColor: colors.white,
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
+    elevation: 2,
+  },
   amenityRow: { justifyContent: "space-between" },
   amenityCard: {
     flex: 1,
     margin: 6,
     backgroundColor: colors.white,
-    borderRadius: 12,
-    paddingVertical: 12,
+    borderRadius: 14,
+    paddingVertical: 16,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 10,
-    elevation: 3,
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(30,144,255,0.08)',
   },
   amenityIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    backgroundColor: "rgba(30,144,255,0.08)",
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: "rgba(30,144,255,0.1)",
     alignItems: "center",
     justifyContent: "center",
   },
-  amenityText: { marginTop: 8, fontSize: 12, color: colors.muted, fontWeight: "600" },
-  mapImage: {
-    width: "100%",
-    height: 220,
+  amenityText: { 
+    marginTop: 10, 
+    fontSize: 12, 
+    color: colors.text, 
+    fontWeight: "600",
+    textAlign: 'center',
+  },
+  locationCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
     borderRadius: 16,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  locationIconContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 12,
+    backgroundColor: 'rgba(30,144,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  locationTextContainer: {
+    flex: 1,
+  },
+  locationAddress: {
+    fontSize: 15,
+    color: colors.text,
+    fontWeight: '600',
+    marginBottom: 4,
+    lineHeight: 20,
+  },
+  viewMapRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  viewMapText: {
+    fontSize: 13,
+    color: colors.primary,
+    fontWeight: '600',
+    marginLeft: 4,
   },
   userBanner: {
     backgroundColor: 'rgba(30,144,255,0.06)',
@@ -668,43 +877,67 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 50,
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: "rgba(30,144,255,0.95)",
+    flexDirection: 'row',
     alignItems: "center",
     justifyContent: "center",
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
   },
-  mapOverlayText: { color: "#fff", fontWeight: "700", fontSize: 13 },
-  bottomBarWrap: { position: "absolute", left: 0, right: 0, bottom: 18, alignItems: "center" },
+  mapOverlayText: { 
+    color: "#fff", 
+    fontWeight: "700", 
+    fontSize: 14,
+    marginLeft: 8,
+  },
+  bottomBarWrap: { 
+    position: "absolute", 
+    left: 0, 
+    right: 0, 
+    bottom: Platform.OS === 'ios' ? 30 : 20, 
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
   bottomBar: {
-    width: width - 40,
-    borderRadius: 18,
+    width: '100%',
+    borderRadius: 20,
     backgroundColor: colors.white,
-    padding: 12,
+    padding: 14,
     flexDirection: "row",
     justifyContent: "space-between",
     shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowOffset: { width: 0, height: 10 },
-    shadowRadius: 20,
-    elevation: 12,
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 24,
+    elevation: 16,
   },
   actionBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: colors.primary,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
     borderRadius: 14,
     justifyContent: "center",
+    marginHorizontal: 4,
+  },
+  inquiryBtn: {
+    backgroundColor: colors.primary,
+  },
+  callBtn: {
+    backgroundColor: '#22C55E',
   },
   chatBtn: {
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: "rgba(93,169,246,0.2)",
+    backgroundColor: "rgba(30,144,255,0.08)",
+    borderWidth: 1.5,
+    borderColor: colors.primary,
   },
-  actionText: { color: colors.white, fontWeight: "800", fontSize: 15 },
+  actionText: { 
+    color: colors.white, 
+    fontWeight: "800", 
+    fontSize: 14,
+    marginLeft: 5,
+    letterSpacing: 0.2,
+  },
   
   // Fullscreen Modal Styles
   fullscreenModalContainer: {

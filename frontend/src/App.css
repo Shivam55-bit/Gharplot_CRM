@@ -1,0 +1,50 @@
+.app-layout {
+  min-height: 100vh;
+}
+
+/* Main content shifts beside sidebar (desktop) */
+.main-content {
+  margin-left: 260px;
+  transition: margin-left 0.3s ease;
+  background-color: #f8f9fa;
+  padding: 1rem;
+}
+
+/* Main content when sidebar is collapsed */
+body.sidebar-collapsed .main-content {
+  margin-left: 70px;
+}
+
+/* Mobile: sidebar hides, content takes full width */
+@media (max-width: 992px) {
+  .main-content {
+    margin-left: 240px;
+  }
+  
+  body.sidebar-collapsed .main-content {
+    margin-left: 60px;
+  }
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    margin-left: 240px;
+  }
+  
+  body.sidebar-collapsed .main-content {
+    margin-left: 60px;
+  }
+}
+
+@media (max-width: 576px) {
+  .main-content {
+    margin-left: 220px;
+  }
+  
+  body.sidebar-collapsed .main-content {
+    margin-left: 55px;
+  }
+}
+.dashboardPage-container{
+  background-color: #09141b;
+}

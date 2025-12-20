@@ -87,8 +87,19 @@ const EditPropertyScreen = ({ navigation, route }) => {
 
   // Derived display values for preview (use safe formatting helpers)
   const firstImage = (property.images && property.images.length > 0)
-    ? (typeof property.images[0] === 'string' ? formatImageUrl(property.images[0]) : property.images[0]?.uri)
-    : (property.image ? formatImageUrl(property.image) : formatImageUrl(null));
+    ? (() => {
+        const imageData = typeof property.images[0] === 'string' ? property.images[0] : property.images[0]?.uri;
+        // Use local file URIs directly, format server URIs
+        return (typeof imageData === 'string' && imageData.startsWith('file://')) 
+          ? imageData 
+          : formatImageUrl(imageData);
+      })()
+    : (property.image ? (() => {
+        // Handle property.image field similarly
+        return (typeof property.image === 'string' && property.image.startsWith('file://')) 
+          ? property.image 
+          : formatImageUrl(property.image);
+      })() : formatImageUrl(null));
 
   const displayPrice = (() => {
     const p = property.price;

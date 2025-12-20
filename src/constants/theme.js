@@ -19,6 +19,22 @@ export const COLORS = {
   gradientEnd: '#5DA9F6',
 };
 
+// Theme object for application
+export const theme = {
+  colors: {
+    primary: '#1E90FF',
+    secondary: '#F0F8FF',
+    accent: '#5DA9F6',
+    danger: '#FF6347',
+    text: {
+      primary: '#2D3748',
+      secondary: '#718096',
+    },
+    white: '#FFFFFF',
+    black: '#000000',
+  },
+};
+
 export const SIZES = {
   base: 8,
   font: 14,

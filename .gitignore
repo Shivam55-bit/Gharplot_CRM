@@ -89,3 +89,10 @@ yarn-error.log
 *.tmp
 *.temp
 crash_log.txt
+
+# Sensitive files - credentials
+backend/serviceAccountKey.json
+backend/text/serviceAccountKey.text
+backend/text/env.text
+backend/text/googleOauth.text
+backend/text/token.text

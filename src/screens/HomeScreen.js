@@ -33,20 +33,11 @@ import { showQuickNotificationStatus } from '../utils/notificationStatus';
 // Import MediaCard component
 import MediaCard from '../components/MediaCard';
 
-// Location Service - Using react-native-geolocation-service
-import { getCurrentLocation } from '../utils/locationService';
-
-// Validate import
-if (typeof getCurrentLocation !== 'function') {
-    console.error('❌ getCurrentLocation is not a function:', typeof getCurrentLocation);
-} else {
-    console.log('✅ HomeScreen: locationService imported successfully');
-}
+// Location functionality removed
 
 // API imports
 import {
     getRecentProperties,
-    getNearbyProperties,
     getAllProperties,
     formatImageUrl,
     formatPrice,
@@ -61,20 +52,33 @@ const { width, height } = Dimensions.get("window");
 
 const theme = {
     COLORS: {
-        primary: "#1E90FF",
-        secondary: "#4CAF50",
-        background: "#f8f9fa",
+        primary: "#1E90FF",        // Blue
+        primaryLight: "#4BA3FF",   // Lighter blue
+        primaryDark: "#1873CC",    // Darker blue
+        secondary: "#1E90FF",      // Blue accent
+        secondaryLight: "#87CEEB", // Light blue
+        background: "#F8FAFC",
         white: "#FFFFFF",
-        black: "#111111",
-        greyLight: "#EFEFEF",
-        greyMedium: "#888",
-        greyDark: "#333",
-        accent: "#5DA9F6",
-        star: "#FFD700",
-        overlay: "rgba(0,0,0,0.8)",
-        overlayLight: "rgba(0,0,0,0.3)",
-        notification: "#E74C3C",
-        lightBackground: "#F0F8FF",
+        black: "#1A1A1A",          // Black from logo
+        greyLight: "#E2E8F0",
+        greyMedium: "#64748B",
+        greyDark: "#1E293B",
+        accent: "#1E90FF",         // Blue accent
+        star: "#FBBF24",
+        overlay: "rgba(26,26,26,0.85)",
+        overlayLight: "rgba(26,26,26,0.4)",
+        notification: "#EF4444",
+        lightBackground: "rgba(30, 144, 255, 0.05)",
+        success: "#1E90FF",
+        warning: "#F59E0B",
+        danger: "#EF4444",
+    },
+    GRADIENTS: {
+        primary: ["#4BA3FF", "#1E90FF", "#1873CC"],      // Blue gradient
+        secondary: ["#4BA3FF", "#1E90FF", "#1873CC"],    // Blue gradient
+        accent: ["#4BA3FF", "#1E90FF", "#1873CC"],       // Blue gradient
+        warm: ["#FCD34D", "#F59E0B", "#D97706"],
+        cool: ["#67E8F9", "#06B6D4", "#0891B2"],
     },
     SPACING: {
         xs: 4, s: 8, m: 16, l: 20, xl: 32,
@@ -116,58 +120,17 @@ const ChatButton = ({ onPress, theme, hasUnreadMessages }) => (
     </TouchableOpacity>
 );
 
-// Update the getCityNameFromCoords function to handle unknown street gracefully
-const getCityNameFromCoords = async (latitude, longitude) => {
-    try {
-        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=10&addressdetails=1`;
-        const response = await fetch(url, { headers: { 'User-Agent': 'GharplotApp/1.0' } });
-
-        if (!response.ok) {
-            const txt = await response.text().catch(() => '');
-            console.warn('[getCityNameFromCoords] Non-OK response', response.status, txt.slice ? txt.slice(0, 200) : txt);
-            return 'Unknown Location';
-        }
-
-        const contentType = (response.headers.get('content-type') || '').toLowerCase();
-        let data = null;
-
-        if (contentType.includes('application/json')) {
-            data = await response.json();
-        } else {
-            const text = await response.text().catch(() => '');
-            const trimmed = (text || '').trim();
-            if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-                try {
-                    data = JSON.parse(trimmed);
-                } catch (err) {
-                    console.warn('[getCityNameFromCoords] Failed to parse JSON, content:', trimmed.slice(0, 200));
-                    data = null;
-                }
-            } else {
-                console.warn('[getCityNameFromCoords] Non-JSON response from geocoding service:', trimmed.slice(0, 200));
-                data = null;
-            }
-        }
-
-        if (!data) return 'Unknown Location';
-
-        const address = data.address || {};
-        const cityName = address.city || address.town || address.village || address.county || address.state || 'Unknown Location';
-        const streetName = address.road || address.neighbourhood || '';
-        return streetName ? `${streetName}, ${cityName}` : cityName;
-    } catch (error) {
-        console.error('Reverse geocoding error:', error);
-        return 'Unknown Location';
-    }
-};
+// Location geocoding functionality removed
 
 const Homescreen = ({ navigation }) => {
+
     // Debug function to check login status (for testing)
     const checkLoginStatus = async () => {
         const credentials = await getStoredCredentials();
+        
         Alert.alert(
             'Login Status Debug',
-            `Logged In: ${credentials.isLoggedIn}\nToken: ${credentials.token ? 'Present' : 'None'}\nUser ID: ${credentials.userId || 'None'}`,
+            `Legacy Login: ${credentials.isLoggedIn}\nToken: ${credentials.token ? 'Present' : 'None'}\nUser ID: ${credentials.userId || 'None'}`,
             [
                 { text: 'OK' },
                 { 
@@ -193,225 +156,98 @@ const Homescreen = ({ navigation }) => {
     const [isFeaturedLoading, setIsFeaturedLoading] = useState(true);
     const [featuredError, setFeaturedError] = useState(null);
 
-    // Nearby Properties States
-    const [nearbyProperties, setNearbyProperties] = useState([]);
-    const [isNearbyLoading, setIsNearbyLoading] = useState(true);
-    const [nearbyError, setNearbyError] = useState(null);
+    // Local Properties States (user's own properties)
+    const [localProperties, setLocalProperties] = useState([]);
+    const [isLocalPropertiesLoading, setIsLocalPropertiesLoading] = useState(true);
+    const [localPropertiesError, setLocalPropertiesError] = useState(null);
+
+    // All Properties States
+    const [allProperties, setAllProperties] = useState([]);
+    const [isAllPropertiesLoading, setIsAllPropertiesLoading] = useState(true);
+    const [allPropertiesError, setAllPropertiesError] = useState(null);
 
     // UI States
     const [hasUnreadMessages, setHasUnreadMessages] = useState(true);
     const [notificationCount, setNotificationCount] = useState(0);
 
-    // Location States - INDEPENDENT from signup
-    const [userLocation, setUserLocation] = useState({ latitude: 28.7041, longitude: 77.1025 }); // Default: Delhi
-    const [cityName, setCityName] = useState('Delhi, India');
-    const [isLocating, setIsLocating] = useState(false);
-    const [manualLocationInput, setManualLocationInput] = useState(''); // Manual input field
-    const [selectedManualLocation, setSelectedManualLocation] = useState(''); // Actually selected location
-    
-    // Nearby API response additional data
-    const [nearbyDistance, setNearbyDistance] = useState('');
-    const [nearbyCount, setNearbyCount] = useState(0);
-
-    // Add state for distance filter
-    const [searchDistance, setSearchDistance] = useState(20); // Default distance in km
-    const [tempDistance, setTempDistance] = useState('20'); // Temporary input value
-
-    // Remove dependency on signup - manual location management
-    const [isEditingLocation, setIsEditingLocation] = useState(false);
+    // Location states removed - no longer using location-based filtering
     
     // Add ref to track mount and prevent double loading
     const isInitialMount = useRef(true);
     const hasLoadedData = useRef(false);
     const userLoginSession = useRef(Date.now()); // Track login session
 
-    // Fetch User Location with City Name - Using locationService
-    const fetchUserLocation = async () => {
-        console.log('🔍 fetchUserLocation called');
-        
-        // Safety check - prevent multiple simultaneous calls
-        if (isLocating) {
-            console.log('⚠️ Location fetch already in progress, skipping...');
-            return;
-        }
-        
-        setIsLocating(true);
-        
+    // Current logged-in user ID
+    const [currentUserId, setCurrentUserId] = useState(null);
+    const [isInitialLoading, setIsInitialLoading] = useState(true);
+
+    // Location fetching functionality removed
+
+    // Load User's Local Properties
+    const loadLocalProperties = async () => {
         try {
-            console.log('📡 Calling getCurrentLocation...');
+            setIsLocalPropertiesLoading(true);
+            setLocalPropertiesError(null);
             
-            // Validate getCurrentLocation exists
-            if (typeof getCurrentLocation !== 'function') {
-                console.error('❌ getCurrentLocation function is not available!');
-                Alert.alert('Error', 'Location service not available. Please restart the app.');
-                setIsLocating(false);
-                return;
+            console.log('📱 Loading user local properties...');
+            
+            // Load from AsyncStorage
+            const localPropertiesString = await AsyncStorage.getItem('local_properties');
+            
+            if (localPropertiesString) {
+                const savedLocalProperties = JSON.parse(localPropertiesString);
+                console.log('✅ Found', savedLocalProperties.length, 'local properties');
+                
+                // Format local properties for home screen display
+                const formattedLocalProperties = savedLocalProperties.map(property => ({
+                    ...property,
+                    _id: property.id || property._id,
+                    id: property.id || property._id,
+                    title: property.title || `${property.propertyType} ${property.purpose} in ${property.propertyLocation}`,
+                    price: property.price,
+                    location: property.propertyLocation,
+                    propertyLocation: property.propertyLocation,
+                    description: property.description,
+                    isUserProperty: true, // Mark as user's property
+                    isLocal: true, // Mark as local property
+                    stableKey: `local_${property.id}`,
+                    processedImageUrl: property.photosAndVideo?.[0]?.uri || property.images?.[0]?.uri || FALLBACK_IMAGE_URI
+                }));
+                
+                setLocalProperties(formattedLocalProperties);
+            } else {
+                console.log('📱 No local properties found');
+                setLocalProperties([]);
             }
-            
-            // Use the new location service with full error wrapping
-            const result = await getCurrentLocation({
-                showAlert: true,
-                timeout: 15000,
-                maximumAge: 10000,
-                enableHighAccuracy: true,
-            }).catch(err => {
-                console.error('❌ getCurrentLocation threw error:', err);
-                throw err;
-            });
-
-            if (!result || typeof result.latitude !== 'number' || typeof result.longitude !== 'number') {
-                console.error('❌ Invalid location result:', result);
-                Alert.alert('Error', 'Failed to get valid location coordinates.');
-                setIsLocating(false);
-                return;
-            }
-
-            const { latitude, longitude } = result;
-            console.log('✅ Location fetched successfully:', { latitude, longitude });
-
-            // Update state with new location
-            setUserLocation({ latitude, longitude });
-            
-            // Save location to AsyncStorage
-            try {
-                await AsyncStorage.setItem('userLocation', JSON.stringify({ latitude, longitude }));
-                console.log('✅ Location saved to AsyncStorage');
-            } catch (saveError) {
-                console.warn('⚠️ Failed to save location:', saveError);
-                // Continue even if save fails
-            }
-
-            // Get city name from coordinates
-            try {
-                const city = await getCityNameFromCoords(latitude, longitude);
-                setCityName(city);
-                console.log('✅ City name fetched:', city);
-            } catch (cityError) {
-                console.warn('⚠️ Failed to get city name:', cityError);
-                setCityName('Unknown Location');
-            }
-            
-            // Load nearby properties with new location
-            try {
-                await loadNearbyProperties(latitude, longitude);
-                console.log('✅ Nearby properties loaded');
-            } catch (propertiesError) {
-                console.warn('⚠️ Failed to load nearby properties:', propertiesError);
-            }
-            
-            setIsLocating(false);
-            console.log('✅ fetchUserLocation completed successfully');
-            
         } catch (error) {
-            // Comprehensive error logging
-            console.error('❌ fetchUserLocation CAUGHT ERROR:');
-            console.error('Error type:', error?.constructor?.name);
-            console.error('Error message:', error?.message);
-            console.error('Error code:', error?.code);
-            console.error('Full error:', JSON.stringify(error, null, 2));
-            
-            if (error?.stack) {
-                console.error('Stack trace:', error.stack);
-            }
-            
-            setIsLocating(false);
-            
-            // Don't show alert if locationService already showed one
-            if (!error?.message?.includes('permission') && !error?.message?.includes('GPS')) {
-                Alert.alert(
-                    'Location Error',
-                    'Failed to get your location. Please check your GPS settings and try again.',
-                    [{ text: 'OK' }]
-                );
-            }
-        }
-    };
-
-    // Load All Properties - NOW USES NEW API ENDPOINT FOR ALL PROPERTIES
-    const loadNearbyProperties = async (lat, lng) => {
-        setIsNearbyLoading(true);
-        setNearbyError(null);
-        try {
-            console.log(`🌐 Loading ALL properties from new API endpoint (no limit)`);
-
-            // Use the new getAllProperties API to load ALL properties without limit
-            const allProperties = await getAllProperties(); // Get ALL properties from API (no limit)
-            
-            // Ensure we have a valid array
-            const validProperties = Array.isArray(allProperties) ? allProperties : [];
-            
-            setNearbyProperties(validProperties);
-            setNearbyDistance(`All Properties`); 
-            setNearbyCount(validProperties.length);
-            
-            console.log(`✅ Loaded ${validProperties.length} properties from ALL properties API`);
-        } catch (e) {
-            console.error("All Properties Error:", e);
-            setNearbyError("Could not load properties. Tap to retry.");
-            // Set empty array on error to prevent undefined issues
-            setNearbyProperties([]);
-            setNearbyCount(0);
+            console.error('❌ Error loading local properties:', error);
+            setLocalPropertiesError(error.message);
+            setLocalProperties([]);
         } finally {
-            setIsNearbyLoading(false);
+            setIsLocalPropertiesLoading(false);
         }
     };
 
-    // Load Saved Location - MANUAL ONLY (No Auto-fetch)
-    useEffect(() => {
-        const loadSavedLocation = async () => {
-            try {
-                const savedLocation = await AsyncStorage.getItem('userLocation');
-                if (savedLocation) {
-                    let latitude = null;
-                    let longitude = null;
-                    try {
-                        const parsed = JSON.parse(savedLocation);
-                        latitude = parsed.latitude;
-                        longitude = parsed.longitude;
-                    } catch (err) {
-                        console.warn('[loadSavedLocation] savedLocation not JSON, attempting numeric fallback:', savedLocation.slice ? savedLocation.slice(0,200) : savedLocation);
-                        const matches = (savedLocation || '').match(/-?\d+(?:\.\d+)?/g) || [];
-                        if (matches.length >= 2) {
-                            latitude = Number(matches[0]);
-                            longitude = Number(matches[1]);
-                        }
-                    }
+    // Load All Properties
+    const loadAllProperties = async () => {
+        setIsAllPropertiesLoading(true);
+        setAllPropertiesError(null);
+        try {
+            console.log('🏘️ Loading all properties');
+            const properties = await getAllProperties();
+            const validProperties = Array.isArray(properties) ? properties : [];
+            setAllProperties(validProperties);
+            console.log(`✅ Loaded ${validProperties.length} properties`);
+        } catch (error) {
+            console.error('❌ Error loading all properties:', error);
+            setAllPropertiesError('Could not load properties. Tap to retry.');
+            setAllProperties([]);
+        } finally {
+            setIsAllPropertiesLoading(false);
+        }
+    };
 
-                    if (latitude != null && longitude != null) {
-                        setUserLocation({ latitude, longitude });
-                        const city = await getCityNameFromCoords(latitude, longitude);
-                        setCityName(city);
-
-                        // Load nearby properties based on saved location (only if not initial mount)
-                        if (!isInitialMount.current) {
-                            loadNearbyProperties(latitude, longitude);
-                        }
-                    } else {
-                        console.log('📍 No valid saved location. Using default Delhi location.');
-                        // Use default Delhi coordinates (only if not initial mount)
-                        if (!isInitialMount.current) {
-                            loadNearbyProperties(28.7041, 77.1025);
-                        }
-                    }
-                } else {
-                    console.log('📍 No saved location. Using default Delhi location.');
-                    // Use default Delhi coordinates (only if not initial mount)
-                    if (!isInitialMount.current) {
-                        loadNearbyProperties(28.7041, 77.1025);
-                    }
-                }
-            } catch (error) {
-                console.error('❌ Error loading saved location:', error);
-                console.log('📍 Using default Delhi location.');
-                // Use default Delhi coordinates on error (only if not initial mount)
-                if (!isInitialMount.current) {
-                    loadNearbyProperties(28.7041, 77.1025);
-                }
-            }
-        };
-
-        loadSavedLocation();
-    }, []);
+    // Location loading removed - no longer using location-based filtering
 
     // Load Favorites
     const loadFavorites = async () => {
@@ -429,17 +265,25 @@ const Homescreen = ({ navigation }) => {
             setFeaturedError(null);
             console.log('🏠 Loading featured properties (anti-blink version)');
             
-            const properties = await getRecentProperties(8); // Get 8 recent properties for featured
+            const properties = await getRecentProperties(50); // Get more properties, but display only 15
             const validProperties = Array.isArray(properties) ? properties : [];
             
+            // Batch state updates to prevent multiple re-renders
             setFeaturedProperties(validProperties);
-            console.log(`✅ Featured loaded: ${validProperties.length} properties`);
+            setIsFeaturedLoading(false);
+            console.log(`✅ Featured loaded: ${validProperties.length} properties (displaying 15)`);
         } catch (e) {
             console.error("Featured Properties Error:", e);
             setFeaturedError("Could not load recent properties. Tap to retry.");
             setFeaturedProperties([]); // Set empty array on error
-        } finally {
             setIsFeaturedLoading(false);
+        }
+        
+        // Also load local properties whenever featured properties are loaded
+        try {
+            await loadLocalProperties();
+        } catch (localError) {
+            console.warn('⚠️ Failed to load local properties:', localError.message);
         }
     };
 
@@ -448,12 +292,12 @@ const Homescreen = ({ navigation }) => {
         console.log('🔄 Manual refresh triggered');
         if (!isRefreshing) {
             setIsFeaturedLoading(true);
-            setIsNearbyLoading(true);
+            setIsAllPropertiesLoading(true);
         }
 
         await Promise.all([
             loadFeaturedProperties(),
-            loadNearbyProperties(), // No parameters needed since it loads recent properties
+            loadAllProperties(),
             loadFavorites(),
         ]);
 
@@ -474,63 +318,34 @@ const Homescreen = ({ navigation }) => {
             // Prevent double loading on second login
             if (hasLoadedData.current) {
                 console.log('⏭️ Data already loaded, skipping...');
+                setIsInitialLoading(false);
                 return;
             }
             
+            // Set initial loading state
+            setIsInitialLoading(true);
             setIsFeaturedLoading(true);
-            setIsNearbyLoading(true);
+            setIsAllPropertiesLoading(true);
+            
+            // Small delay to prevent flash of loading state
+            await new Promise(resolve => setTimeout(resolve, 100));
             
             // Load all data in parallel
             await Promise.all([
                 loadFeaturedProperties(),
+                loadAllProperties(),
                 loadFavorites(),
                 loadUserAvatar(), // Load avatar here to prevent focus reload
             ]);
             
-            // Load saved location settings (independent from user profile)
-            try {
-                const savedLocation = await AsyncStorage.getItem('userLocation');
-                const savedLocationName = await AsyncStorage.getItem('selectedLocationName');
-                
-                let lat = 28.7041; // Default Delhi
-                let lng = 77.1025;
-                let locationName = 'Delhi, India';
-                
-                if (savedLocation) {
-                    try {
-                        const parsed = JSON.parse(savedLocation);
-                        if (parsed.latitude && parsed.longitude) {
-                            lat = parsed.latitude;
-                            lng = parsed.longitude;
-                            setUserLocation({ latitude: lat, longitude: lng });
-                            console.log('📍 Using saved coordinates:', lat, lng);
-                        }
-                    } catch (e) {
-                        console.log('📍 Using default Delhi coordinates');
-                    }
-                }
-                
-                if (savedLocationName) {
-                    locationName = savedLocationName;
-                    setSelectedManualLocation(savedLocationName);
-                    setCityName(savedLocationName);
-                    console.log('📍 Using saved location name:', savedLocationName);
-                } else {
-                    setCityName(locationName);
-                }
-                
-                // Load recent properties (no location dependency needed)
-                await loadNearbyProperties();
-                
-            } catch (error) {
-                console.error('Error loading saved settings:', error);
-                // Fallback - still load recent properties
-                await loadNearbyProperties();
-            }
+            // Location settings removed - no longer using location-based filtering
             
             // Mark initial mount as complete and data as loaded
             isInitialMount.current = false;
             hasLoadedData.current = true;
+            
+            // Remove initial loading overlay
+            setIsInitialLoading(false);
             console.log('✅ Initial load complete - Recent properties system ready');
         };
         
@@ -581,8 +396,9 @@ const Homescreen = ({ navigation }) => {
             setNotificationCount(count);
         });
 
-        // Listen for focus to reload notification count
+        // Listen for focus to reload notification count (but not properties)
         const focusListener = navigation.addListener('focus', () => {
+            // Only reload notification count, don't reload properties to prevent blink
             loadNotificationCount();
         });
 
@@ -593,9 +409,21 @@ const Homescreen = ({ navigation }) => {
         };
     }, [navigation]);
 
-    // REMOVED useFocusEffect - This was causing second-time login blinking!
-    // All data loads happen only once on mount now
-    // User avatar and favorites are loaded in initial load, no need to reload on focus
+    // Fetch current user ID on mount
+    useEffect(() => {
+        const fetchCurrentUserId = async () => {
+            try {
+                const userId = await AsyncStorage.getItem('userId');
+                if (userId) {
+                    setCurrentUserId(userId);
+                    console.log('✅ Current user ID loaded:', userId);
+                }
+            } catch (error) {
+                console.error('❌ Error fetching current user ID:', error);
+            }
+        };
+        fetchCurrentUserId();
+    }, []);
 
     // Component Logic
     const toggleFavorite = async (id) => {
@@ -621,7 +449,7 @@ const Homescreen = ({ navigation }) => {
         <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>{title}</Text>
             {showSeeAll && (
-                <TouchableOpacity onPress={onSeeAllPress}>
+                <TouchableOpacity onPress={onSeeAllPress} activeOpacity={0.8}>
                     <Text style={styles.seeAllText}>See all</Text>
                 </TouchableOpacity>
             )}
@@ -634,6 +462,29 @@ const Homescreen = ({ navigation }) => {
 
     const openProperty = async (item) => {
         try {
+            // Check if the property belongs to the current user
+            const propertyOwnerId = item?.userId || item?.ownerId || item?.postedBy?._id || item?.postedBy || item?.user?._id || item?.user;
+            
+            // Debug logs
+            console.log('🔍 Property ownership check (Featured):');
+            console.log('   Current User ID:', currentUserId);
+            console.log('   Property Owner ID:', propertyOwnerId);
+            console.log('   Property Data:', {
+                userId: item?.userId,
+                ownerId: item?.ownerId,
+                postedBy: item?.postedBy,
+                user: item?.user
+            });
+            
+            if (currentUserId && propertyOwnerId && currentUserId === String(propertyOwnerId)) {
+                // User owns this property, show details directly
+                console.log('✅ User owns this property (featured section), showing details directly');
+                navigation.navigate('PropertyDetailsScreen', { property: item });
+                return;
+            } else {
+                console.log('❌ Property ownership check failed or property belongs to another user');
+            }
+
             const pid = item?._id || item?.id || item?.propertyId || null;
             if (!pid) {
                 navigation.navigate('PropertyDetailsScreen', { property: item });
@@ -651,9 +502,31 @@ const Homescreen = ({ navigation }) => {
         }
     };
 
-    // For Recent Estates section - always open inquiry form
+    // For All Properties section
     const openPropertyForInquiry = (item) => {
-        navigation.navigate('PropertyInquiryFormScreen', { property: item });
+        // Check if the property belongs to the current user
+        const propertyOwnerId = item?.userId || item?.ownerId || item?.postedBy?._id || item?.postedBy || item?.user?._id || item?.user;
+        
+        // Debug logs
+        console.log('🔍 Property ownership check (All Properties):');
+        console.log('   Current User ID:', currentUserId);
+        console.log('   Property Owner ID:', propertyOwnerId);
+        console.log('   Property Data:', {
+            userId: item?.userId,
+            ownerId: item?.ownerId,
+            postedBy: item?.postedBy,
+            user: item?.user
+        });
+        
+        if (currentUserId && propertyOwnerId && currentUserId === String(propertyOwnerId)) {
+            // User owns this property, show details directly
+            console.log('✅ User owns this property (all properties section), showing details directly');
+            navigation.navigate('PropertyDetailsScreen', { property: item });
+        } else {
+            // Otherwise, show inquiry form
+            console.log('❌ Property ownership check failed or property belongs to another user');
+            navigation.navigate('PropertyInquiryFormScreen', { property: item });
+        }
     };
 
     const handleChatPress = () => {
@@ -675,11 +548,11 @@ const Homescreen = ({ navigation }) => {
         }
     };
 
-    // Complete notification system test (including FCM and backend API)
+    // Complete notification system test
     const handleAddTestNotifications = async () => {
         try {
             Alert.alert(
-                'Notification & FCM Test',
+                'Notification Test',
                 'Choose test type:',
                 [
                     {
@@ -716,7 +589,7 @@ const Homescreen = ({ navigation }) => {
                         text: 'Fix FCM Issues',
                         onPress: async () => {
                             Alert.alert('Fixing FCM', 'Attempting to fix common FCM issues...');
-                            const { quickFixFCMIssues } = require('../utils/fcmTestService');
+                            const { quickFixFCMIssues } = await import('../utils/fcmTestService');
                             const fixResult = await quickFixFCMIssues();
                             await loadNotificationCount();
                             
@@ -819,34 +692,73 @@ const Homescreen = ({ navigation }) => {
         Alert.alert('Voice Search', 'Voice search feature coming soon!');
     };
 
-    // Function to handle distance change
-    const handleDistanceChange = (distance) => {
-        setSearchDistance(distance);
-        if (userLocation) {
-            loadNearbyProperties(userLocation.latitude, userLocation.longitude);
-        }
-    };
+    // Distance-based filtering removed
 
-    // Memoize featured properties - ULTIMATE ANTI-BLINK VERSION
+    // Memoize featured properties - Include user's local properties at the top
     const processedFeaturedProperties = useMemo(() => {
-        if (!featuredProperties || featuredProperties.length === 0) {
-            console.log('🚫 No featured properties to process');
-            return [];
+        console.log('🖼️ Processing featured properties (STABLE) with local properties');
+        
+        // Start with user's local properties (shown first)
+        let allProperties = [];
+        
+        // Add local properties at the top
+        if (localProperties && localProperties.length > 0) {
+            console.log('📱 Adding', localProperties.length, 'local properties to featured');
+            allProperties = [...localProperties];
         }
         
-        console.log('🖼️ Processing featured properties (STABLE):', featuredProperties.length);
-        
-        return featuredProperties.map((item, index) => {
-            const firstImage = getFirstImageUrl(item.photosAndVideo);
-            const imageUrl = formatImageUrl(firstImage) || FALLBACK_IMAGE_URI;
+        // Add server properties (excluding user's own server properties)
+        if (featuredProperties && featuredProperties.length > 0) {
+            const serverProperties = featuredProperties
+                .filter(item => {
+                    // Filter out properties posted by the current user (server properties only)
+                    const propertyOwnerId = item?.userId || item?.ownerId || item?.postedBy?._id || item?.postedBy || item?.user?._id || item?.user;
+                    const isOwnProperty = currentUserId && propertyOwnerId && currentUserId === String(propertyOwnerId);
+                    
+                    if (isOwnProperty) {
+                        console.log('🚫 Hiding own server property from featured:', item._id);
+                    }
+                    
+                    return !isOwnProperty; // Exclude own server properties
+                });
             
-            return {
-                ...item,
-                processedImageUrl: imageUrl,
-                stableKey: `featured_${item._id || index}` // Add stable key
-            };
+            allProperties = [...allProperties, ...serverProperties];
+        }
+        
+        // Process all properties for display
+        return allProperties.map((item, index) => {
+            if (item.isLocal) {
+                // For local properties, use the stored image URI directly
+                return {
+                    ...item,
+                    processedImageUrl: item.processedImageUrl || FALLBACK_IMAGE_URI,
+                    stableKey: item.stableKey || `local_${item.id}_${index}`,
+                    isUserProperty: true
+                };
+            } else {
+                // For server properties, process images as before
+                const firstImage = getFirstImageUrl(item.photosAndVideo);
+                let imageUrl;
+                if (firstImage && typeof firstImage === 'string' && firstImage.startsWith('file://')) {
+                    imageUrl = firstImage;
+                } else {
+                    imageUrl = formatImageUrl(firstImage) || FALLBACK_IMAGE_URI;
+                }
+                
+                return {
+                    ...item,
+                    processedImageUrl: imageUrl,
+                    stableKey: `featured_${item._id || index}`,
+                    isUserProperty: false
+                };
+            }
         });
-    }, [featuredProperties]); // Simple dependency to prevent over-optimization
+    }, [featuredProperties, localProperties, currentUserId]);
+
+    // Limit featured properties to 15 for home screen display
+    const displayedFeaturedProperties = useMemo(() => {
+        return processedFeaturedProperties.slice(0, 15);
+    }, [processedFeaturedProperties]);
 
     // Render Featured Content
     const renderFeaturedContent = () => {
@@ -861,7 +773,7 @@ const Homescreen = ({ navigation }) => {
                 </TouchableOpacity>
             );
         }
-        if (processedFeaturedProperties.length === 0) {
+        if (displayedFeaturedProperties.length === 0) {
             return <Text style={styles.noDataText}>No recent estates found.</Text>;
         }
 
@@ -871,54 +783,116 @@ const Homescreen = ({ navigation }) => {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.horizontalScrollContainer}
             >
-                {processedFeaturedProperties.map((item, index) => {
-                    // Prepare media items for MediaCard
-                    const mediaItems = item.photosAndVideo && item.photosAndVideo.length > 0 
-                        ? item.photosAndVideo.map(media => ({
-                            uri: formatImageUrl(media.uri || media) || media.uri || media,
-                            type: media.type || (media.uri?.includes('.mp4') || media.uri?.includes('.mov') || media.uri?.includes('.avi') ? 'video' : 'image')
-                        }))
-                        : [{ uri: item.processedImageUrl, type: 'image' }];
+                {displayedFeaturedProperties.map((item, index) => {
+                    // Better image processing with multiple fallbacks
+                    let imageUri = FALLBACK_IMAGE_URI;
+                    
+                    // First priority: use processedImageUrl if available
+                    if (item.processedImageUrl && item.processedImageUrl !== FALLBACK_IMAGE_URI) {
+                        imageUri = item.processedImageUrl;
+                    }
+                    // Second priority: process photosAndVideo array
+                    else if (item.photosAndVideo && Array.isArray(item.photosAndVideo) && item.photosAndVideo.length > 0) {
+                        const firstImageData = item.photosAndVideo[0];
+                        const rawUri = firstImageData?.uri || firstImageData;
+                        
+                        if (rawUri && typeof rawUri === 'string') {
+                            // Use local file URIs directly
+                            if (rawUri.startsWith('file://')) {
+                                imageUri = rawUri;
+                            } 
+                            // Format server URIs
+                            else {
+                                const formattedUri = formatImageUrl(rawUri);
+                                if (formattedUri && formattedUri !== 'https://placehold.co/600x400/CCCCCC/888888?text=No+Image') {
+                                    imageUri = formattedUri;
+                                }
+                            }
+                        }
+                    }
+                    // Third priority: check for single image property
+                    else if (item.image) {
+                        const formattedUri = formatImageUrl(item.image);
+                        if (formattedUri && formattedUri !== 'https://placehold.co/600x400/CCCCCC/888888?text=No+Image') {
+                            imageUri = formattedUri;
+                        }
+                    }
 
                     return (
                         <TouchableOpacity
-                            key={item.stableKey} // Use stable key instead of _id
-                            style={styles.featuredCard}
+                            key={item.stableKey}
+                            style={styles.featuredHouseCard}
                             onPress={() => openProperty(item)}
                             activeOpacity={0.9}
                         >
-                            <View style={styles.featuredMediaContainer}>
-                                <MediaCard
-                                    mediaItems={mediaItems}
-                                    fallbackImage={FALLBACK_IMAGE_URI}
-                                    imageStyle={styles.featuredMediaImage}
-                                    showControls={true}
-                                    autoPlay={false}
-                                    style={styles.featuredMediaCard}
+                            {/* Property Image - Simple Image for better performance */}
+                            <View style={styles.featuredHouseImageContainer}>
+                                <Image
+                                    source={{ uri: imageUri }}
+                                    style={styles.featuredHouseImage}
+                                    resizeMode="cover"
+                                    onError={() => {
+                                        console.warn('Featured: Failed to load image:', imageUri);
+                                    }}
+                                    onLoad={() => {
+                                        // console.log('Featured: Successfully loaded image:', imageUri);
+                                    }}
                                 />
-                                <LinearGradient 
-                                    colors={["transparent", theme.COLORS.overlay]} 
-                                    style={styles.featuredOverlay} 
-                                />
+                                
+                                {/* Favorite Icon - Top Left */}
                                 <TouchableOpacity 
                                     onPress={() => toggleFavorite(item._id)} 
-                                    style={styles.favoriteIconContainer}
+                                    style={styles.featuredHouseFavoriteIcon}
+                                    activeOpacity={0.7}
                                 >
                                     <Icon
                                         name={favorites.includes(item._id) ? "heart" : "heart-outline"}
-                                        size={22}
-                                        color={favorites.includes(item._id) ? theme.COLORS.accent : theme.COLORS.white}
+                                        size={20}
+                                        color={favorites.includes(item._id) ? "#EF4444" : "#64748B"}
                                     />
                                 </TouchableOpacity>
-                                <View style={styles.featuredInfo}>
-                                    <Text style={styles.featuredTitle} numberOfLines={1}>
-                                        {item.description || 'Property'}
+
+                                {/* Property Type Badge - Bottom Left */}
+                                <View style={styles.propertyTypeBadge}>
+                                    <Text style={styles.propertyTypeText}>
+                                        {item.purpose || 'Apartment'}
                                     </Text>
-                                    <Text style={styles.featuredLocation}>
-                                        {item.propertyLocation || 'Unknown Location'}
-                                    </Text>
-                                    <Text style={styles.featuredPrice}>{formatPrice(item.price)}</Text>
                                 </View>
+
+                                {/* User Property Badge - Bottom Right */}
+                                {item.isUserProperty && (
+                                    <View style={styles.userPropertyBadge}>
+                                        <Icon name="person" size={12} color="#FFFFFF" />
+                                        <Text style={styles.userPropertyText}>My Property</Text>
+                                    </View>
+                                )}
+                            </View>
+
+                            {/* Property Details - Right Side */}
+                            <View style={styles.featuredHouseDetails}>
+                                {/* Title */}
+                                <Text style={styles.featuredHouseTitle} numberOfLines={2}>
+                                    {item.description || 'Sky Dandelions Apartment'}
+                                </Text>
+
+                                {/* Location */}
+                                <View style={styles.featuredHouseLocation}>
+                                    <Icon name="location-outline" size={12} color="#64748B" />
+                                    <Text style={styles.featuredHouseLocationText} numberOfLines={1}>
+                                        {item.propertyLocation || 'Jakarta, Indonesia'}
+                                    </Text>
+                                </View>
+
+                                {/* Spacer to push price to bottom */}
+                                <View style={{ flex: 1 }} />
+
+                                {/* Price */}
+                                <Text style={styles.featuredHousePrice}>
+                                    {formatPrice(item.price)}
+                                    {(item.purpose === 'rent' || item.purpose === 'lease') && (
+                                        <Text style={styles.featuredHousePriceUnit}>/month</Text>
+                                    )}
+                                </Text>
                             </View>
                         </TouchableOpacity>
                     );
@@ -927,199 +901,167 @@ const Homescreen = ({ navigation }) => {
         );
     };
 
-    // Memoize nearby properties - ULTIMATE ANTI-BLINK VERSION  
-    const processedNearbyProperties = useMemo(() => {
-        if (!nearbyProperties || nearbyProperties.length === 0) {
-            console.log('🚫 No nearby properties to process');
+    // Process all properties and filter out user's own properties
+    const displayedAllProperties = useMemo(() => {
+        console.log('🏘️ Processing all properties');
+        
+        if (!allProperties || allProperties.length === 0) {
             return [];
         }
         
-        console.log('🏡 Processing nearby properties (STABLE):', nearbyProperties.length);
+        const processed = allProperties
+            .filter(item => {
+                // Filter out properties posted by the current user
+                const propertyOwnerId = item?.userId || item?.ownerId || item?.postedBy?._id || item?.postedBy || item?.user?._id || item?.user;
+                const isOwnProperty = currentUserId && propertyOwnerId && currentUserId === String(propertyOwnerId);
+                
+                if (isOwnProperty) {
+                    console.log('🚫 Hiding own property:', item._id);
+                    return false;
+                }
+                return true;
+            })
+            .map((item, index) => {
+                const firstImage = getFirstImageUrl(item.photosAndVideo);
+                const imageUrl = formatImageUrl(firstImage) || FALLBACK_IMAGE_URI;
+                
+                return {
+                    ...item,
+                    processedImageUrl: imageUrl,
+                    stableKey: `all_${item._id || index}`
+                };
+            });
         
-        return nearbyProperties.map((item, index) => {
-            const firstImage = getFirstImageUrl(item.photosAndVideo);
-            const imageUrl = formatImageUrl(firstImage) || FALLBACK_IMAGE_URI;
-            
-            return {
-                ...item,
-                processedImageUrl: imageUrl,
-                stableKey: `nearby_${item._id || index}` // Add stable key
-            };
-        });
-    }, [nearbyProperties]); // Simple dependency
+        console.log('🎯 All Properties:', processed.length);
+        return processed;
+    }, [allProperties, currentUserId]);
 
-    // Render Nearby Content
-    // Render Recent Properties Content (formerly nearby)
-    const renderNearbyContent = () => {
+    // Render All Properties Content
+    const renderAllPropertiesContent = () => {
+        if (isAllPropertiesLoading) {
+            return <ActivityIndicator size="large" color={theme.COLORS.primary} style={styles.loaderStyle} />;
+        }
+        if (allPropertiesError) {
+            return (
+                <TouchableOpacity onPress={loadAllProperties} style={styles.retryContainer}>
+                    <Text style={[styles.errorText, { color: theme.COLORS.greyMedium }]}>⚠️ {allPropertiesError}</Text>
+                    <Text style={styles.retryText}>Tap to Retry</Text>
+                </TouchableOpacity>
+            );
+        }
+        if (displayedAllProperties.length === 0) {
+            return <Text style={styles.noDataText}>No properties found.</Text>;
+        }
+
+        // Show all properties
+        const limitedProperties = displayedAllProperties;
+
         return (
-            <View>
-                {/* Recent Properties Listing - No location filters needed */}
-                {isNearbyLoading ? (
-                    <ActivityIndicator size="large" color={theme.COLORS.primary} style={styles.loaderStyle} />
-                ) : nearbyError ? (
-                    <TouchableOpacity onPress={() => loadNearbyProperties()} style={styles.retryContainer}>
-                        <Text style={[styles.errorText, { color: theme.COLORS.greyMedium }]}>⚠️ {nearbyError}</Text>
-                        <Text style={styles.retryText}>Tap to Retry</Text>
-                    </TouchableOpacity>
-                ) : processedNearbyProperties.length === 0 ? (
-                    <Text style={styles.noDataText}>
-                        No recent properties found.
-                    </Text>
-                ) : (
-                    <View style={styles.nearbyGrid}>
-                        {processedNearbyProperties.map((item, index) => {
-                            // Prepare media items for MediaCard
-                            const mediaItems = item.photosAndVideo && item.photosAndVideo.length > 0 
-                                ? item.photosAndVideo.map(media => ({
-                                    uri: formatImageUrl(media.uri || media) || media.uri || media,
-                                    type: media.type || (media.uri?.includes('.mp4') || media.uri?.includes('.mov') || media.uri?.includes('.avi') ? 'video' : 'image')
-                                }))
-                                : [{ uri: item.processedImageUrl, type: 'image' }];
+            <View style={styles.nearbyGrid}>
+                {limitedProperties.map((item, index) => {
+                    // Better image processing with multiple fallbacks
+                    let imageUri = FALLBACK_IMAGE_URI;
+                    
+                    // First priority: use processedImageUrl if available
+                    if (item.processedImageUrl && item.processedImageUrl !== FALLBACK_IMAGE_URI) {
+                        imageUri = item.processedImageUrl;
+                    }
+                    // Second priority: process photosAndVideo array
+                    else if (item.photosAndVideo && Array.isArray(item.photosAndVideo) && item.photosAndVideo.length > 0) {
+                        const firstImageData = item.photosAndVideo[0];
+                        const rawUri = firstImageData?.uri || firstImageData;
+                        
+                        if (rawUri && typeof rawUri === 'string') {
+                            // Use local file URIs directly
+                            if (rawUri.startsWith('file://')) {
+                                imageUri = rawUri;
+                            } 
+                            // Format server URIs
+                            else {
+                                const formattedUri = formatImageUrl(rawUri);
+                                if (formattedUri && formattedUri !== 'https://placehold.co/600x400/CCCCCC/888888?text=No+Image') {
+                                    imageUri = formattedUri;
+                                }
+                            }
+                        }
+                    }
+                    // Third priority: check for single image property
+                    else if (item.image) {
+                        const formattedUri = formatImageUrl(item.image);
+                        if (formattedUri && formattedUri !== 'https://placehold.co/600x400/CCCCCC/888888?text=No+Image') {
+                            imageUri = formattedUri;
+                        }
+                    }
 
-                            return (
-                                <TouchableOpacity
-                                    key={item.stableKey} // Use stable key instead of _id
-                                    style={styles.nearbyCard}
-                                    onPress={() => openPropertyForInquiry(item)}
-                                    activeOpacity={0.9}
-                                >
-                                    <MediaCard
-                                        mediaItems={mediaItems}
-                                        fallbackImage={FALLBACK_IMAGE_URI}
-                                        imageStyle={styles.nearbyImage}
-                                        showControls={true}
-                                        autoPlay={false}
-                                        style={styles.nearbyMediaCard}
-                                    />
-                                    <View style={styles.nearbyInfo}>
-                                        <Text style={styles.nearbyTitle} numberOfLines={1}>
-                                            {item.description || 'Estate'}
-                                        </Text>
-                                        <View style={styles.locationRow}>
-                                            <Icon name="location-outline" size={14} color={theme.COLORS.greyMedium} />
-                                            <Text style={styles.nearbyLocation} numberOfLines={1}>
-                                                {item.propertyLocation || 'Unknown'}
-                                            </Text>
-                                        </View>
-                                        <Text style={styles.nearbyPrice}>{formatPrice(item.price)}</Text>
-                                    </View>
-                                </TouchableOpacity>
-                            );
-                        })}
-                    </View>
-                )}
+                    return (
+                        <TouchableOpacity
+                            key={item.stableKey}
+                            style={styles.nearbyCard}
+                            onPress={() => openPropertyForInquiry(item)}
+                            activeOpacity={0.9}
+                        >
+                            {/* Property Image */}
+                            <Image
+                                source={{ uri: imageUri }}
+                                style={styles.nearbyImage}
+                                resizeMode="cover"
+                                defaultSource={require('../assets/icon-placeholder.js')}
+                                onError={() => {
+                                    console.warn('Failed to load image:', imageUri);
+                                }}
+                                onLoad={() => {
+                                    // console.log('Successfully loaded image:', imageUri);
+                                }}
+                            />
+
+                            {/* Property Details */}
+                            <View style={styles.nearbyInfo}>
+                                {/* Title */}
+                                <Text style={styles.nearbyTitle} numberOfLines={1}>
+                                    {item.description || 'Property Name'}
+                                </Text>
+
+                                {/* Location */}
+                                <View style={styles.locationRow}>
+                                    <Icon name="location-outline" size={13} color="#64748B" />
+                                    <Text style={styles.nearbyLocation} numberOfLines={1}>
+                                        {item.propertyLocation || 'Unknown Location'}
+                                    </Text>
+                                </View>
+
+                                {/* Price */}
+                                <Text style={styles.nearbyPrice}>
+                                    {formatPrice(item.price)}
+                                    {(item.purpose === 'rent' || item.purpose === 'lease') && (
+                                        <Text style={styles.featuredHousePriceUnit}>/month</Text>
+                                    )}
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
+                    );
+                })}
             </View>
         );
     };
 
-    // Function to fetch coordinates from a manually entered location
-    const getCoordsFromLocation = async (location) => {
-        try {
-            const response = await fetch(
-                `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(location)}`,
-                {
-                    headers: { 'User-Agent': 'GharplotApp/1.0' }
-                }
-            );
-            const data = await response.json();
-            if (data.length > 0) {
-                const { lat, lon } = data[0];
-                return { latitude: parseFloat(lat), longitude: parseFloat(lon) };
-            }
-            return null;
-        } catch (error) {
-            console.error('Geocoding error:', error);
-            return null;
-        }
-    };
+    // Manual location selection functionality removed
 
-    // Quick location suggestions for popular cities
-    const popularLocations = [
-        'Delhi', 'Mumbai', 'Bangalore', 'Pune', 'Hyderabad', 
-        'Chennai', 'Kolkata', 'Ahmedabad', 'Jaipur', 'Lucknow'
-    ];
+    // Stable render key
+    const stableRenderKey = 'home_stable_v3';
 
-    const handleQuickLocationSelect = async (locationName) => {
-        setManualLocationInput(locationName);
-        setIsLocating(true);
-        
-        try {
-            const coords = await getCoordsFromLocation(locationName);
-            if (coords) {
-                setUserLocation(coords);
-                setCityName(locationName);
-                setSelectedManualLocation(locationName);
-                
-                await AsyncStorage.setItem('userLocation', JSON.stringify(coords));
-                await AsyncStorage.setItem('selectedLocationName', locationName);
-                
-                await loadNearbyProperties(coords.latitude, coords.longitude);
-                setManualLocationInput('');
-                
-                console.log('✅ Quick location selected:', locationName);
-            }
-        } catch (error) {
-            console.error('Error selecting quick location:', error);
-        } finally {
-            setIsLocating(false);
-        }
-    };
-
-    // Handle manual location save - with improved UX
-    // Handle manual location save - COMPLETELY INDEPENDENT from signup/user profile
-    const handleSaveManualLocation = async () => {
-        const locationInput = manualLocationInput.trim();
-        
-        if (!locationInput) {
-            Alert.alert('Invalid Input', 'Please enter a valid location name or address.');
-            return;
-        }
-
-        // Show loading state
-        setIsLocating(true);
-        
-        try {
-            console.log('🔍 Searching for location:', locationInput);
-            const coords = await getCoordsFromLocation(locationInput);
-            
-            if (coords) {
-                // Update location state with new coordinates
-                setUserLocation(coords);
-                setCityName(locationInput);
-                setSelectedManualLocation(locationInput);
-
-                // Save to AsyncStorage for persistence
-                await AsyncStorage.setItem('userLocation', JSON.stringify(coords));
-                await AsyncStorage.setItem('selectedLocationName', locationInput);
-                console.log('✅ Manual location saved:', locationInput, coords);
-
-                // Load nearby properties based on new coordinates
-                await loadNearbyProperties(coords.latitude, coords.longitude);
-
-                // Clear input and exit editing mode
-                setManualLocationInput('');
-                setIsEditingLocation(false);
-                
-                Alert.alert('Success', `🎯 Location set to: ${locationInput}\n\nNow showing properties near this location!`);
-            } else {
-                Alert.alert(
-                    'Location Not Found', 
-                    `Could not find "${locationInput}". Please try:\n• Different spelling\n• City name only\n• Full address with city`
-                );
-            }
-        } catch (error) {
-            console.error('❌ Error setting manual location:', error);
-            Alert.alert('Error', 'Failed to set location. Please check your internet connection and try again.');
-        } finally {
-            setIsLocating(false);
-        }
-    };
-
-    // 🚀 FINAL NUCLEAR ANTI-BLINK - Stable render key
-    const stableRenderKey = useMemo(() => 
-        `home_${featuredProperties.length}_${nearbyProperties.length}`, 
-        [featuredProperties.length, nearbyProperties.length]
-    );
+    // Show initial loading overlay to prevent blink
+    if (isInitialLoading) {
+        return (
+            <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+                <Image
+                    source={require("../assets/Blue_logo.png")}
+                    style={{ width: width * 0.5, height: height * 0.15, resizeMode: 'contain', marginBottom: 20 }}
+                />
+                <ActivityIndicator size="large" color={theme.COLORS.primary} />
+                <Text style={{ marginTop: 16, fontSize: 16, color: theme.COLORS.lightText, fontWeight: '600' }}>Loading Properties...</Text>
+            </SafeAreaView>
+        );
+    }
 
     return (
         <SafeAreaView style={styles.container} key={stableRenderKey}>
@@ -1143,14 +1085,26 @@ const Homescreen = ({ navigation }) => {
                     </TouchableOpacity>
 
                     <View style={styles.headerRightContainer}>
-                        <TouchableOpacity 
-                            style={styles.postPropertyButton} 
-                            onPress={() => handleQuickAction('AddSell')}
+                        {/* CRM Button */}
+                        <TouchableOpacity
+                            style={styles.crmIconContainer}
+                            onPress={() => navigation.navigate('AdminLogin')}
+                            activeOpacity={0.8}
                         >
-                            <Text style={styles.postPropertyText}>Post property</Text>
-                            <View style={styles.freeBadge}>
-                                <Text style={styles.freeText}>FREE</Text>
-                            </View>
+                            <LinearGradient
+                                colors={['#4BA3FF', '#1E90FF', '#1873CC']}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={styles.crmGradient}
+                            >
+                                <View style={styles.crmIconInner}>
+                                    <Icon 
+                                        name="business-outline" 
+                                        size={18} 
+                                        color={theme.COLORS.white} 
+                                    />
+                                </View>
+                            </LinearGradient>
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -1160,7 +1114,7 @@ const Homescreen = ({ navigation }) => {
                             activeOpacity={0.8}
                         >
                             <LinearGradient
-                                colors={["#6fb1ff", "#2f86f6"]}
+                                colors={theme.GRADIENTS.primary}
                                 start={{ x: 0, y: 0 }}
                                 end={{ x: 1, y: 1 }}
                                 style={styles.notificationGradient}
@@ -1201,9 +1155,6 @@ const Homescreen = ({ navigation }) => {
                         onSubmitEditing={handleSearchSubmit}
                         returnKeyType="search"
                     />
-                    <TouchableOpacity onPress={handleVoiceSearch}>
-                        <Icon name="mic" size={20} color={theme.COLORS.greyMedium} />
-                    </TouchableOpacity>
                 </View>
             </View>
 
@@ -1214,7 +1165,7 @@ const Homescreen = ({ navigation }) => {
                 keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
             >
                 <ScrollView
-                    contentContainerStyle={{ paddingBottom: 100 }}
+                    contentContainerStyle={{ paddingBottom: 60 }}
                     style={[styles.scrollableContent, { marginTop: FIXED_HEADER_HEIGHT }]}
                     showsVerticalScrollIndicator={false}
                     refreshControl={
@@ -1226,55 +1177,46 @@ const Homescreen = ({ navigation }) => {
                     }
                     keyboardShouldPersistTaps="handled"
                 >
-                    {/* Quick Actions */}
-                    <View style={styles.quickActionsContainer}>
-                        {startedItems.map((item) => (
-                            <TouchableOpacity
-                                key={item.id}
-                                style={styles.iconCard}
-                                activeOpacity={0.8}
-                                onPress={() => handleQuickAction(item.screen)}
-                            >
-                                <LinearGradient
-                                    colors={["#9cc8eb", "#5da9f6"]}
-                                    start={{ x: 0, y: 0 }}
-                                    end={{ x: 1, y: 1 }}
-                                    style={styles.iconCircle}
-                                >
-                                    <View style={styles.iconInnerRing}>
-                                        <Icon 
-                                            name={item.icon} 
-                                            size={width * 0.07} 
-                                            color={theme.COLORS.white} 
-                                        />
-                                    </View>
-                                </LinearGradient>
-                                <Text style={styles.iconLabel}>{item.label}</Text>
-                            </TouchableOpacity>
-                        ))}
+                    {/* Get Started With Section */}
+                    <View style={styles.getStartedSection}>
+                        <Text style={styles.getStartedTitle}>Get Started with</Text>
+                        <View style={styles.quickActionsRow}>
+                            {startedItems.map((item) => (
+                                <View key={item.id} style={styles.actionButtonWrapper}>
+                                    <TouchableOpacity
+                                        style={styles.actionButton}
+                                        activeOpacity={0.7}
+                                        onPress={() => handleQuickAction(item.screen)}
+                                    >
+                                        <View style={styles.actionIconCircle}>
+                                            <Icon 
+                                                name={item.icon} 
+                                                size={28} 
+                                                color="#1F2937" 
+                                            />
+                                        </View>
+                                    </TouchableOpacity>
+                                    <Text style={styles.actionButtonLabel}>{item.label}</Text>
+                                </View>
+                            ))}
+                        </View>
                     </View>
 
                     {/* Featured Houses */}
                     {renderSectionHeader(
-                        "Explore Recent Estates",
+                        "Featured Properties",
                         true,
                         () => navigation.navigate('AllPropertiesScreen', { category: 'Featured' })
                     )}
                     {renderFeaturedContent()}
 
-                    {/* All Properties (Second Section) */}
+                    {/* All Properties */}
                     {renderSectionHeader(
-                        `All Available Properties (${nearbyProperties.length} properties)`,
+                        "All Properties",
                         true,
                         () => navigation.navigate('AllPropertiesScreen', { category: 'All' })
                     )}
-                    {nearbyDistance && nearbyProperties.length > 0 && (
-                        <Text style={styles.nearbyInfoText}>
-                            {nearbyDistance} - Complete property listing
-                        </Text>
-                    )}
-
-                    {renderNearbyContent()}
+                    {renderAllPropertiesContent()}
                 </ScrollView>
             </KeyboardAvoidingView>
 
@@ -1293,7 +1235,7 @@ export default Homescreen;
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: theme.COLORS.background,
+        backgroundColor: '#F8FAFC',
         paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0,
     },
     fixedBannerContainer: {
@@ -1301,6 +1243,7 @@ const styles = StyleSheet.create({
         top: 0,
         width: "100%",
         zIndex: 1,
+        overflow: 'hidden',
     },
     fixedSearchBarContainer: {
         position: 'absolute',
@@ -1324,13 +1267,13 @@ const styles = StyleSheet.create({
         zIndex: 3,
     },
     logo: {
-        width: width * 0.46,
-        height: height * 0.12,
+        width: width * 0.35,
+        height: height * 0.09,
         resizeMode: 'contain',
-        maxWidth: width * 0.75,
+        maxWidth: width * 0.6,
         flexShrink: 1,
         marginLeft: -2,
-        transform: [{ translateX: -20 }, { translateY: -30 }],
+        transform: [{ translateX: -10 }, { translateY: -20 }],
     },
     headerRightContainer: {
         flexDirection: 'row',
@@ -1339,28 +1282,37 @@ const styles = StyleSheet.create({
     postPropertyButton: {
         flexDirection: "row",
         alignItems: "center",
-        paddingVertical: theme.SPACING.s,
-        paddingHorizontal: theme.SPACING.m,
-        borderRadius: theme.RADIUS.m,
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        // borderRadius: 16,
         justifyContent: 'center',
         minWidth: 110,
-        transform: [{ translateX: -25 }, { translateY: -23 }],
+        backgroundColor: 'transparent',
+        transform: [{ translateX: 20 }, { translateY: -5 }],
     },
     postPropertyText: {
-        color: theme.COLORS.primary,
-        fontWeight: "bold",
-        fontSize: theme.FONT_SIZES.body,
+        color: '#1E90FF',
+        fontWeight: "800",
+        fontSize: 14,
+        letterSpacing: -0.3,
     },
     freeBadge: {
-        backgroundColor: theme.COLORS.secondary,
-        borderRadius: theme.RADIUS.s,
-        paddingHorizontal: theme.SPACING.xs,
-        marginLeft: theme.SPACING.xs,
+        backgroundColor: '#1E90FF',
+        borderRadius: 8,
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        marginLeft: 6,
+        shadowColor: "#1E90FF",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.4,
+        shadowRadius: 4,
+        elevation: 3,
     },
     freeText: {
-        color: theme.COLORS.white,
-        fontWeight: "bold",
-        fontSize: 10,
+        color: '#FFFFFF',
+        fontWeight: "900",
+        fontSize: 9,
+        letterSpacing: 0.5,
     },
     notificationIconContainer: {
         width: 46,
@@ -1371,7 +1323,7 @@ const styles = StyleSheet.create({
         backgroundColor: 'transparent',
         marginLeft: theme.SPACING.s,
         overflow: 'visible',
-        transform: [{ translateX: -34 }, { translateY: -22 }],
+        transform: [{ translateX: 0 }, { translateY: -5 }],
     },
     notificationGradient: {
         width: '100%',
@@ -1380,13 +1332,13 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         padding: 4,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.12,
-        shadowRadius: 8,
-        elevation: 7,
-        borderWidth: 0.5,
-        borderColor: 'rgba(255,255,255,0.15)',
+        shadowColor: "#1E90FF",
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.35,
+        shadowRadius: 12,
+        elevation: 10,
+        borderWidth: 2,
+        borderColor: 'rgba(255,255,255,0.3)',
     },
     notificationIconInner: {
         width: '100%',
@@ -1394,45 +1346,89 @@ const styles = StyleSheet.create({
         borderRadius: 24,
         justifyContent: 'center',
         alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    },
+    crmIconContainer: {
+        width: 42,
+        height: 42,
+        borderRadius: 21,
+        justifyContent: "center",
+        alignItems: "center",
+        backgroundColor: 'transparent',
+        marginLeft: theme.SPACING.s,
+        overflow: 'visible',
+        transform: [{ translateX: 0 }, { translateY: -5 }],
+    },
+    crmGradient: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 21,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 3,
+        shadowColor: "#1E90FF",
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.3,
+        shadowRadius: 10,
+        elevation: 8,
+        borderWidth: 2,
+        borderColor: 'rgba(255,255,255,0.2)',
+    },
+    crmIconInner: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 21,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
     },
     notificationBadgeHeader: {
         position: 'absolute',
         top: -6,
         right: -6,
-        backgroundColor: theme.COLORS.notification,
-        borderRadius: 10,
-        minWidth: 18,
-        height: 18,
+        backgroundColor: '#EF4444',
+        borderRadius: 12,
+        minWidth: 20,
+        height: 20,
         justifyContent: 'center',
         alignItems: 'center',
-        paddingHorizontal: 3,
+        paddingHorizontal: 4,
         zIndex: 6,
+        shadowColor: "#EF4444",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.5,
+        shadowRadius: 6,
+        elevation: 8,
+        borderWidth: 2.5,
+        borderColor: '#FFFFFF',
     },
     notificationBadgeText: {
-        color: theme.COLORS.white,
+        color: '#FFFFFF',
         fontSize: 10,
-        fontWeight: '700',
+        fontWeight: '900',
+        letterSpacing: -0.3,
     },
     searchBar: {
         flexDirection: "row",
         alignItems: "center",
-        backgroundColor: theme.COLORS.white,
-        borderRadius: theme.RADIUS.m,
-        paddingHorizontal: theme.SPACING.m,
-        borderWidth: 1,
-        borderColor: theme.COLORS.greyLight,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.05,
-        shadowRadius: 10,
-        elevation: 5,
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        borderRadius: 20,
+        paddingHorizontal: 18,
+        borderWidth: 2,
+        borderColor: 'rgba(30, 144, 255, 0.15)',
+        shadowColor: "#1E90FF",
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.2,
+        shadowRadius: 16,
+        elevation: 12,
     },
     searchInput: {
         flex: 1,
-        paddingHorizontal: theme.SPACING.s,
-        fontSize: theme.FONT_SIZES.body,
-        color: theme.COLORS.greyDark,
-        paddingVertical: Platform.OS === 'ios' ? theme.SPACING.s : 0,
+        paddingHorizontal: 12,
+        fontSize: 15,
+        color: '#1F2937',
+        fontWeight: '600',
+        paddingVertical: Platform.OS === 'ios' ? 12 : 0,
     },
     scrollableContent: {
         flex: 1
@@ -1442,78 +1438,116 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: theme.SPACING.l,
-        marginTop: theme.SPACING.l,
-        marginBottom: theme.SPACING.m,
+        marginTop: 28,
+        marginBottom: 16,
     },
     sectionTitle: {
-        fontSize: theme.FONT_SIZES.h3,
+        fontSize: 20,
         fontWeight: "700",
-        color: theme.COLORS.black,
+        color: '#0F172A',
+        letterSpacing: -0.5,
+        flex: 1,
     },
     seeAllText: {
-        color: theme.COLORS.primary,
+        color: '#1E90FF',
         fontWeight: '600',
-        fontSize: theme.FONT_SIZES.body,
+        fontSize: 14,
+        letterSpacing: -0.2,
     },
     nearbyInfoText: {
-        fontSize: theme.FONT_SIZES.small,
-        color: theme.COLORS.greyMedium,
+        fontSize: 13,
+        color: '#475569',
         marginHorizontal: theme.SPACING.l,
-        marginTop: -theme.SPACING.s,
-        marginBottom: theme.SPACING.s,
-        fontStyle: 'italic',
+        marginTop: -4,
+        marginBottom: 16,
+        fontWeight: '600',
+        backgroundColor: 'rgba(30, 144, 255, 0.05)',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 12,
+        borderLeftWidth: 4,
+        borderLeftColor: '#1E90FF',
+        shadowColor: "#1E90FF",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
     },
-    quickActionsContainer: {
-        flexDirection: "row",
-        justifyContent: "space-around",
+    getStartedSection: {
         paddingHorizontal: theme.SPACING.l,
-        marginTop: theme.SPACING.xl,
-        transform: [{ translateY: -12 }],
+        marginTop: 16,
+        marginBottom: 10,
     },
-    iconCard: {
+    getStartedTitle: {
+        fontSize: 16,
+        fontWeight: "600",
+        color: '#374151',
+        marginBottom: 12,
+        letterSpacing: 0,
+    },
+    quickActionsRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        gap: 8,
+    },
+    actionButtonWrapper: {
+        flex: 1,
+        alignItems: 'center',
+        maxWidth: 80,
+    },
+    actionButton: {
+        width: '100%',
         alignItems: "center",
-        width: width * 0.26,
-    },
-    iconCircle: {
-        width: width * 0.18,
-        height: width * 0.18,
-        borderRadius: theme.RADIUS.m,
         justifyContent: "center",
-        alignItems: "center",
-        padding: width * 0.02,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.12)',
+        backgroundColor: '#87CEEB',
+        paddingVertical: 12,
+        paddingHorizontal: 6,
+        borderRadius: 18,
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 5,
-        elevation: 6,
+        shadowOpacity: 0.12,
+        shadowRadius: 8,
+        elevation: 3,
+        aspectRatio: 1,
     },
-    iconInnerRing: {
-        width: '86%',
-        height: '86%',
-        borderRadius: theme.RADIUS.m * 0.8,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: 'rgba(255,255,255,0.08)',
+    actionIconCircle: {
+        width: 48,
+        height: 48,
+        borderRadius: 16,
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        justifyContent: "center",
+        alignItems: "center",
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 4,
+        elevation: 2,
     },
-    iconLabel: {
-        fontSize: theme.FONT_SIZES.body,
-        fontWeight: "600",
-        textAlign: "center",
-        color: theme.COLORS.greyDark,
-        marginTop: theme.SPACING.s,
+    actionButtonLabel: {
+        fontSize: 16,
+        fontWeight: "700",
+        color: '#1F2937',
+        letterSpacing: -0.2,
+        marginTop: 10,
+        textAlign: 'center',
     },
     horizontalScrollContainer: {
         paddingHorizontal: theme.SPACING.l,
-        paddingBottom: theme.SPACING.l,
+        paddingBottom: 24,
+        paddingTop: 4,
     },
     featuredCard: {
         width: width * 0.75,
-        height: height * 0.25,
-        marginRight: theme.SPACING.m,
-        borderRadius: theme.RADIUS.l,
+        height: height * 0.28,
+        marginRight: 16,
+        borderRadius: 20,
         overflow: 'hidden',
+        backgroundColor: '#FFFFFF',
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
+        elevation: 5,
     },
     featuredImage: {
         width: '100%',
@@ -1522,109 +1556,155 @@ const styles = StyleSheet.create({
     },
     featuredOverlay: {
         ...StyleSheet.absoluteFillObject,
-        borderRadius: theme.RADIUS.l,
+        borderRadius: 20,
     },
     favoriteIconContainer: {
         position: 'absolute',
-        top: theme.SPACING.m,
-        right: theme.SPACING.m,
-        backgroundColor: 'rgba(0,0,0,0.3)',
-        padding: theme.SPACING.xs,
-        borderRadius: theme.RADIUS.full,
+        top: 12,
+        right: 12,
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        padding: 8,
+        borderRadius: 20,
         zIndex: 5,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+        elevation: 3,
     },
     featuredInfo: {
-        padding: theme.SPACING.m,
+        padding: 16,
+        paddingBottom: 20,
     },
     featuredTitle: {
-        fontSize: theme.FONT_SIZES.h4,
+        fontSize: 16,
         fontWeight: '700',
-        color: theme.COLORS.white,
+        color: '#FFFFFF',
+        marginBottom: 6,
+        letterSpacing: -0.5,
+        textShadowColor: 'rgba(0, 0, 0, 0.5)',
+        textShadowOffset: { width: 0, height: 2 },
+        textShadowRadius: 4,
     },
     featuredLocation: {
-        fontSize: theme.FONT_SIZES.body,
-        color: theme.COLORS.greyLight,
-        marginBottom: theme.SPACING.xs,
+        fontSize: 13,
+        color: 'rgba(255,255,255,0.9)',
+        marginBottom: 8,
+        fontWeight: '600',
+        textShadowColor: 'rgba(0, 0, 0, 0.4)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 3,
     },
     featuredPrice: {
-        fontSize: theme.FONT_SIZES.h3,
-        fontWeight: 'bold',
-        color: theme.COLORS.white,
+        fontSize: 20,
+        fontWeight: '800',
+        color: '#FFFFFF',
+        letterSpacing: -0.8,
+        textShadowColor: 'rgba(0, 0, 0, 0.5)',
+        textShadowOffset: { width: 0, height: 2 },
+        textShadowRadius: 4,
     },
     nearbyGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
         justifyContent: 'space-between',
         paddingHorizontal: theme.SPACING.l,
-        marginBottom: theme.SPACING.l,
+        marginBottom: 10,
+        marginTop: 4,
     },
     nearbyCard: {
-        width: (width - theme.SPACING.l * 2 - theme.SPACING.m) / 2,
-        marginBottom: theme.SPACING.m,
-        borderRadius: theme.RADIUS.m,
-        backgroundColor: theme.COLORS.white,
+        width: (width - theme.SPACING.l * 2 - 12) / 2,
+        marginBottom: 16,
+        borderRadius: 16,
+        backgroundColor: '#FFFFFF',
         overflow: 'hidden',
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
+        shadowOpacity: 0.1,
         shadowRadius: 4,
+        elevation: 3,
+    },
+    nearbyMediaContainer: {
+        position: 'relative',
+        width: '100%',
+    },
+    nearbyFavoriteIcon: {
+        position: 'absolute',
+        top: 8,
+        right: 8,
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        padding: 6,
+        borderRadius: 20,
+        zIndex: 5,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 3,
         elevation: 3,
     },
     nearbyImage: {
         width: '100%',
-        height: 100,
-        borderTopLeftRadius: theme.RADIUS.m,
-        borderTopRightRadius: theme.RADIUS.m,
+        height: 120,
+        borderTopLeftRadius: 16,
+        borderTopRightRadius: 16,
         resizeMode: 'cover',
+        backgroundColor: '#E5E7EB',
     },
     nearbyInfo: {
-        padding: theme.SPACING.s,
+        padding: 12,
+        paddingBottom: 14,
+        backgroundColor: '#FFFFFF',
     },
     nearbyTitle: {
-        fontSize: theme.FONT_SIZES.body,
+        fontSize: 14,
         fontWeight: '700',
-        color: theme.COLORS.black,
-        marginBottom: theme.SPACING.xs,
+        color: '#0F172A',
+        marginBottom: 6,
+        letterSpacing: -0.3,
+        lineHeight: 18,
     },
     locationRow: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: theme.SPACING.s,
+        marginBottom: 8,
     },
     nearbyLocation: {
-        fontSize: theme.FONT_SIZES.caption,
-        color: theme.COLORS.greyMedium,
-        marginLeft: 2,
+        fontSize: 11,
+        color: '#64748B',
+        marginLeft: 4,
+        flex: 1,
+        fontWeight: '500',
+        lineHeight: 14,
     },
     priceRatingRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginTop: theme.SPACING.xs,
+        marginTop: 4,
     },
     nearbyPrice: {
-        fontSize: theme.FONT_SIZES.h4,
-        fontWeight: 'bold',
-        color: theme.COLORS.primary,
+        fontSize: 16,
+        fontWeight: '800',
+        color: '#1E90FF',
+        letterSpacing: -0.5,
     },
     pricePerMonth: {
-        fontSize: theme.FONT_SIZES.caption,
-        fontWeight: 'normal',
-        color: theme.COLORS.greyMedium,
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#64748B',
     },
     ratingContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: theme.COLORS.lightBackground,
-        borderRadius: 4,
+        backgroundColor: 'rgba(251, 191, 36, 0.15)',
+        borderRadius: 6,
         paddingHorizontal: 6,
-        paddingVertical: 2,
+        paddingVertical: 3,
     },
     ratingText: {
-        fontSize: theme.FONT_SIZES.caption,
-        fontWeight: '600',
-        color: theme.COLORS.greyDark,
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#F59E0B',
         marginLeft: 3,
     },
     loaderStyle: {
@@ -1634,276 +1714,543 @@ const styles = StyleSheet.create({
         padding: theme.SPACING.xl,
         alignItems: 'center',
         justifyContent: 'center',
+        backgroundColor: 'rgba(239, 68, 68, 0.05)',
+        margin: theme.SPACING.l,
+        borderRadius: 16,
+        borderWidth: 2,
+        borderColor: 'rgba(239, 68, 68, 0.2)',
     },
     errorText: {
-        fontSize: theme.FONT_SIZES.h4,
-        color: theme.COLORS.notification,
-        fontWeight: '500',
+        fontSize: 16,
+        color: '#EF4444',
+        fontWeight: '800',
         textAlign: 'center',
-        marginBottom: theme.SPACING.xs,
+        marginBottom: 8,
     },
     retryText: {
-        fontSize: theme.FONT_SIZES.body,
-        color: theme.COLORS.greyMedium,
+        fontSize: 14,
+        color: '#1E90FF',
+        fontWeight: '700',
         textDecorationLine: 'underline',
     },
     noDataText: {
         textAlign: 'center',
         padding: theme.SPACING.xl,
-        color: theme.COLORS.greyMedium,
-        fontSize: theme.FONT_SIZES.body,
+        color: '#64748B',
+        fontSize: 15,
+        fontWeight: '600',
     },
     floatingChatButton: {
         position: 'absolute',
         bottom: 80,
-        right: theme.SPACING.m,
-        width: 60,
-        height: 60,
-        borderRadius: 30,
+        right: 20,
+        width: 64,
+        height: 64,
+        borderRadius: 32,
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 10,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.25,
-        shadowRadius: 10,
-        elevation: 15,
+        shadowColor: "#1E90FF",
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.4,
+        shadowRadius: 16,
+        elevation: 20,
     },
     chatButtonInnerGlass: {
         width: '100%',
         height: '100%',
-        borderRadius: 30,
+        borderRadius: 32,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: 'rgba(255, 255, 255, 0.4)',
-        borderWidth: 1.5,
-        borderColor: 'rgba(255, 255, 255, 0.6)',
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        borderWidth: 3,
+        borderColor: 'rgba(30, 144, 255, 0.3)',
         overflow: 'hidden',
     },
     notificationBadgeGlass: {
         position: 'absolute',
-        top: 0,
-        right: 0,
-        width: 15,
-        height: 15,
-        borderRadius: 7.5,
-        backgroundColor: theme.COLORS.notification,
-        borderWidth: 2,
-        borderColor: theme.COLORS.white,
+        top: -2,
+        right: -2,
+        width: 18,
+        height: 18,
+        borderRadius: 9,
+        backgroundColor: '#EF4444',
+        borderWidth: 3,
+        borderColor: '#FFFFFF',
+        shadowColor: "#EF4444",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.5,
+        shadowRadius: 6,
+        elevation: 8,
     },
     locationFilterContainer: {
-        padding: theme.SPACING.m,
+        padding: 18,
         marginHorizontal: theme.SPACING.l,
-        marginBottom: theme.SPACING.m,
-        borderRadius: theme.RADIUS.m,
-        backgroundColor: theme.COLORS.white,
-        borderWidth: 1,
-        borderColor: theme.COLORS.greyLight,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 6,
-        elevation: 3,
-    },
-    locationRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: theme.SPACING.s,
+        marginBottom: 20,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        borderWidth: 2,
+        borderColor: 'rgba(30, 144, 255, 0.15)',
+        shadowColor: '#1E90FF',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+        elevation: 8,
     },
     locationText: {
-        fontSize: theme.FONT_SIZES.body,
-        color: theme.COLORS.greyDark,
-        fontWeight: '600',
-        marginLeft: 8,
+        fontSize: 15,
+        color: '#0F172A',
+        fontWeight: '800',
+        marginLeft: 10,
         flex: 1,
+        letterSpacing: -0.3,
     },
     locationButtonsRow: {
         flexDirection: 'row',
-        gap: 10,
-        marginBottom: theme.SPACING.s,
+        gap: 12,
+        marginBottom: 12,
     },
     locationButton: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: theme.COLORS.primary,
-        paddingVertical: 10,
-        paddingHorizontal: 16,
-        borderRadius: theme.RADIUS.s,
+        backgroundColor: '#1E90FF',
+        paddingVertical: 12,
+        paddingHorizontal: 18,
+        borderRadius: 14,
         flex: 1,
-        gap: 6,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-        elevation: 2,
+        gap: 8,
+        shadowColor: '#1E90FF',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.3,
+        shadowRadius: 10,
+        elevation: 8,
     },
     editLocationButton: {
-        backgroundColor: theme.COLORS.white,
-        borderWidth: 1.5,
-        borderColor: theme.COLORS.primary,
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        borderWidth: 2,
+        borderColor: '#1E90FF',
     },
     locationButtonText: {
-        color: theme.COLORS.white,
-        fontWeight: '700',
-        fontSize: theme.FONT_SIZES.caption,
+        color: '#FFFFFF',
+        fontWeight: '800',
+        fontSize: 13,
+        letterSpacing: -0.3,
     },
     editLocationText: {
-        color: theme.COLORS.primary,
-        fontWeight: '700',
-        fontSize: theme.FONT_SIZES.body,
-        textDecorationLine: 'underline',
+        color: '#1E90FF',
+        fontWeight: '800',
+        fontSize: 14,
+        letterSpacing: -0.3,
     },
     distanceFilterRow: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginTop: theme.SPACING.s,
+        marginTop: 12,
+        backgroundColor: 'rgba(30, 144, 255, 0.05)',
+        padding: 12,
+        borderRadius: 12,
     },
     distanceText: {
-        fontSize: theme.FONT_SIZES.body,
-        color: theme.COLORS.greyDark,
-        fontWeight: '600',
+        fontSize: 14,
+        color: '#0F172A',
+        fontWeight: '700',
     },
     distanceInput: {
-        width: 60,
-        height: 40,
-        borderWidth: 1,
-        borderColor: theme.COLORS.greyLight,
-        borderRadius: theme.RADIUS.s,
+        width: 65,
+        height: 44,
+        borderWidth: 2,
+        borderColor: '#1E90FF',
+        borderRadius: 12,
         textAlign: 'center',
-        fontSize: theme.FONT_SIZES.body,
-        color: theme.COLORS.greyDark,
-        backgroundColor: theme.COLORS.lightBackground,
-        marginHorizontal: theme.SPACING.s,
-    },
-    applyButton: {
-        paddingVertical: theme.SPACING.xs,
-        paddingHorizontal: theme.SPACING.m,
-        backgroundColor: theme.COLORS.primary,
-        borderRadius: theme.RADIUS.s,
-        shadowColor: '#000',
+        fontSize: 16,
+        fontWeight: '800',
+        color: '#0F172A',
+        backgroundColor: '#FFFFFF',
+        marginHorizontal: 10,
+        shadowColor: '#1E90FF',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
+        shadowOpacity: 0.1,
         shadowRadius: 4,
         elevation: 2,
     },
+    applyButton: {
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        backgroundColor: '#1E90FF',
+        borderRadius: 12,
+        shadowColor: '#1E90FF',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 6,
+    },
     applyButtonText: {
-        color: theme.COLORS.white,
-        fontWeight: '700',
-        fontSize: theme.FONT_SIZES.body,
+        color: '#FFFFFF',
+        fontWeight: '800',
+        fontSize: 14,
+        letterSpacing: -0.3,
     },
     manualLocationContainer: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: theme.SPACING.m,
-        gap: 8,
+        marginBottom: 16,
+        gap: 10,
     },
     manualLocationInput: {
         flex: 1,
-        height: 46,
-        borderWidth: 1.5,
-        borderColor: theme.COLORS.primary,
-        borderRadius: theme.RADIUS.s,
-        paddingHorizontal: theme.SPACING.m,
-        fontSize: theme.FONT_SIZES.body,
-        color: theme.COLORS.greyDark,
-        backgroundColor: theme.COLORS.white,
-        fontWeight: '500',
+        height: 50,
+        borderWidth: 2,
+        borderColor: '#1E90FF',
+        borderRadius: 16,
+        paddingHorizontal: 16,
+        fontSize: 15,
+        color: '#0F172A',
+        backgroundColor: '#FFFFFF',
+        fontWeight: '700',
+        shadowColor: '#1E90FF',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 4,
     },
     saveButton: {
-        width: 46,
-        height: 46,
+        width: 50,
+        height: 50,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: theme.COLORS.secondary,
-        borderRadius: theme.RADIUS.s,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-        elevation: 2,
+        backgroundColor: '#1E90FF',
+        borderRadius: 16,
+        shadowColor: '#1E90FF',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 6,
     },
     saveButtonText: {
-        color: theme.COLORS.white,
-        fontWeight: '700',
-        fontSize: theme.FONT_SIZES.body,
+        color: '#FFFFFF',
+        fontWeight: '800',
+        fontSize: 15,
     },
     disabledButton: {
         opacity: 0.5,
     },
     distanceUnitText: {
-        fontSize: theme.FONT_SIZES.body,
-        color: theme.COLORS.greyDark,
-        fontWeight: '600',
-        marginRight: theme.SPACING.s,
+        fontSize: 14,
+        color: '#0F172A',
+        fontWeight: '700',
+        marginRight: 8,
     },
-    // New styles for independent location selection
     selectedLocationContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: theme.COLORS.lightBackground,
-        borderRadius: theme.RADIUS.s,
-        paddingHorizontal: theme.SPACING.m,
-        paddingVertical: theme.SPACING.s,
-        marginBottom: theme.SPACING.s,
-        borderWidth: 1,
-        borderColor: theme.COLORS.secondary,
+        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+        borderRadius: 12,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        marginBottom: 12,
+        borderWidth: 2,
+        borderColor: 'rgba(16, 185, 129, 0.3)',
     },
     selectedLocationText: {
         flex: 1,
-        fontSize: theme.FONT_SIZES.caption,
-        color: theme.COLORS.greyDark,
-        fontWeight: '600',
-        marginLeft: 6,
+        fontSize: 13,
+        color: '#059669',
+        fontWeight: '800',
+        marginLeft: 8,
+        letterSpacing: -0.3,
     },
     clearLocationButton: {
-        padding: 4,
+        padding: 6,
     },
-    // Quick location buttons styles
     quickLocationsContainer: {
-        marginBottom: theme.SPACING.m,
+        marginBottom: 16,
     },
     quickLocationsTitle: {
-        fontSize: theme.FONT_SIZES.caption,
-        color: theme.COLORS.greyDark,
-        fontWeight: '600',
-        marginBottom: theme.SPACING.s,
+        fontSize: 13,
+        color: '#475569',
+        fontWeight: '700',
+        marginBottom: 10,
+        letterSpacing: -0.2,
     },
     quickLocationsScroll: {
         paddingRight: theme.SPACING.l,
     },
     quickLocationButton: {
-        backgroundColor: theme.COLORS.lightBackground,
-        borderRadius: theme.RADIUS.s,
-        paddingHorizontal: theme.SPACING.m,
-        paddingVertical: theme.SPACING.s,
-        marginRight: theme.SPACING.s,
-        borderWidth: 1,
-        borderColor: theme.COLORS.primary,
+        backgroundColor: 'rgba(30, 144, 255, 0.08)',
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        marginRight: 10,
+        borderWidth: 2,
+        borderColor: 'rgba(30, 144, 255, 0.2)',
+        shadowColor: '#1E90FF',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
     },
     quickLocationText: {
-        fontSize: theme.FONT_SIZES.caption,
-        color: theme.COLORS.primary,
-        fontWeight: '600',
+        fontSize: 13,
+        color: '#1E90FF',
+        fontWeight: '800',
+        letterSpacing: -0.3,
     },
-    // MediaCard related styles
     featuredMediaContainer: {
         position: 'relative',
-        borderRadius: theme.RADIUS.l,
+        borderRadius: 28,
         overflow: 'hidden',
+        height: '100%',
     },
     featuredMediaCard: {
-        borderRadius: theme.RADIUS.l,
+        borderRadius: 28,
+        height: '100%',
     },
     featuredMediaImage: {
         width: '100%',
-        height: 180,
-        borderRadius: theme.RADIUS.l,
+        height: '100%',
+        borderRadius: 28,
     },
     nearbyMediaCard: {
-        borderTopLeftRadius: theme.RADIUS.m,
-        borderTopRightRadius: theme.RADIUS.m,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+    },
+    // Featured Houses Card Styles (Enhanced Horizontal Layout)
+    featuredHouseCard: {
+        flexDirection: 'row',
+        width: width * 0.87,
+        height: 170,
+        marginRight: 18,
+        borderRadius: 20,
+        backgroundColor: '#FFFFFF',
+        overflow: 'hidden',
+        shadowColor: "#1E90FF",
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+        elevation: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(30, 144, 255, 0.08)',
+    },
+    featuredHouseImageContainer: {
+        position: 'relative',
+        width: '46%',
+        height: '100%',
+        backgroundColor: '#F1F5F9',
+    },
+    featuredHouseMediaCard: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 0,
+    },
+    featuredHouseImage: {
+        width: '100%',
+        height: '100%',
+        resizeMode: 'cover',
+    },
+    featuredHouseFavoriteIcon: {
+        position: 'absolute',
+        top: 12,
+        left: 12,
+        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 5,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.2,
+        shadowRadius: 5,
+        elevation: 5,
+        borderWidth: 1.5,
+        borderColor: 'rgba(255, 255, 255, 0.5)',
+    },
+    propertyTypeBadge: {
+        position: 'absolute',
+        bottom: 12,
+        left: 12,
+        backgroundColor: '#1E90FF',
+        paddingHorizontal: 14,
+        paddingVertical: 6,
+        borderRadius: 8,
+        shadowColor: "#1E90FF",
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.4,
+        shadowRadius: 6,
+        elevation: 5,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.2)',
+    },
+    propertyTypeText: {
+        color: '#FFFFFF',
+        fontSize: 11,
+        fontWeight: '800',
+        letterSpacing: 0.3,
+        textTransform: 'capitalize',
+    },
+    userPropertyBadge: {
+        position: 'absolute',
+        bottom: 12,
+        right: 12,
+        backgroundColor: '#10B981', // Green color for user's property
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+        flexDirection: 'row',
+        alignItems: 'center',
+        shadowColor: "#10B981",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+        elevation: 3,
+    },
+    userPropertyText: {
+        color: '#FFFFFF',
+        fontSize: 9,
+        fontWeight: '700',
+        marginLeft: 3,
+    },
+    featuredHouseDetails: {
+        flex: 1,
+        padding: 14,
+        paddingLeft: 16,
+        paddingRight: 14,
+        justifyContent: 'space-between',
+        backgroundColor: '#FFFFFF',
+    },
+    featuredHouseTitle: {
+        fontSize: 16,
+        fontWeight: '800',
+        color: '#0F172A',
+        marginBottom: 5,
+        letterSpacing: -0.4,
+        lineHeight: 20,
+    },
+    featuredHouseRating: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 5,
+        backgroundColor: 'rgba(251, 191, 36, 0.1)',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+        alignSelf: 'flex-start',
+    },
+    featuredHouseRatingText: {
+        fontSize: 13,
+        fontWeight: '800',
+        color: '#0F172A',
+        marginLeft: 5,
+    },
+    featuredHouseLocation: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 8,
+        paddingVertical: 2,
+    },
+    featuredHouseLocationText: {
+        fontSize: 12,
+        color: '#64748B',
+        marginLeft: 5,
+        flex: 1,
+        fontWeight: '600',
+        letterSpacing: -0.1,
+    },
+    featuredHousePrice: {
+        fontSize: 22,
+        fontWeight: '900',
+        color: '#1E90FF',
+        letterSpacing: -0.8,
+    },
+    featuredHousePriceUnit: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#64748B',
+        letterSpacing: -0.2,
+    },
+    // Residential Card Styles (Horizontal List)
+    residentialCard: {
+        width: width * 0.75,
+        marginRight: 16,
+        borderRadius: 16,
+        backgroundColor: '#FFFFFF',
+        overflow: 'hidden',
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 4,
+        borderWidth: 1,
+        borderColor: 'rgba(226, 232, 240, 0.8)',
+    },
+    residentialImageContainer: {
+        width: '100%',
+        height: 140,
+        backgroundColor: '#F1F5F9',
+    },
+    residentialMediaCard: {
+        width: '100%',
+        height: '100%',
+        borderTopLeftRadius: 16,
+        borderTopRightRadius: 16,
+    },
+    residentialImage: {
+        width: '100%',
+        height: '100%',
+        resizeMode: 'cover',
+        borderTopLeftRadius: 16,
+        borderTopRightRadius: 16,
+    },
+    residentialDetails: {
+        padding: 14,
+        paddingTop: 12,
+    },
+    residentialTitle: {
+        fontSize: 16,
+        fontWeight: '800',
+        color: '#0F172A',
+        marginBottom: 6,
+        letterSpacing: -0.3,
+    },
+    residentialLocation: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 10,
+    },
+    residentialLocationText: {
+        fontSize: 13,
+        color: '#64748B',
+        marginLeft: 4,
+        flex: 1,
+        fontWeight: '600',
+    },
+    residentialPriceRatingRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    residentialPrice: {
+        fontSize: 18,
+        fontWeight: '900',
+        color: '#0F172A',
+        letterSpacing: -0.5,
+    },
+    residentialRating: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(251, 191, 36, 0.1)',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+    },
+    residentialRatingText: {
+        fontSize: 13,
+        fontWeight: '800',
+        color: '#0F172A',
+        marginLeft: 4,
     },
 });

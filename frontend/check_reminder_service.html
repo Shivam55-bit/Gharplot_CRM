@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quick Reminder Check</title>
+    <style>body{font-family:monospace;padding:20px;background:#1e1e1e;color:#d4d4d4;}button{padding:10px;margin:5px;}</style>
+</head>
+<body>
+    <h2>Quick Reminder Service Check</h2>
+    <button onclick="check()">Check Reminders Now</button>
+    <button onclick="clearCache()">Clear Cache</button>
+    <pre id="out"></pre>
+    <script>
+        const out = document.getElementById('out');
+        const API = 'https://abc.bhoomitechzone.us';
+        
+        async function check() {
+            const token = localStorage.getItem('token') || localStorage.getItem('employeeToken') || localStorage.getItem('adminToken');
+            if (!token) return out.textContent = 'No token found!';
+            
+            try {
+                const res = await fetch(API + '/employee/reminders/list?status=pending&limit=50', {
+                    headers: {'Authorization': 'Bearer ' + token}
+                });
+                const data = await res.json();
+                const reminders = data?.data?.reminders || [];
+                
+                out.textContent = `Found ${reminders.length} pending reminders:\n\n`;
+                
+                reminders.forEach((r, i) => {
+                    const stored = r.reminderDateTime;
+                    const date = new Date(stored);
+                    const now = new Date();
+                    const diff = Math.floor((now - date) / 60000);
+                    
+                    out.textContent += `[${i+1}] ${r.title || 'Untitled'}\n`;
+                    out.textContent += `    ID: ${r._id}\n`;
+                    out.textContent += `    Stored: ${stored}\n`;
+                    out.textContent += `    Parsed: ${date.toLocaleString()}\n`;
+                    out.textContent += `    ${diff < 0 ? 'In ' + Math.abs(diff) + ' mins' : diff + ' mins ago'}\n`;
+                    out.textContent += `    ${diff >= 0 && diff <= 5 ? '⚠️ SHOULD BE DUE!' : ''}\n\n`;
+                });
+                
+                const cached = JSON.parse(localStorage.getItem('checkedReminders') || '[]');
+                out.textContent += `\nCached (already shown): ${cached.length} reminders\n`;
+                cached.forEach(id => out.textContent += `  - ${id}\n`);
+                
+            } catch(e) {
+                out.textContent = 'Error: ' + e.message;
+            }
+        }
+        
+        function clearCache() {
+            localStorage.removeItem('checkedReminders');
+            out.textContent = 'Cache cleared! Reminders can popup again.';
+        }
+    </script>
+</body>
+</html>

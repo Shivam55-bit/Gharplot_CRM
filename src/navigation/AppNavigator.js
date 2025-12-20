@@ -1,9 +1,12 @@
-import React from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // --- MAIN SCREENS ---
 import SplashScreen from '../screens/SplashScreen';
+import WebSplashScreen from '../screens/WebSplashScreen';
+import { Platform } from 'react-native';
 import OnboardingScreen from '../screens/OnboardingScreen';
 import LoginScreen from '../screens/LoginScreen';
 import SignupScreen from '../screens/SignupScreen';
@@ -24,6 +27,8 @@ import NotificationsScreen from '../profile/NotificationsScreen';
 import SettingsScreen from '../profile/SettingsScreen';
 import HelpScreen from '../profile/HelpScreen';
 import ChangePasswordScreen from '../profile/ChangePasswordScreen';
+import PrivacySecurityScreen from '../profile/PrivacySecurityScreen';
+import AboutScreen from '../profile/AboutScreen';
 // import ServiceDetailsScreen from '../screens/ServiceDetailsScreen';
 // import ScheduleScreen from '../screens/ScheduleScreen';
 import BookingConfirmedScreen from '../screens/BookingConfirmedScreen';
@@ -41,8 +46,15 @@ import TestFCMScreen from '../screens/TestFCMScreen';
 import NotificationListScreen from '../screens/NotificationListScreen';
 import TestLoginScreen from '../screens/TestLoginScreen';
 
+// --- CRM SCREENS ---
+import AdminLogin from '../crm/crmscreens/CRM/AdminLogin';
+import EmployeeLogin from '../crm/crmscreens/CRM/EmployeeLogin';
+import DashboardAdmin from '../crm/crmscreens/Admin/DashboardAdmin';
+
 // --- NAVIGATION ---
 import BottomTabNavigation from '../navigation/BottomTabNavigation';
+import EmployeeBottomTabNavigation from '../navigation/EmployeeBottomTabNavigation';
+import AdminNavigator from '../navigation/AdminNavigator';
 
 // --- QUICK ACTION SCREENS ---
 import AddSellScreen from '../screens/AddSellScreen';
@@ -55,11 +67,48 @@ import SellScreen from '../screens/Quick_Action/SellScreen';
 const Stack = createStackNavigator();
 
 const AppNavigator = React.forwardRef((props, ref) => {
+  // Check for force logout flag on app state change
+  useEffect(() => {
+    const checkForceLogout = async () => {
+      try {
+        const forceLogout = await AsyncStorage.getItem('forceLogout');
+        
+        if (forceLogout === 'true') {
+          console.log('🚨 Force logout detected - clearing flag and redirecting to login');
+          
+          // Clear the flag
+          await AsyncStorage.removeItem('forceLogout');
+          
+          // Reset navigation to login screen
+          if (ref?.current) {
+            ref.current.reset({
+              index: 0,
+              routes: [{ name: 'LoginScreen' }],
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error checking force logout:', error);
+      }
+    };
+    
+    // Check immediately on mount
+    checkForceLogout();
+    
+    // Check periodically (every 2 seconds) to catch logout from API calls
+    const interval = setInterval(checkForceLogout, 2000);
+    
+    return () => clearInterval(interval);
+  }, [ref]);
+  
   return (
     <NavigationContainer ref={ref}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {/* Onboarding + Auth Flow */}
-        <Stack.Screen name="Splash" component={SplashScreen} />
+        <Stack.Screen 
+          name="Splash" 
+          component={Platform.OS === 'web' ? WebSplashScreen : SplashScreen} 
+        />
         <Stack.Screen name="Onboarding" component={OnboardingScreen} />
         <Stack.Screen name="LoginScreen" component={LoginScreen} />
         <Stack.Screen name="SignupScreen" component={SignupScreen} />
@@ -94,6 +143,8 @@ const AppNavigator = React.forwardRef((props, ref) => {
         <Stack.Screen name="Profile" component={ProfileScreen} />
         <Stack.Screen name="HomeScreen" component={HomeScreen} />
         <Stack.Screen name="ChangePasswordScreen" component={ChangePasswordScreen} />
+        <Stack.Screen name="PrivacySecurity" component={PrivacySecurityScreen} />
+        <Stack.Screen name="About" component={AboutScreen} />
 
         {/* Quick Action */}
         <Stack.Screen name="AddSell" component={AddSellScreen} />
@@ -109,6 +160,12 @@ const AppNavigator = React.forwardRef((props, ref) => {
         
         {/* Test Login Screen */}
         <Stack.Screen name="TestLogin" component={TestLoginScreen} />
+        
+        {/* CRM Screens */}
+        <Stack.Screen name="AdminLogin" component={AdminLogin} />
+        <Stack.Screen name="EmployeeLogin" component={EmployeeLogin} />
+        <Stack.Screen name="AdminApp" component={AdminNavigator} />
+        <Stack.Screen name="EmployeeApp" component={EmployeeBottomTabNavigation} />
       </Stack.Navigator>
     </NavigationContainer>
   );

@@ -1,0 +1,165 @@
+/* ===============================
+   DashboardOverview.css - Enhanced
+   =============================== */
+
+.dashboard-overview {
+  font-family: "Poppins", "Inter", system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  color: #111827;
+  padding: 0 !important;
+  width: 100%;
+}
+
+/* Chart container wrapper with box shadow */
+.chart-container-wrapper {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(16, 24, 40, 0.18);
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  transition: all 0.3s cubic-bezier(0.2, 0.9, 0.3, 1);
+  will-change: transform, box-shadow;
+  width: 100%;
+  height: 100%;
+}
+
+.chart-container-wrapper:hover {
+  transform: translateY(-4px) scale(1.01);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.22);
+  border-color: rgba(17, 24, 39, 0.12);
+}
+
+/* ---------- Titles ---------- */
+.card-title {
+  font-family: "Poppins", sans-serif;
+  font-weight: 600;
+  color: #0f172a;
+  letter-spacing: 0.3px;
+  font-size: 1.05rem;
+}
+
+/* ---------- Dropdown ---------- */
+.select-ghost {
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  background: #f9fafb;
+  padding: 0.25rem 0.5rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: #374151;
+  transition: all 0.2s ease;
+}
+.select-ghost:hover {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+/* ---------- Chart Containers ---------- */
+.chart-area {
+  height: 300px;
+  position: relative;
+  overflow: visible;
+}
+
+/* subtle gradient background for charts */
+.chart-card .chart-area,
+.growth-card .chart-area {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border-radius: 8px;
+  padding: 0.5rem;
+}
+
+/* ---------- Indicators ---------- */
+.indicators .icon-box {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f1f5f9;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.04);
+  transition: transform 0.2s ease;
+}
+.indicators .icon-box:hover {
+  transform: scale(1.05);
+}
+
+/* Mini Icons */
+.coin-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #fff3e0, #ffd7b5);
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.profit-icon {
+  width: 20px;
+  height: 14px;
+  background: linear-gradient(145deg, #dcfce7, #bbf7d0);
+  border-radius: 4px;
+}
+
+.cost-icon {
+  width: 20px;
+  height: 14px;
+  background: linear-gradient(145deg, #fff7ed, #ffedd5);
+  border-radius: 4px;
+}
+
+/* ---------- Legend + Badges ---------- */
+.stats-legend .legend-box {
+  width: 14px;
+  height: 14px;
+  border-radius: 6px;
+  display: inline-block;
+  margin-right: 8px;
+}
+.legend-box.gray { background: #d1d5db; }
+.legend-box.orange { background: #fb923c; }
+
+.yearly-badge {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.35rem 0.6rem;
+  border-radius: 10px;
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+/* ---------- Text Colors ---------- */
+.text-success { color: #16a34a !important; }
+.text-danger { color: #dc2626 !important; }
+
+/* ---------- Responsive ---------- */
+@media (min-width: 992px) {
+  .dashboard-overview {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+}
+
+@media (max-width: 991.98px) {
+  .chart-area { height: 240px; }
+  
+  .chart-container-wrapper {
+    box-shadow: 0 2px 8px rgba(16, 24, 40, 0.15);
+  }
+  
+  .chart-container-wrapper:hover {
+    transform: translateY(-2px) scale(1.005);
+    box-shadow: 0 4px 12px rgba(16, 24, 40, 0.18);
+  }
+}
+
+@media (max-width: 575.98px) {
+  .chart-area { height: 200px; }
+  .card-title { font-size: 1rem; }
+  
+  .chart-container-wrapper {
+    box-shadow: 0 2px 8px rgba(16, 24, 40, 0.15);
+  }
+  
+  .chart-container-wrapper:hover {
+    transform: translateY(-2px) scale(1.005);
+    box-shadow: 0 4px 12px rgba(16, 24, 40, 0.18);
+  }
+}

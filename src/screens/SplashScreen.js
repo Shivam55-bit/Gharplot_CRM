@@ -8,20 +8,15 @@ import {
   Dimensions,
   StatusBar,
 } from "react-native";
-import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Stop } from "react-native-svg";
 import { checkAutoLogin } from '../utils/authManager';
 
 const { width } = Dimensions.get("window");
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 const SplashScreen = ({ navigation }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(40)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
-
-  const circleRadius = 70;
-  const circleCircumference = 2 * Math.PI * circleRadius;
 
 
 
@@ -62,11 +57,6 @@ const SplashScreen = ({ navigation }) => {
     return () => clearTimeout(timer);
   }, []);
 
-  const strokeDashoffset = progressAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [circleCircumference, 0],
-  });
-
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor="#ffffff" barStyle="dark-content" />
@@ -80,39 +70,24 @@ const SplashScreen = ({ navigation }) => {
           },
         ]}
       >
-        {/* Logo with Animated Circle */}
+        {/* Logo with Simple Animated Circle */}
         <View style={styles.logoWrapper}>
-          <Svg width={180} height={180} style={styles.circularProgress}>
-            <Defs>
-              <SvgLinearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                <Stop offset="0%" stopColor="#007bff" stopOpacity="1" />
-                <Stop offset="100%" stopColor="#00b4d8" stopOpacity="1" />
-              </SvgLinearGradient>
-            </Defs>
-
-            <Circle
-              cx="90"
-              cy="90"
-              r={circleRadius}
-              stroke="rgba(0,0,0,0.05)"
-              strokeWidth="10"
-              fill="none"
+          <View style={styles.circularProgress}>
+            <Animated.View
+              style={[
+                styles.progressCircle,
+                {
+                  opacity: progressAnim,
+                  transform: [{ 
+                    rotate: progressAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['0deg', '360deg']
+                    })
+                  }]
+                }
+              ]}
             />
-
-            <AnimatedCircle
-              cx="90"
-              cy="90"
-              r={circleRadius}
-              stroke="url(#progressGradient)"
-              strokeWidth="10"
-              fill="none"
-              strokeDasharray={circleCircumference}
-              strokeDashoffset={strokeDashoffset}
-              strokeLinecap="round"
-              rotation="-90"
-              origin="90, 90"
-            />
-          </Svg>
+          </View>
 
           <View style={styles.logoCircle}>
             <Image
@@ -167,6 +142,21 @@ const styles = StyleSheet.create({
   },
   circularProgress: {
     position: "absolute",
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    borderWidth: 8,
+    borderColor: "rgba(0,0,0,0.05)",
+  },
+  progressCircle: {
+    position: "absolute",
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    borderWidth: 8,
+    borderColor: "transparent",
+    borderTopColor: "#007bff",
+    borderRightColor: "#00b4d8",
   },
   logoCircle: {
     width: 130,

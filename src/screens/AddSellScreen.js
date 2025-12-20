@@ -14,6 +14,8 @@ import {
 import Icon from "react-native-vector-icons/Ionicons";
 import LinearGradient from "react-native-linear-gradient";
 import { launchImageLibrary } from "react-native-image-picker";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+// Import the regular property API
 import { addProperty } from "../services/propertyapi";
 import { simulatePropertyAddedNotification } from "../utils/testNotifications";
 
@@ -132,6 +134,36 @@ const AddSellScreen = ({ navigation }) => {
   }, []);
 
   // --- Submit Property ---
+  // Add a function to sync local properties when connection is restored
+  const syncLocalProperties = useCallback(async () => {
+    try {
+      const localPropertiesString = await AsyncStorage.getItem('local_properties');
+      if (!localPropertiesString) return;
+      
+      const localProperties = JSON.parse(localPropertiesString);
+      const pendingProperties = localProperties.filter(prop => prop.status === 'pending_sync');
+      
+      if (pendingProperties.length > 0) {
+        console.log(`🔄 Found ${pendingProperties.length} local properties to sync`);
+        
+        for (const localProp of pendingProperties) {
+          try {
+            await addProperty(localProp);
+            console.log('✅ Synced local property:', localProp.id);
+            
+            // Remove synced property from local storage
+            const updatedProperties = localProperties.filter(p => p.id !== localProp.id);
+            await AsyncStorage.setItem('local_properties', JSON.stringify(updatedProperties));
+          } catch (syncError) {
+            console.warn('Failed to sync property:', localProp.id, syncError.message);
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('Error syncing local properties:', error.message);
+    }
+  }, []);
+
   const handleSubmit = useCallback(async () => {
     if (!propertyLocation || !price || !areaDetails || !description) {
       Alert.alert("Error", "Please fill all required fields.");
@@ -158,13 +190,93 @@ const AddSellScreen = ({ navigation }) => {
         propertyType,
         commercialType: propertyType === "Commercial" ? commercialType : undefined,
         residentialType: propertyType === "Residential" ? residentialType : undefined,
-        // Add potential missing fields that backend might expect
-        contactNumber: "", // Empty string instead of undefined
-        phoneNumber: "", // Alternative field name
-        mobile: "", // Another alternative
+        // Add property fields
+        title: `${propertyType} ${purpose} in ${propertyLocation}`,
+        status: 'active',
+        contactNumber: "", // Can be filled from user profile
+        phoneNumber: "", 
+        mobile: "",
+        // Add media files in proper format
+        media: photosAndVideo.map(file => ({
+          uri: file.uri,
+          type: file.type || 'image/jpeg',
+          name: file.fileName || file.name || `media-${Date.now()}.jpg`,
+        }))
       };
 
-      const data = await addProperty(payload, photosAndVideo);
+      // Try multiple property creation approaches
+      let data;
+      try {
+        // Try property API
+        console.log('🚀 Attempting property creation...');
+        const response = await addProperty(payload);
+        
+        data = {
+          message: "Property added successfully",
+          property: response.data || response
+        };
+        console.log('✅ Property creation successful');
+        
+      } catch (propertyError) {
+        console.log('Property creation failed:', propertyError.message);
+        
+        // Fallback: Try direct API call to working server
+        try {
+          console.log('🚀 Attempting direct API call...');
+          const directResponse = await fetch('https://abc.bhoomitechzone.us/api/property/create', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${await AsyncStorage.getItem('userToken')}`,
+            },
+            body: JSON.stringify(propertyPayload),
+          });
+          
+          if (directResponse.ok) {
+            const directData = await directResponse.json();
+            data = {
+              message: "Property added successfully",
+              property: directData.property || directData
+            };
+            console.log('✅ Direct API call successful');
+          } else {
+            throw new Error(`Server responded with status: ${directResponse.status}`);
+          }
+        } catch (directError) {
+          console.log('Direct API call also failed:', directError.message);
+          
+          // Final fallback: Create local property record
+          console.log('💾 Creating local property record...');
+          
+          const localProperty = {
+            id: `local_${Date.now()}`,
+            ...payload,
+            createdAt: new Date().toISOString(),
+            status: 'pending_sync',
+            isLocal: true,
+            // Handle images properly for offline viewing
+            images: photosAndVideo.map(file => ({
+              uri: file.uri,
+              url: file.uri,
+              type: file.type || 'image/jpeg',
+              name: file.fileName || file.name || `image_${Date.now()}.jpg`
+            })),
+            photos: photosAndVideo.map(file => file.uri), // Legacy format
+            photosAndVideo: photosAndVideo // Full file objects
+          };
+          
+          // Store locally
+          const existingProperties = await AsyncStorage.getItem('local_properties');
+          const localProperties = existingProperties ? JSON.parse(existingProperties) : [];
+          localProperties.push(localProperty);
+          await AsyncStorage.setItem('local_properties', JSON.stringify(localProperties));
+          
+          data = {
+            message: "Property saved locally. Will sync when server connection is restored.",
+            property: localProperty
+          };
+        }
+      }
 
       // Add notification for property added (simulating backend notification)
       try {
@@ -186,12 +298,12 @@ const AddSellScreen = ({ navigation }) => {
             type: 'new_property'
           };
 
-          const response = await fetch('http://abc.ridealmobility.com/application/notify-update', {
+          const response = await fetch('https://abc.bhoomitechzone.us/application/notify-update', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify(notificationPayload)
+            body: JSON.stringify(notificationPayload),
           });
 
           const result = await response.json();
@@ -212,9 +324,40 @@ const AddSellScreen = ({ navigation }) => {
       }
 
       Alert.alert("Success", data.message || "Property added successfully");
+      
+      // Show additional info if saved locally
+      if (data.property?.isLocal) {
+        setTimeout(() => {
+          Alert.alert(
+            "Offline Mode", 
+            "Your property has been saved locally with photos and will be uploaded automatically when the server connection is restored. You can view it in your property list.",
+            [
+              {
+                text: "View Property",
+                onPress: () => {
+                  // Property details screen will already be shown
+                }
+              },
+              { text: "OK" }
+            ]
+          );
+        }, 1000);
+      }
+      
       navigation.replace("PropertyDetailsScreen", { 
-        property: data.property,
-        fromAddProperty: true 
+        property: {
+          ...data.property,
+          // Ensure images are properly formatted for display
+          images: photosAndVideo.map(file => ({
+            uri: file.uri,
+            url: file.uri, // Fallback for different image display patterns
+            type: file.type || 'image/jpeg'
+          })),
+          photosAndVideo: photosAndVideo, // Keep original format
+          isLocalProperty: data.property?.isLocal || false
+        },
+        fromAddProperty: true,
+        isOffline: data.property?.isLocal || false
       });
     } catch (err) {
       Alert.alert("Error", err.message || "Failed to add property");

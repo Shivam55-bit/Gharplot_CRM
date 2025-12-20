@@ -5,7 +5,7 @@ import io from 'socket.io-client';
 import { getAuthToken } from '../services/chatApi'; 
 
 // 🚨 IMPORTANT: Use 'http' or 'https' for the base URL 
-const SOCKET_URL = 'http://abc.ridealmobility.com'; 
+const SOCKET_URL = 'https://abc.bhoomitechzone.us'; 
 
 /**
  * Custom hook to manage WebSocket connection and real-time chat messages.

@@ -4,14 +4,14 @@
  * FIX: Enhanced handleResponse to construct absolute URL for the 'avatar' field,
  * ensuring the image displays correctly in the React Native <Image> component.
  */
-// NOTE: authApi is imported to access token retrieval functions
-import authApi from './authApi'; 
+// NOTE: getToken is imported to access token retrieval function
+import { getToken } from './authApi'; 
 
 // CRITICAL: Define two separate URLs:
 // 1. BASE_URL for API calls (includes /api)
 // 2. SERVER_ROOT for static assets (images, uploads)
-const API_BASE_URL = 'http://abc.ridealmobility.com/api'; 
-const SERVER_ROOT = 'http://abc.ridealmobility.com'; // Root URL for image assets
+const API_BASE_URL = 'https://abc.bhoomitechzone.us/api'; 
+const SERVER_ROOT = 'https://abc.bhoomitechzone.us'; // Root URL for image assets
 
 // Helper function to ensure URL is absolute using the SERVER_ROOT for assets
 const makeAbsoluteUrl = (path) => {
@@ -31,6 +31,19 @@ const makeAbsoluteUrl = (path) => {
 const handleResponse = async (response) => {
     if (!response.ok) {
         let errorText = `HTTP error! Status: ${response.status}`;
+        
+        // Check for authentication errors (401 Unauthorized, 403 Forbidden)
+        if (response.status === 401 || response.status === 403) {
+            console.log('🔒 Authentication error detected:', response.status);
+            try {
+                const errorBody = await response.json();
+                errorText = errorBody.message || 'Session expired. Please login again.';
+            } catch (e) {
+                errorText = 'Session expired. Please login again.';
+            }
+            throw new Error(errorText);
+        }
+        
         try {
             const errorBody = await response.json();
             // Try to extract a specific error message from the response body
@@ -102,7 +115,7 @@ export async function getUserProfile(userId) {
     if (!userId) throw new Error("User ID is required for fetching profile.");
     
     // Get the JWT token using the helper function from authapi
-    const token = await authApi.getToken();
+    const token = await getToken();
     if (!token) throw new Error("Authentication token missing. Please log in.");
 
     const url = `${API_BASE_URL}/users/${userId}`; 
@@ -125,7 +138,7 @@ export async function getUserProfile(userId) {
  * @returns {Promise<object>} - The user profile data (including counts).
  */
 export async function getCurrentUserProfile() {
-    const token = await authApi.getToken();
+    const token = await getToken();
     if (!token) throw new Error("Authentication token missing. Please log in.");
 
     // This is the direct endpoint from your cURL command
@@ -172,7 +185,7 @@ export async function updateUserProfile(userIdOrProfileData, maybeProfileData) {
         profileData = maybeProfileData || {};
     }
 
-    const token = await authApi.getToken();
+    const token = await getToken();
     if (!token) throw new Error("Authentication token missing. Please log in.");
 
     const url = userId ? `${API_BASE_URL}/users/edit-profile/${userId}` : `${API_BASE_URL}/users/edit-profile`;

@@ -28,6 +28,35 @@ const PropertyInquiryFormScreen = ({ route, navigation }) => {
     return p._id || p.id || p.propertyId || p.uuid || p.uid || null;
   };
   const normalizedPropertyId = getPropertyId(property);
+  
+  // Check if inquiry was already submitted when component mounts
+  React.useEffect(() => {
+    const checkInquiryStatus = async () => {
+      try {
+        const propertyId = normalizedPropertyId;
+        if (propertyId) {
+          const inquiryFlag = await AsyncStorage.getItem(`inquirySubmitted:${propertyId}`);
+          if (inquiryFlag) {
+            // Already submitted, show alert and navigate back
+            Alert.alert(
+              'Already Submitted',
+              'You have already submitted an inquiry for this property. The agent will contact you soon.',
+              [
+                {
+                  text: 'OK',
+                  onPress: () => navigation.goBack()
+                }
+              ]
+            );
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to check inquiry status:', error);
+      }
+    };
+
+    checkInquiryStatus();
+  }, [normalizedPropertyId, navigation]);
 
   // Resolve image URL: support property.image, or photosAndVideo array (may be relative path from backend)
   const resolveImage = () => {
@@ -120,12 +149,35 @@ const PropertyInquiryFormScreen = ({ route, navigation }) => {
             console.warn('Failed to persist inquiry flag', setErr);
           }
 
-          // Navigate back to PropertyDetailsScreen and pass the inquiry
-          navigation.navigate('PropertyDetailsScreen', { property, inquiry: res.inquiry });
+          // Navigate back to PropertyDetailsScreen
+          navigation.goBack();
         } catch (err) {
           console.error('Inquiry submit failed', err);
           const message = err && err.message ? String(err.message) : 'Failed to submit inquiry. Please try again.';
-          Alert.alert('Submission failed', message);
+          
+          // Check if error is about duplicate inquiry
+          if (message.includes('already submitted') || message.includes('duplicate')) {
+            // Mark as submitted and navigate back
+            try {
+              const pid = normalizedPropertyId || payload.propertyId;
+              if (pid) await AsyncStorage.setItem(`inquirySubmitted:${pid}`, '1');
+            } catch (setErr) {
+              console.warn('Failed to persist inquiry flag', setErr);
+            }
+            
+            Alert.alert(
+              'Already Submitted',
+              'You have already submitted an inquiry for this property.',
+              [
+                {
+                  text: 'OK',
+                  onPress: () => navigation.goBack()
+                }
+              ]
+            );
+          } else {
+            Alert.alert('Submission failed', message);
+          }
         } finally {
           setLoading(false);
         }

@@ -268,7 +268,7 @@ export const sendTestFCMNotification = async () => {
 
     // Try to send via backend (if available)
     try {
-      const response = await fetch('http://abc.ridealmobility.com/api/test-notification', {
+      const response = await fetch('https://abc.bhoomitechzone.us/api/test-notification', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

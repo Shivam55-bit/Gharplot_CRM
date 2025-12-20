@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
 import { DeviceEventEmitter } from 'react-native';
-// NOTE: Make sure formatImageUrl correctly prepends your base URL (e.g., http://abc.ridealmobility.com/)
+// NOTE: Make sure formatImageUrl correctly prepends your base URL (e.g., https://abc.bhoomitechzone.us/)
 import { formatImageUrl, formatPrice } from '../services/homeApi'; 
 
 // --- Import the API function from the new service file ---

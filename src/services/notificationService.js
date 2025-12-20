@@ -139,12 +139,12 @@ export const sendServiceCompleteNotification = async (serviceData) => {
 
 /**
  * Send system update notification using the real backend API
- * POST http://abc.ridealmobility.com/application/notify-update
+ * POST https://abc.bhoomitechzone.us/application/notify-update
  */
 export const sendSystemUpdateNotification = async (updateData) => {
     try {
         // Use the actual backend endpoint
-        const apiUrl = 'http://abc.ridealmobility.com/application/notify-update';
+        const apiUrl = 'https://abc.bhoomitechzone.us/application/notify-update';
         
         const payload = {
             title: updateData.title || "New App Update Available!",

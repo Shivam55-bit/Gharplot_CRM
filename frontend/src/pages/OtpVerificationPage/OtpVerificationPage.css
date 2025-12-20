@@ -1,0 +1,356 @@
+/* ===== Main Container ===== */
+.otppage-container {
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+/* ===== Form Section (Left Side) ===== */
+.otppage-form-section {
+  flex: 1;
+  background-color: #fff;
+}
+
+.otppage-step-text {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.otppage-step-number {
+  color: #28a745;
+  font-weight: 600;
+  margin-right: 5px;
+}
+
+/* ===== OTP Input Styling ===== */
+.otppage-inputs-container {
+  max-width: 300px;
+  margin: 0 auto;
+}
+
+.otppage-input {
+  width: 45px;
+  height: 50px;
+  border-radius: 12px;
+  border: 2px solid #ddd;
+  font-size: 1.5rem;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  background-color: #f8f9fa;
+}
+
+.otppage-input:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.1);
+  background-color: #fff;
+  transform: scale(1.05);
+}
+
+.otppage-input:not(:placeholder-shown) {
+  border-color: #28a745;
+  background-color: #f8fff9;
+  color: #28a745;
+}
+
+/* Custom Error State - Only Red Border */
+.otppage-input-error {
+  border-color: #dc3545 !important;
+  background-color: #fff !important;
+  animation: shake 0.3s ease-in-out;
+}
+
+.otppage-input-error:focus {
+  border-color: #dc3545 !important;
+  box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.15) !important;
+}
+
+/* Custom Error Message */
+.otppage-error-message {
+  color: #dc3545;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-align: center;
+  display: block;
+  margin-top: 0.5rem;
+}
+
+.otppage-input.is-invalid {
+  border-color: #dc3545;
+  background-color: #fff5f5;
+}
+
+/* ===== Buttons ===== */
+.btn-primary {
+  background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+  border: none;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-link {
+  color: #007bff;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.btn-link:hover {
+  color: #0056b3;
+  transform: translateY(-1px);
+}
+
+/* ===== Timer and Status ===== */
+.otppage-timer {
+  color: #28a745;
+  font-weight: 500;
+}
+
+.otppage-expired {
+  color: #dc3545;
+  font-weight: 500;
+}
+
+/* ===== Info Section (Right Side) ===== */
+.otppage-info-section {
+  flex: 1;
+  position: relative;
+  background-image: url("https://images.unsplash.com/photo-1563986768609-322da13575f3");
+  background-size: cover;
+  background-position: center;
+  color: #fff;
+}
+
+.otppage-info-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, rgba(40, 167, 69, 0.8) 0%, rgba(25, 135, 84, 0.9) 100%);
+  z-index: 1;
+}
+
+.otppage-info-logo {
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.blockquote {
+  font-size: 1rem;
+  line-height: 1.6;
+  max-width: 400px;
+  margin: auto;
+  font-style: italic;
+}
+
+/* ===== Help Section ===== */
+.bg-light {
+  background-color: #f8f9fa !important;
+  border: 1px solid #e9ecef;
+}
+
+/* ===== Loading States ===== */
+.spinner-border-sm {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* ===== Animations ===== */
+@keyframes slideInUp {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.otppage-form-section > div {
+  animation: slideInUp 0.6s ease-out;
+}
+
+/* ===== Input Animations ===== */
+.otppage-input {
+  animation: fadeInScale 0.3s ease-out;
+}
+
+@keyframes fadeInScale {
+  from {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* ===== Validation States ===== */
+.is-invalid {
+  animation: shake 0.3s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(5px);
+  }
+}
+
+/* ===== Security Features Styling ===== */
+.otppage-info-section small {
+  opacity: 0.9;
+}
+
+.otppage-info-section .bi {
+  color: #ffc107;
+}
+
+/* ===== Responsive Design ===== */
+@media (max-width: 991px) {
+  .otppage-info-section {
+    display: none !important;
+  }
+
+  .otppage-form-section {
+    width: 100%;
+  }
+  
+  .otppage-inputs-container {
+    max-width: 280px;
+  }
+  
+  .otppage-input {
+    width: 40px;
+    height: 45px;
+    font-size: 1.3rem;
+  }
+}
+
+@media (max-width: 576px) {
+  .otppage-inputs-container {
+    max-width: 260px;
+    gap: 0.5rem !important;
+  }
+  
+  .otppage-input {
+    width: 35px;
+    height: 40px;
+    font-size: 1.2rem;
+  }
+  
+  .otppage-form-section {
+    padding: 2rem 1rem !important;
+  }
+}
+
+/* ===== Focus Management ===== */
+.otppage-input:focus {
+  outline: none;
+  z-index: 2;
+  position: relative;
+}
+
+/* ===== Success State ===== */
+.otppage-input.success {
+  border-color: #28a745;
+  background-color: #d4edda;
+  color: #155724;
+}
+
+/* ===== Dark Theme Support ===== */
+@media (prefers-color-scheme: dark) {
+  .otppage-form-section {
+    background-color: #212529;
+    color: #fff;
+  }
+  
+  .otppage-input {
+    background-color: #343a40;
+    border-color: #495057;
+    color: #fff;
+  }
+  
+  .otppage-input:focus {
+    background-color: #495057;
+  }
+  
+  .bg-light {
+    background-color: #343a40 !important;
+    border-color: #495057 !important;
+    color: #fff !important;
+  }
+}
+
+/* ===== Print Styles ===== */
+@media print {
+  .otppage-info-section {
+    display: none !important;
+  }
+  
+  .otppage-container {
+    min-height: auto;
+  }
+}
+
+/* ===== High Contrast Mode ===== */
+@media (prefers-contrast: high) {
+  .otppage-input {
+    border-width: 3px;
+  }
+  
+  .otppage-input:focus {
+    border-width: 4px;
+  }
+}
+
+/* ===== Reduced Motion ===== */
+@media (prefers-reduced-motion: reduce) {
+  .otppage-input,
+  .btn-primary,
+  .btn-link,
+  .otppage-info-logo {
+    animation: none;
+    transition: none;
+  }
+  
+  .otppage-input:focus {
+    transform: none;
+  }
+  
+  .btn-primary:hover {
+    transform: none;
+  }
+}

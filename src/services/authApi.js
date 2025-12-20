@@ -5,6 +5,10 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { post } from './api.js'; // Import generic POST helper
+import { BASE_URL } from './api.js'; // Import BASE_URL from main API
+
+// Use the same BASE_URL for OTP service to ensure consistency
+const OTP_BASE_URL = BASE_URL;
 
 // Define endpoint paths relative to BASE_URL (backend has auth under /auth)
 const LOGIN_ENDPOINT = `/auth/login`;
@@ -15,6 +19,55 @@ const SEND_OTP_ENDPOINT = `/auth/send-email-otp`;
 const VERIFY_OTP_ENDPOINT = `/auth/verify-email-otp`;
 const SEND_PHONE_OTP_ENDPOINT = `/auth/send-phone-otp`;
 const VERIFY_PHONE_OTP_ENDPOINT = `/auth/verify-phone-otp`;
+
+/**
+ * Helper function to make POST request to OTP service
+ * Uses separate OTP_BASE_URL for OTP operations
+ */
+async function postToOtpService(endpoint, body) {
+    const url = `${OTP_BASE_URL}${endpoint}`;
+    const token = await AsyncStorage.getItem('userToken');
+    
+    console.log(`[OTP Service] ${endpoint}`, body);
+    
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify(body),
+        });
+
+        // Check if response is ok first
+        if (!response.ok) {
+            console.error(`[OTP Service] HTTP Error: ${response.status} ${response.statusText}`);
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        // Check content-type to ensure it's JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            console.error(`[OTP Service] Invalid content-type: ${contentType}`);
+            const text = await response.text();
+            console.error(`[OTP Service] Response text:`, text);
+            throw new Error('Server returned non-JSON response. Please check if the OTP service is running correctly.');
+        }
+
+        const data = await response.json();
+        return data;
+        
+    } catch (error) {
+        if (error.name === 'SyntaxError' && error.message.includes('JSON')) {
+            console.error(`[OTP Service] JSON Parse Error at ${url}`);
+            throw new Error('Server returned invalid response. Please check if the OTP service is running correctly.');
+        }
+        
+        console.error(`[OTP Service] Request failed:`, error.message);
+        throw error;
+    }
+}
 
 /**
  * Utility to retrieve the current user's JWT token from storage.
@@ -104,10 +157,48 @@ export async function login(email, password) {
  */
 export async function sendEmailOtp(email) {
     try {
-        return await post(SEND_OTP_ENDPOINT, { email });
+        console.log('Sending email OTP to:', email);
+        const response = await postToOtpService(SEND_OTP_ENDPOINT, { email });
+        
+        console.log('Send Email OTP Response:', response);
+        
+        // Check if response indicates success
+        if (response && response.success === true) {
+            return {
+                success: true,
+                message: response.message || 'OTP sent successfully to your email',
+                data: response.data
+            };
+        }
+        
+        // Handle error response
+        return {
+            success: false,
+            message: response.message || 'Failed to send OTP. Please try again.',
+            error: response.error || 'OTP service error'
+        };
     } catch (error) {
-        console.error("Send OTP Error:", error.message);
-        throw error;
+        console.error("Send Email OTP Error:", error.message);
+        
+        // Provide specific error messages based on error type
+        let userMessage = 'Unable to send OTP. Please check your internet connection and try again.';
+        
+        if (error.message.includes('Server returned non-JSON response') || 
+            error.message.includes('Server returned invalid response')) {
+            userMessage = 'OTP service is temporarily unavailable. Please try again later.';
+        } else if (error.message.includes('HTTP 404')) {
+            userMessage = 'OTP service not found. Please contact support.';
+        } else if (error.message.includes('HTTP 500')) {
+            userMessage = 'Server error. Please try again later.';
+        } else if (error.message.includes('Network request failed')) {
+            userMessage = 'Network error. Please check your internet connection.';
+        }
+        
+        return {
+            success: false,
+            message: userMessage,
+            error: error.message
+        };
     }
 }
 
@@ -119,10 +210,48 @@ export async function sendEmailOtp(email) {
  */
 export async function verifyEmailOtp(email, otp) {
     try {
-        return await post(VERIFY_OTP_ENDPOINT, { email, otp });
+        console.log('Verifying email OTP for:', email);
+        const response = await postToOtpService(VERIFY_OTP_ENDPOINT, { email, otp });
+        
+        console.log('Verify Email OTP Response:', response);
+        
+        // Check if response indicates success
+        if (response && response.success === true) {
+            return {
+                success: true,
+                message: response.message || 'OTP verified successfully',
+                data: response.data
+            };
+        }
+        
+        // Handle error response
+        return {
+            success: false,
+            message: response.message || 'Invalid OTP. Please try again.',
+            error: response.error || 'OTP verification failed'
+        };
     } catch (error) {
-        console.error("Verify OTP Error:", error.message);
-        throw error;
+        console.error("Verify Email OTP Error:", error.message);
+        
+        // Provide specific error messages based on error type
+        let userMessage = 'Unable to verify OTP. Please check your internet connection and try again.';
+        
+        if (error.message.includes('Server returned non-JSON response') || 
+            error.message.includes('Server returned invalid response')) {
+            userMessage = 'OTP service is temporarily unavailable. Please try again later.';
+        } else if (error.message.includes('HTTP 404')) {
+            userMessage = 'OTP service not found. Please contact support.';
+        } else if (error.message.includes('HTTP 500')) {
+            userMessage = 'Server error. Please try again later.';
+        } else if (error.message.includes('Network request failed')) {
+            userMessage = 'Network error. Please check your internet connection.';
+        }
+        
+        return {
+            success: false,
+            message: userMessage,
+            error: error.message
+        };
     }
 }
 
@@ -132,9 +261,50 @@ export async function verifyEmailOtp(email, otp) {
  * @returns {Promise<Object>} The API response containing OTP or error.
  */
 export async function sendPhoneOtp(phone) {
-    // api.js now returns error response body for send-phone-otp endpoint
-    // So we just return whatever we get - no need for try/catch
-    return await post(SEND_PHONE_OTP_ENDPOINT, { phone });
+    try {
+        console.log('Sending phone OTP to:', phone);
+        const response = await postToOtpService(SEND_PHONE_OTP_ENDPOINT, { phone });
+        
+        console.log('Send Phone OTP Response:', response);
+        
+        // Check if response indicates success
+        if (response && response.success === true) {
+            return {
+                success: true,
+                message: response.message || 'OTP sent successfully to your phone',
+                data: response.data
+            };
+        }
+        
+        // Handle error response
+        return {
+            success: false,
+            message: response.message || 'Failed to send OTP. Please try again.',
+            error: response.error || 'OTP service error'
+        };
+    } catch (error) {
+        console.error("Send Phone OTP Error:", error.message);
+        
+        // Provide specific error messages based on error type
+        let userMessage = 'Unable to send OTP. Please check your internet connection and try again.';
+        
+        if (error.message.includes('Server returned non-JSON response') || 
+            error.message.includes('Server returned invalid response')) {
+            userMessage = 'OTP service is temporarily unavailable. Please try again later.';
+        } else if (error.message.includes('HTTP 404')) {
+            userMessage = 'OTP service not found. Please contact support.';
+        } else if (error.message.includes('HTTP 500')) {
+            userMessage = 'Server error. Please try again later.';
+        } else if (error.message.includes('Network request failed')) {
+            userMessage = 'Network error. Please check your internet connection.';
+        }
+        
+        return {
+            success: false,
+            message: userMessage,
+            error: error.message
+        };
+    }
 }
 
 /**
@@ -145,24 +315,69 @@ export async function sendPhoneOtp(phone) {
  */
 export async function verifyPhoneOtp(phone, otp) {
     try {
-        const response = await post(VERIFY_PHONE_OTP_ENDPOINT, { phone, otp });
-        console.log('Phone OTP verified successfully:', response);
+        console.log('Verifying phone OTP for:', phone, 'OTP:', otp);
+        const response = await postToOtpService(VERIFY_PHONE_OTP_ENDPOINT, { phone, otp });
         
-        // If token exists, user is registered - save token
-        if (response.token) {
-            await AsyncStorage.setItem('userToken', response.token);
-            console.log('Token saved for existing user:', response.token);
-            
-            if (response.user?.id) {
-                await AsyncStorage.setItem('userId', String(response.user.id));
-                console.log('User ID saved:', response.user.id);
+        console.log('Verify Phone OTP Response:', response);
+        
+        // Check if verification was successful
+        if (response && response.success === true) {
+            // If token exists, user is already registered - save token
+            if (response.token) {
+                await AsyncStorage.setItem('userToken', response.token);
+                console.log('Token saved for existing user:', response.token);
+                
+                if (response.user?.id) {
+                    await AsyncStorage.setItem('userId', String(response.user.id));
+                    console.log('User ID saved:', response.user.id);
+                }
+                
+                return {
+                    success: true,
+                    message: response.message || 'Login successful',
+                    token: response.token,
+                    user: response.user,
+                    isNewUser: false
+                };
+            } else {
+                // No token means new user needs to complete registration
+                return {
+                    success: true,
+                    message: response.message || 'OTP verified successfully',
+                    isNewUser: true,
+                    user: response.user || { phone: phone }
+                };
             }
         }
         
-        return response;
+        // Handle error response
+        return {
+            success: false,
+            message: response.message || 'Invalid OTP. Please try again.',
+            error: response.error || 'OTP verification failed'
+        };
     } catch (error) {
         console.error("Verify Phone OTP Error:", error.message);
-        throw error;
+        
+        // Provide specific error messages based on error type
+        let userMessage = 'Unable to verify OTP. Please check your internet connection and try again.';
+        
+        if (error.message.includes('Server returned non-JSON response') || 
+            error.message.includes('Server returned invalid response')) {
+            userMessage = 'OTP service is temporarily unavailable. Please try again later.';
+        } else if (error.message.includes('HTTP 404')) {
+            userMessage = 'OTP service not found. Please contact support.';
+        } else if (error.message.includes('HTTP 500')) {
+            userMessage = 'Server error. Please try again later.';
+        } else if (error.message.includes('Network request failed')) {
+            userMessage = 'Network error. Please check your internet connection.';
+        }
+        
+        return {
+            success: false,
+            message: userMessage,
+            error: error.message
+        };
     }
 }
 
@@ -173,24 +388,45 @@ export async function verifyPhoneOtp(phone, otp) {
  */
 export async function completeRegistration(userData) {
     try {
+        console.log('Completing registration for user:', userData);
         const response = await post(COMPLETE_REGISTRATION_ENDPOINT, userData);
-        console.log('Registration completed successfully:', response);
         
-        // Save token after successful registration
-        if (response.token) {
-            await AsyncStorage.setItem('userToken', response.token);
-            console.log('Token saved after registration:', response.token);
-            
-            if (response.user?.id) {
-                await AsyncStorage.setItem('userId', String(response.user.id));
-                console.log('User ID saved:', response.user.id);
+        console.log('Complete Registration Response:', response);
+        
+        // Check if registration was successful
+        if (response && response.success === true) {
+            // Save token after successful registration
+            if (response.token) {
+                await AsyncStorage.setItem('userToken', response.token);
+                console.log('Token saved after registration:', response.token);
+                
+                if (response.user?.id) {
+                    await AsyncStorage.setItem('userId', String(response.user.id));
+                    console.log('User ID saved:', response.user.id);
+                }
             }
+            
+            return {
+                success: true,
+                message: response.message || 'Registration completed successfully',
+                token: response.token,
+                user: response.user
+            };
         }
         
-        return response;
+        // Handle error response
+        return {
+            success: false,
+            message: response.message || 'Registration failed. Please try again.',
+            error: response.error || 'Registration error'
+        };
     } catch (error) {
         console.error("Complete Registration Error:", error.message);
-        throw error;
+        return {
+            success: false,
+            message: 'Unable to complete registration. Please check your internet connection and try again.',
+            error: 'Network error'
+        };
     }
 }
 

@@ -49,7 +49,7 @@ export const testChatEndpoints = async () => {
   }
   
   const { token } = authResult;
-  const BASE_URL = 'http://abc.ridealmobility.com/api/chat';
+  const BASE_URL = 'https://abc.bhoomitechzone.us/api/chat';
   
   const endpoints = [
     { name: 'Chat History', url: `${BASE_URL}/history`, method: 'GET' },
@@ -125,7 +125,7 @@ export const testCreateChat = async (receiverId = '673d1234567890abcdef1234') =>
   }
   
   const { token } = authResult;
-  const BASE_URL = 'http://abc.ridealmobility.com/api/chat';
+  const BASE_URL = 'https://abc.bhoomitechzone.us/api/chat';
   
   try {
     console.log(`🔍 Creating chat with receiver: ${receiverId}`);
@@ -172,8 +172,8 @@ export const testSocketConnection = async () => {
   
   try {
     // Dynamically import socket.io-client
-    const io = require('socket.io-client');
-    const SOCKET_URL = 'http://abc.ridealmobility.com';
+    const io = (await import('socket.io-client')).default;
+    const SOCKET_URL = 'https://abc.bhoomitechzone.us';
     
     console.log(`🔌 Connecting to socket: ${SOCKET_URL}`);
     

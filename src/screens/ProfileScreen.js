@@ -15,6 +15,7 @@ import {
     ScrollView,
     StatusBar,
     Platform,
+    Linking,
 } from 'react-native';
 import Icon from "react-native-vector-icons/Ionicons";
 import FeatherIcon from "react-native-vector-icons/Feather";
@@ -22,7 +23,8 @@ import FontAwesomeIcon from "react-native-vector-icons/FontAwesome";
 import { useFocusEffect } from '@react-navigation/native';
 
 // NOTE: Ensure this path is correct for your project structure
-import { getCurrentUserProfile } from '../services/userapi'; 
+import { getCurrentUserProfile } from '../services/userapi';
+import { clearUserCredentials } from '../utils/authManager'; 
 
 // --- Enhanced Color Scheme ---
 const COLORS = {
@@ -85,12 +87,30 @@ const ProfileScreen = ({ navigation }) => {
             }
         } catch (err) {
             console.error("Profile API call failed:", err);
+            
+            // Check if error is due to invalid/expired token (403 or 401)
+            if (err.message && (err.message.includes('403') || err.message.includes('401') || 
+                err.message.includes('Invalid or expired token') || err.message.includes('Unauthorized'))) {
+                console.warn('🚪 Token expired or invalid - Auto logout initiated');
+                
+                // Clear all user credentials
+                await clearUserCredentials();
+                
+                // Navigate to login screen and reset navigation stack
+                navigation.reset({
+                    index: 0,
+                    routes: [{ name: 'LoginScreen' }],
+                });
+                
+                return; // Exit early, don't show error
+            }
+            
             let errorMessage = err.message.includes("HTTP error") ? err.message : 'Could not load profile. Please try again.';
             setError(errorMessage);
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [navigation]);
 
     // Poll server until avatar changes from the given oldAvatar or until attempts exhausted
     const pollForServerAvatar = async (expectedServerAvatar, maxAttempts = 6, intervalMs = 1000) => {
@@ -209,12 +229,7 @@ const ProfileScreen = ({ navigation }) => {
                         <Icon name="arrow-back" size={24} color={COLORS.white} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle}>Profile</Text>
-                    <TouchableOpacity 
-                        style={styles.headerButton}
-                        onPress={() => console.log('Settings Pressed')}
-                    >
-                        <Icon name="settings-outline" size={24} color={COLORS.white} />
-                    </TouchableOpacity>
+                    <View style={{ width: 40 }} />
                 </View>
 
                 {/* Avatar Section */}
@@ -309,14 +324,14 @@ const ProfileScreen = ({ navigation }) => {
                         <ProfileListItem 
                             label="My Properties" 
                             iconName="home-outline" 
-                            onPress={() => console.log('Go to My Properties')}
+                            onPress={() => navigation.navigate('SellScreen')}
                             badge={myListingsCount > 0 ? myListingsCount.toString() : null}
                         />
                         <View style={styles.divider} />
                         <ProfileListItem 
                             label="Shortlisted" 
                             iconName="heart-outline" 
-                            onPress={() => console.log('Go to Shortlisted')}
+                            onPress={() => navigation.navigate('Saved')}
                             badge={shortlistedCount > 0 ? shortlistedCount.toString() : null}
                         />
                         <View style={styles.divider} />
@@ -352,6 +367,12 @@ const ProfileScreen = ({ navigation }) => {
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Settings</Text>
                     <View style={styles.listCard}>
+                        <ProfileListItem 
+                            label="CRM Portal" 
+                            iconName="business-outline" 
+                            onPress={() => Linking.openURL('http://crm.gharplot.in/login')}
+                        />
+                        <View style={styles.divider} />
                         <ProfileListItem 
                             label="Privacy & Security" 
                             iconName="shield-checkmark-outline" 

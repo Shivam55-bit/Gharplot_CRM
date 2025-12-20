@@ -597,9 +597,23 @@ const ServicesScreen = ({ navigation }) => {
                 // Normalize to { id, name, serviceTypes, raw }
                 const normalized = (res || []).map(s => ({ id: s._id || s.id, name: s.mainService || s.name, serviceTypes: s.serviceTypes || [], raw: s }));
                 setServices(normalized);
+                
+                // Clear error if services loaded successfully
+                if (normalized.length > 0) {
+                    setServicesError(null);
+                }
             } catch (e) {
                 console.warn('Failed to load services:', e);
-                if (mounted) setServicesError('Could not load services');
+                if (mounted) {
+                    // Provide user-friendly error message
+                    if (e.message && e.message.includes('404')) {
+                        setServicesError('Services are loading with sample data. Backend is being prepared.');
+                    } else if (e.message && e.message.includes('Network')) {
+                        setServicesError('Network error. Please check your internet connection.');
+                    } else {
+                        setServicesError('Unable to load services. Please try again.');
+                    }
+                }
             } finally {
                 if (mounted) setServicesLoading(false);
             }
@@ -615,9 +629,21 @@ const ServicesScreen = ({ navigation }) => {
             const res = await getServices();
             const normalized = (res || []).map(s => ({ id: s._id || s.id, name: s.mainService || s.name, serviceTypes: s.serviceTypes || [], raw: s }));
             setServices(normalized);
+            
+            // Clear error if services loaded successfully
+            if (normalized.length > 0) {
+                setServicesError(null);
+            }
         } catch (e) {
             console.warn('retryLoadServices failed:', e);
-            setServicesError('Could not load services');
+            // Provide user-friendly error message
+            if (e.message && e.message.includes('404')) {
+                setServicesError('Services are loading with sample data. Backend is being prepared.');
+            } else if (e.message && e.message.includes('Network')) {
+                setServicesError('Network error. Please check your internet connection.');
+            } else {
+                setServicesError('Unable to load services. Please try again.');
+            }
         } finally {
             setServicesLoading(false);
         }

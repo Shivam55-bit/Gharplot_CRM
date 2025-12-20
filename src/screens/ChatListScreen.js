@@ -9,6 +9,8 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  AppState,
+  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import LinearGradient from 'react-native-linear-gradient';
@@ -39,6 +41,10 @@ const ChatListScreen = ({ navigation }) => {
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [appState, setAppState] = useState(AppState.currentState);
+  const [notifee, setNotifee] = useState(null);
+  const [messaging, setMessaging] = useState(null);
+
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -51,6 +57,70 @@ const ChatListScreen = ({ navigation }) => {
     })();
     return () => { mounted = false; };
   }, []);
+
+  // Setup Notifications (only for mobile platforms)
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    let mounted = true;
+
+    const setupNotifications = async () => {
+      try {
+        // Dynamically import notifee for mobile platforms (temporarily disabled)
+        // const notifeeModule = await import('@notifee/react-native').catch(() => null);
+        const notifeeModule = null;
+        const messagingModule = await import('@react-native-firebase/messaging').catch(() => null);
+        
+        if (!mounted) return;
+
+        // Only set if modules loaded successfully
+        if (notifeeModule) setNotifee(notifeeModule.default);
+        if (messagingModule) setMessaging(messagingModule.default);
+
+        // Only proceed with notifications if notifee is available
+        if (!notifeeModule) {
+          console.log('ℹ️ Notifee not available - notifications disabled');
+          return;
+        }
+
+        // Create notification channel for Android
+        if (Platform.OS === 'android') {
+          await notifeeModule.default.createChannel({
+            id: 'chat-messages',
+            name: 'Chat Messages',
+            description: 'Notifications for new chat messages',
+            sound: 'default',
+            importance: notifeeModule.AndroidImportance.HIGH,
+            vibration: true,
+          });
+          console.log('📱 Chat notification channel created');
+        }
+
+        // Handle notification tap events
+        notifeeModule.default.onForegroundEvent(({ type, detail }) => {
+          if (type === notifeeModule.EventType.PRESS && detail.notification) {
+            const { chatId, senderId, senderName } = detail.notification.data || {};
+            if (chatId) {
+              navigation.navigate('ChatDetailScreen', {
+                chatId,
+                user: { _id: senderId, fullName: senderName },
+              });
+            }
+          }
+        });
+
+        console.log('✅ Notification system initialized');
+      } catch (error) {
+        console.warn('⚠️ Notification setup failed (non-critical):', error?.message || error);
+      }
+    };
+
+    setupNotifications();
+
+    return () => {
+      mounted = false;
+    };
+  }, [navigation]);
 
   const loadChats = useCallback(async () => {
     setLoading(true);
@@ -171,12 +241,24 @@ const ChatListScreen = ({ navigation }) => {
       const incomingChatId = message.chatId || message.chat?._id || message.chat?.id || message.chat_id || message.chatId || (message.room || null);
       const text = message.text || message.message || message.body || '';
       const time = message.timestamp || message.createdAt || new Date().toISOString();
+      const senderId = message.senderId || message.sender?._id || message.from;
+      const senderName = message.senderName || message.sender?.fullName || message.sender?.name || 'Someone';
 
       if (!incomingChatId) {
         // Unknown chat id, refresh whole list
         console.log('🔄 Unknown chat ID, refreshing chat list');
         loadChats();
         return;
+      }
+
+      // Show notification if app is in background or message is from another user
+      if (appState !== 'active' && senderId !== currentUserId) {
+        showLocalNotification({
+          chatId: incomingChatId,
+          senderName,
+          senderId,
+          message: text,
+        });
       }
 
       setChats(prev => {
@@ -188,7 +270,7 @@ const ChatListScreen = ({ navigation }) => {
             found = true;
             const newLast = text || ch.lastMessage;
             console.log('✅ Updated existing chat:', ch.name);
-            // Update last message/time but do not touch unread counts (removed requirement)
+            // Update last message/time and move to top
             return { ...ch, lastMessage: newLast, time };
           }
           return ch;
@@ -200,16 +282,151 @@ const ChatListScreen = ({ navigation }) => {
           loadChats();
         }
 
-        return updated;
+        // Sort by time - most recent first
+        return updated.sort((a, b) => new Date(b.time) - new Date(a.time));
       });
     } catch (e) {
       console.warn('onNewMessage handler failed:', e && e.message ? e.message : e);
     }
-  }, [loadChats]);
+  }, [loadChats, appState, currentUserId]);
 
-  // connect global socket (no chatId) to receive newMessage events
-  // Since WebSocket is having issues, we'll disable it and rely on polling
-  // useChatSocket(null, onNewMessage);
+  // Function to show local notification
+  const showLocalNotification = useCallback(async (data) => {
+    if (!notifee || Platform.OS === 'web') return;
+
+    const { senderName, message, chatId, senderId } = data;
+    
+    try {
+      await notifee.displayNotification({
+        title: `💬 ${senderName}`,
+        body: message.substring(0, 100),
+        android: {
+          channelId: 'chat-messages',
+          importance: 4, // HIGH
+          sound: 'default',
+          pressAction: {
+            id: 'default',
+          },
+          vibrationPattern: [300, 500, 300],
+        },
+        ios: {
+          sound: 'default',
+        },
+        data: { chatId, senderId, senderName },
+      });
+      
+      console.log('🔔 Local notification shown for:', senderName);
+    } catch (error) {
+      console.warn('⚠️ Failed to show notification:', error?.message || error);
+    }
+  }, [notifee]);
+
+  // Connect to global socket for real-time updates
+  useChatSocket(null, onNewMessage);
+
+  // Monitor app state changes
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      console.log('📱 App state changed:', appState, '->', nextAppState);
+      setAppState(nextAppState);
+      
+      // Refresh chats when app comes to foreground
+      if (appState.match(/inactive|background/) && nextAppState === 'active') {
+        console.log('🔄 App became active, refreshing chats...');
+        loadChats();
+      }
+    });
+
+    return () => {
+      subscription?.remove();
+    };
+  }, [appState, loadChats]);
+
+  // Setup FCM for background notifications
+  useEffect(() => {
+    if (Platform.OS === 'web' || !messaging) return;
+
+    let mounted = true;
+
+    const setupFCM = async () => {
+      try {
+        // Verify messaging is properly initialized
+        if (!messaging || typeof messaging.onNotificationOpenedApp !== 'function') {
+          console.log('ℹ️ Firebase messaging not properly initialized - skipping FCM setup');
+          return;
+        }
+
+        // Handle notification when app is in background
+        const unsubscribeBackground = messaging.onNotificationOpenedApp(remoteMessage => {
+          console.log('🔔 Notification opened app from background:', remoteMessage);
+          
+          const { chatId, senderId, senderName } = remoteMessage.data || {};
+          if (chatId && mounted) {
+            navigation.navigate('ChatDetailScreen', {
+              chatId,
+              user: { _id: senderId, fullName: senderName },
+            });
+          }
+        });
+
+        // Handle notification when app was completely closed
+        messaging
+          .getInitialNotification()
+          .then(remoteMessage => {
+            if (remoteMessage && mounted) {
+              console.log('🔔 Notification opened app from quit state:', remoteMessage);
+              
+              const { chatId, senderId, senderName } = remoteMessage.data || {};
+              if (chatId) {
+                setTimeout(() => {
+                  navigation.navigate('ChatDetailScreen', {
+                    chatId,
+                    user: { _id: senderId, fullName: senderName },
+                  });
+                }, 1000);
+              }
+            }
+          });
+
+        // Handle foreground messages
+        const unsubscribeForeground = messaging.onMessage(async remoteMessage => {
+          console.log('📨 FCM message received in foreground:', remoteMessage);
+          
+          const { title, body } = remoteMessage.notification || {};
+          const { chatId, senderId, senderName, message } = remoteMessage.data || {};
+
+          // Show local notification when in foreground
+          if (chatId && senderId !== currentUserId && mounted) {
+            showLocalNotification({
+              chatId,
+              senderId,
+              senderName: title || senderName || 'Someone',
+              message: body || message || 'New message',
+            });
+          }
+
+          // Refresh chat list
+          if (mounted) loadChats();
+        });
+
+        return () => {
+          unsubscribeBackground();
+          unsubscribeForeground();
+        };
+      } catch (error) {
+        console.warn('⚠️ FCM setup failed (non-critical):', error?.message || error);
+      }
+    };
+
+    const cleanup = setupFCM();
+
+    return () => {
+      mounted = false;
+      if (cleanup && typeof cleanup.then === 'function') {
+        cleanup.then(fn => fn && typeof fn === 'function' && fn());
+      }
+    };
+  }, [navigation, currentUserId, loadChats, showLocalNotification, messaging]);
 
   // Add polling mechanism for chat list updates
   useEffect(() => {
@@ -520,6 +737,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 2,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  messageRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   chatName: {
     fontSize: 17,

@@ -1,0 +1,306 @@
+/* Dashboard Cards styles */
+.dc-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: 16px;
+	width: 100%;
+	justify-content: center !important;
+	padding: 0;
+}
+
+.dc-card {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	background: #ffffff;
+	border-radius: 16px;
+	padding: 20px;
+	box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+	border: 1px solid rgba(0, 0, 0, 0.06);
+	transform: translateY(0);
+	transition: all 0.35s cubic-bezier(0.25, 0.8, 0.25, 1);
+	position: relative;
+	overflow: hidden;
+	z-index: 1;
+	width: 100%;
+}
+
+.dc-left {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.dc-title {
+	color: #64748b;
+	font-size: 14px;
+	font-weight: 600;
+	letter-spacing: 0.2px;
+	transition: all 0.3s ease;
+}
+
+.dc-value {
+	font-size: 30px;
+	font-weight: 700;
+	color: #1e293b;
+	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	position: relative;
+}
+
+.dc-right {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 10px;
+	min-width: 110px;
+}
+
+.dc-spark { 
+	width: 110px; 
+	height: 40px;
+	transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* entrance animation for cards */
+.dc-card {
+	opacity: 0;
+	animation: card-in 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+.dc-card:nth-child(1){ animation-delay: 0.1s }
+.dc-card:nth-child(2){ animation-delay: 0.2s }
+.dc-card:nth-child(3){ animation-delay: 0.3s }
+.dc-card:nth-child(4){ animation-delay: 0.4s }
+.dc-card:nth-child(5){ animation-delay: 0.5s }
+
+@keyframes card-in {
+	0% { 
+		transform: translateY(20px) scale(0.95);
+		opacity: 0;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+	}
+	70% {
+		transform: translateY(-5px) scale(1.02);
+		opacity: 1;
+		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+	}
+	100% { 
+		transform: translateY(0) scale(1);
+		opacity: 1;
+		box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+	}
+}
+
+/* Professional hover effect with overlay and subtle animations */
+.dc-card::before {
+	content: '';
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	background: linear-gradient(120deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.8) 50%, rgba(255, 255, 255, 0) 100%);
+	transform: translateX(-100%);
+	transition: transform 0.6s ease;
+	z-index: -1;
+	opacity: 0;
+}
+
+.dc-card:hover {
+	transform: translateY(-6px);
+	box-shadow: 0 14px 28px rgba(0, 0, 0, 0.12), 0 10px 10px rgba(0, 0, 0, 0.08);
+	border-color: rgba(59, 130, 246, 0.2);
+	transition: all 0.35s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.dc-card:hover::before {
+	transform: translateX(100%);
+	opacity: 1;
+	transition: transform 0.8s ease, opacity 0.3s ease;
+}
+
+.dc-card:hover .dc-value {
+	color: #3b82f6;
+	transform: translateX(4px);
+	text-shadow: 0 2px 4px rgba(59, 130, 246, 0.1);
+}
+
+.dc-card:hover .dc-title {
+	color: #3b82f6;
+	transform: translateX(2px);
+}
+
+.dc-card:hover .dc-spark {
+	transform: translateY(-2px) scale(1.05);
+	filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.05));
+}
+
+/* Subtle border highlight effect */
+.dc-card::after {
+	content: '';
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 4px;
+	background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+	transform: scaleX(0);
+	transform-origin: left;
+	transition: transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+	border-radius: 16px 16px 0 0;
+}
+
+.dc-card:hover::after {
+	transform: scaleX(1);
+}
+
+/* Pulse animation for value */
+.dc-card .dc-value {
+	animation: value-pulse 2.5s ease-in-out infinite alternate;
+}
+
+@keyframes value-pulse {
+	0% {
+		transform: scale(1);
+	}
+	100% {
+		transform: scale(1.015);
+	}
+}
+
+/* small button focus/hover */
+.dc-button { outline: none }
+.dc-button:focus { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12) }
+
+.dc-button {
+	background: transparent;
+	border: none;
+	color: #3b82f6;
+	font-weight: 600;
+	cursor: pointer;
+	padding: 6px 10px;
+	border-radius: 8px;
+	transition: all 0.2s ease;
+}
+.dc-button:hover { 
+	background: rgba(59, 130, 246, 0.08);
+	transform: translateY(-1px);
+}
+
+@media (min-width: 992px) {
+	.dc-grid {
+		padding-left: 0;
+		padding-right: 0;
+	}
+}
+
+@media (max-width: 480px) {
+	.dc-value { font-size: 24px; }
+	.dc-spark { width: 80px; height: 36px; }
+	
+	.dc-card {
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+		padding: 16px;
+		border-radius: 14px;
+	}
+	
+	.dc-card:hover {
+		transform: translateY(-3px);
+		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.09);
+	}
+	
+	.dc-card:hover .dc-value {
+		transform: translateX(2px);
+	}
+	
+	.dc-card:hover .dc-title {
+		transform: translateX(1px);
+	}
+	
+	.dc-card:hover .dc-spark {
+		transform: translateY(-1px) scale(1.03);
+	}
+}
+
+/* chart specific micro-animations */
+.chart-line polyline { 
+	stroke-dasharray: 200; 
+	stroke-dashoffset: 200; 
+	animation: line-draw 0.9s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards; 
+}
+
+@keyframes line-draw { 
+	to { stroke-dashoffset: 0 } 
+}
+
+.chart-bar rect { 
+	transform-origin: center bottom; 
+	transform: translateY(12px) scaleY(0); 
+	animation: bar-rise 0.7s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards; 
+}
+
+.chart-bar rect:nth-child(1){ animation-delay: 0.06s }
+.chart-bar rect:nth-child(2){ animation-delay: 0.12s }
+.chart-bar rect:nth-child(3){ animation-delay: 0.18s }
+.chart-bar rect:nth-child(4){ animation-delay: 0.24s }
+.chart-bar rect:nth-child(5){ animation-delay: 0.3s }
+
+@keyframes bar-rise { 
+	to { transform: translateY(0) scaleY(1) } 
+}
+
+.chart-pie path { 
+	transform-origin: 20px 20px; 
+	transform: scale(0); 
+	animation: pie-pop 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards; 
+}
+
+.chart-pie path:nth-child(1){ animation-delay: 0.06s }
+.chart-pie path:nth-child(2){ animation-delay: 0.12s }
+.chart-pie path:nth-child(3){ animation-delay: 0.18s }
+
+@keyframes pie-pop { 
+	to { transform: scale(1) } 
+}
+
+.chart-hist rect { 
+	transform-origin: center bottom; 
+	transform: translateY(12px) scaleY(0); 
+	animation: hist-rise 0.64s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards 
+}
+
+.chart-hist rect:nth-child(n){ animation-delay: calc(0.04s * var(--i)) }
+
+@keyframes hist-rise { 
+	to { transform: translateY(0) scaleY(1) } 
+}
+
+.chart-scatter circle { 
+	opacity: 0; 
+	transform: translateY(6px) scale(0.8); 
+	animation: dot-pop 0.48s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards 
+}
+
+.chart-scatter circle:nth-child(1){ animation-delay: 0.04s }
+.chart-scatter circle:nth-child(2){ animation-delay: 0.1s }
+.chart-scatter circle:nth-child(3){ animation-delay: 0.16s }
+.chart-scatter circle:nth-child(4){ animation-delay: 0.22s }
+.chart-scatter circle:nth-child(5){ animation-delay: 0.28s }
+
+@keyframes dot-pop { 
+	to { opacity: 1; transform: translateY(0) scale(1) } 
+}
+
+/* accessibility: reduce motion */
+@media (prefers-reduced-motion: reduce) {
+	.dc-card, .chart-line polyline, .chart-bar rect, .chart-pie path, .chart-hist rect, .chart-scatter circle { 
+		animation: none !important; 
+		transition: none !important;
+	}
+	
+	.dc-card {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+	}
+}

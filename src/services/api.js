@@ -8,9 +8,52 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Geolocation from 'react-native-geolocation-service';
 import { PermissionsAndroid, Platform } from 'react-native';
 
+// Store navigation reference for auto-logout
+let navigationRef = null;
+
+/**
+ * Set navigation reference to enable auto-logout on token expiry
+ * Call this from App.js after navigation is ready
+ */
+export function setNavigationRef(ref) {
+    navigationRef = ref;
+    console.log('[API] Navigation reference set for auto-logout');
+}
+
+/**
+ * Handle token expiry by clearing storage and redirecting to login
+ */
+async function handleTokenExpiry() {
+    console.log('[API] 🔒 Token expired - Auto logout initiated');
+    
+    try {
+        // Clear all auth data
+        await AsyncStorage.multiRemove([
+            'userToken',
+            'userId',
+            'userProfile',
+            'refreshToken',
+            'fcmToken'
+        ]);
+        
+        console.log('[API] ✅ Auth data cleared');
+        
+        // Navigate to login if navigation is available
+        if (navigationRef) {
+            navigationRef.reset({
+                index: 0,
+                routes: [{ name: 'LoginScreen' }],
+            });
+            console.log('[API] ✅ Redirected to login screen');
+        }
+    } catch (error) {
+        console.error('[API] ❌ Error during auto-logout:', error);
+    }
+}
+
 // EXPORT THE BASE_URL so other files can use it for endpoint construction
 // Use HTTPS as the backend endpoint in the provided curl example
-export const BASE_URL = 'https://abc.ridealmobility.com';
+export const BASE_URL = 'https://abc.bhoomitechzone.us';
 
 // --- HELPER FUNCTION TO CONSTRUCT QUERY STRING ---
 const buildQuery = (params) => {
@@ -56,6 +99,34 @@ async function fetchWithTimeout(url, options = {}, timeout = 15000) {
     try {
         const res = await fetchPromise;
         clearTimeout(timeoutId);
+        
+        // Check for token expiry (401 Unauthorized or 403 Forbidden)
+        if (res.status === 401 || res.status === 403) {
+            console.log('[API] ⚠️ Received status', res.status, '- checking for token expiry');
+            
+            // Try to parse response to check for token expiry message
+            try {
+                const clonedRes = res.clone(); // Clone to read body without consuming it
+                const errorData = await clonedRes.json();
+                
+                // Check for token expiry indicators
+                const isTokenExpired = 
+                    errorData.message?.toLowerCase().includes('token') ||
+                    errorData.message?.toLowerCase().includes('expired') ||
+                    errorData.message?.toLowerCase().includes('unauthorized') ||
+                    errorData.message?.toLowerCase().includes('invalid');
+                
+                if (isTokenExpired) {
+                    console.log('[API] 🔒 Token expiry detected:', errorData.message);
+                    await handleTokenExpiry();
+                }
+            } catch (parseError) {
+                // If we can't parse the response, assume token expiry for 401/403
+                console.log('[API] 🔒 Token expiry assumed for status', res.status);
+                await handleTokenExpiry();
+            }
+        }
+        
         return res;
     } catch (err) {
         clearTimeout(timeoutId);
@@ -92,7 +163,8 @@ async function refreshToken() {
     try {
         const refreshToken = await AsyncStorage.getItem('refreshToken');
         if (!refreshToken) {
-            console.warn('[API] No refresh token found. User needs to login again.');
+            console.warn('[API] No refresh token found. Triggering auto-logout.');
+            await handleTokenExpiry();
             throw new Error('No refresh token found.');
         }
 
@@ -114,6 +186,9 @@ async function refreshToken() {
                 return null;
             }
             
+            // For other errors, trigger auto-logout
+            console.warn('[API] Token refresh failed. Triggering auto-logout.');
+            await handleTokenExpiry();
             throw new Error(`Token refresh failed: ${parsed.message}`);
         }
 

@@ -195,7 +195,7 @@ const AllPropertiesScreen = ({ navigation, route }) => {
             
             // Load data based on category with enhanced logic
             if (category === 'Featured') {
-                propertyData = await getRecentProperties(30);
+                propertyData = await getRecentProperties(100); // Load all properties when "See All" is clicked
             } else if (category === 'Recent') {
                 // Load both general recent and user's own properties
                 const [recentProps, userProps] = await Promise.all([
@@ -414,24 +414,16 @@ const AllPropertiesScreen = ({ navigation, route }) => {
                         </View>
                     )}
 
-                    <View style={styles.priceRatingRow}>
-                        <View style={styles.priceContainer}>
-                            <Text style={styles.propertyPrice}>
-                                {formatPrice(item.price)}
+                    <View style={styles.priceContainer}>
+                        <Text style={styles.propertyPrice}>
+                            {formatPrice(item.price)}
+                            {(item.purpose === 'rent' || item.purpose === 'lease') && '/month'}
+                        </Text>
+                        {item.purpose && (
+                            <Text style={styles.purposeText}>
+                                for {item.purpose}
                             </Text>
-                            {item.purpose && (
-                                <Text style={styles.purposeText}>
-                                    for {item.purpose}
-                                </Text>
-                            )}
-                        </View>
-                        
-                        <View style={styles.ratingContainer}>
-                            <Icon name="star" size={12} color={theme.COLORS.star} />
-                            <Text style={styles.ratingText}>
-                                {item.rating ? item.rating.toFixed(1) : '4.8'}
-                            </Text>
-                        </View>
+                        )}
                     </View>
                 </View>
             </TouchableOpacity>

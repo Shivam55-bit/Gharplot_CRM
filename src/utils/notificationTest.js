@@ -95,12 +95,12 @@ export const testBackendNotification = async () => {
 
     console.log('📤 Sending test notification to backend...');
 
-    const response = await fetch('http://abc.ridealmobility.com/application/notify-update', {
+    const response = await fetch('https://abc.bhoomitechzone.us/application/notify-update', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
 
     const result = await response.json();
@@ -127,7 +127,7 @@ export const testFCMToken = async () => {
   console.log('🧪 Testing FCM Token...');
   
   try {
-    const { getFCMToken } = require('./fcmService');
+    const { getFCMToken } = await import('./fcmService');
     const token = await getFCMToken();
     
     if (token) {

@@ -57,7 +57,7 @@ global.checkFCMConfig = async () => {
   console.log('⚙️ Checking FCM Configuration...');
   try {
     // Import here to avoid circular dependencies
-    const { checkFCMConfiguration } = require('./fcmService');
+    const { checkFCMConfiguration } = await import('./fcmService');
     const config = await checkFCMConfiguration();
     console.log('📋 FCM Configuration:', config);
     return config;
@@ -113,7 +113,7 @@ global.testBackendNotification = async (customToken = null) => {
       throw new Error('No FCM token available');
     }
     
-    const response = await fetch('http://abc.ridealmobility.com/api/test-notification', {
+    const response = await fetch('https://abc.bhoomitechzone.us/api/test-notification', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

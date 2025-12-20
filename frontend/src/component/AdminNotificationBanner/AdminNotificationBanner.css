@@ -1,0 +1,147 @@
+/* =======================
+   Theme Variables
+======================= */
+:root {
+  --banner-bg-color: #6ca0e4;
+  --icon-bg-color: rgba(255, 255, 255, 0.2);
+  --icon-color: white;
+  --review-button-bg: white;
+  --review-button-color: #137477;
+}
+
+/* =======================
+   Container
+======================= */
+.admin-banner-container {
+  background-color: var(--banner-bg-color);
+  border-radius: 10px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  margin: 20px auto;
+  padding: 12px 20px;
+  /* width: 90%; */
+  max-width: 1180px; /*Fixed max width for large screens*/
+width: 100%; /* Full width for smaller screens */
+  color: white;
+  transition: all 0.3s ease;
+}
+
+/* =======================
+   Content Layout
+======================= */
+.admin-banner-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap; /* Enables responsive wrapping */
+}
+
+/* =======================
+   Left Section
+======================= */
+.banner-left {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex: 1;
+  min-width: 250px;
+}
+
+.banner-icon-wrapper {
+  background-color: var(--icon-bg-color);
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 45px;
+  height: 45px;
+}
+
+.banner-icon {
+  color: var(--icon-color);
+  font-size: 20px;
+}
+
+.banner-text-content {
+  line-height: 1.3;
+}
+
+.main-message {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.sub-message {
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.tenant-count {
+  font-weight: 700;
+}
+
+/* =======================
+   Button
+======================= */
+.review-button {
+  background-color: var(--review-button-bg);
+  color: var(--review-button-color);
+  font-weight: 600;
+  padding: 8px 20px;
+  border-radius: 5px;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s ease;
+}
+
+.review-button:hover {
+  background-color: #f0f0f0;
+}
+
+/* =======================
+   Responsive Design
+======================= */
+
+/* Tablets */
+@media (max-width: 768px) {
+  .admin-banner-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .review-button {
+    align-self: stretch;
+    width: 100%;
+    text-align: center;
+    margin-top: 10px;
+  }
+}
+
+/* Mobile */
+@media (max-width: 480px) {
+  .admin-banner-container {
+    padding: 15px;
+    width: 95%;
+  }
+
+  .main-message {
+    font-size: 14px;
+  }
+
+  .sub-message {
+    font-size: 12px;
+  }
+
+  .banner-icon-wrapper {
+    width: 40px;
+    height: 40px;
+  }
+
+  .review-button {
+    font-size: 14px;
+    padding: 8px 16px;
+  }
+}

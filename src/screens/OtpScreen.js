@@ -20,7 +20,7 @@ import authApi from "../services/authApi";
 import { storeUserCredentials } from '../utils/authManager';
 
 const OtpScreen = ({ route, navigation }) => {
-  const { phone, mode = "phone" } = route.params;
+  const { phone, mode = "phone", developmentOTP = null } = route.params;
   const [otp, setOtp] = useState(["", "", "", ""]);
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
@@ -29,6 +29,17 @@ const OtpScreen = ({ route, navigation }) => {
   const [toastType, setToastType] = useState("success");
   const inputs = useRef([]);
   const toastAnim = useRef(new Animated.Value(-100)).current;
+
+  // Auto-fill OTP if in development mode
+  React.useEffect(() => {
+    if (developmentOTP) {
+      const otpDigits = developmentOTP.toString().split('');
+      if (otpDigits.length === 4) {
+        setOtp(otpDigits);
+        showToast(`Development Mode: OTP ${developmentOTP} auto-filled`, "success");
+      }
+    }
+  }, [developmentOTP]);
 
   // Toast notification function
   const showToast = (message, type = "success") => {
@@ -139,7 +150,17 @@ const OtpScreen = ({ route, navigation }) => {
       const response = await authApi.sendPhoneOtp(phone);
       
       if (response.success) {
-        showToast(response.message || "OTP sent successfully! ✅", "success");
+        // Check if development mode with OTP
+        if (response.isDevelopmentMode && response.otp) {
+          showToast(`${response.message || "OTP sent successfully!"} - Your OTP: ${response.otp}`, "success");
+          // Auto-fill the development OTP
+          const otpDigits = response.otp.toString().split('');
+          if (otpDigits.length === 4) {
+            setOtp(otpDigits);
+          }
+        } else {
+          showToast(response.message || "OTP sent successfully! ✅", "success");
+        }
       } else {
         // Phone not registered
         showToast(response.message || "Phone number not registered. Please sign up first.", "error");
@@ -199,6 +220,15 @@ const OtpScreen = ({ route, navigation }) => {
         <View style={styles.card}>
           <Text style={styles.title}>Enter OTP</Text>
           <Text style={styles.subtitle}>We sent an OTP to {phone}</Text>
+          
+          {/* Development Mode Notice */}
+          {developmentOTP && (
+            <View style={styles.devModeContainer}>
+              <Text style={styles.devModeText}>
+                🔧 Development Mode: OTP is {developmentOTP}
+              </Text>
+            </View>
+          )}
 
           {/* OTP Boxes */}
           <View style={styles.otpContainer}>
@@ -346,6 +376,22 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     lineHeight: 20,
+  },
+  devModeContainer: {
+    backgroundColor: "#FFF3CD",
+    borderColor: "#FFC107",
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    marginBottom: 15,
+    alignItems: "center",
+  },
+  devModeText: {
+    color: "#856404",
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
   },
 });
 

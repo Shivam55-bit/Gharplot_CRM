@@ -318,7 +318,7 @@ const ChatDetailScreen = ({ navigation, route }) => {
                 // Mark chat as read (best-effort)
                 try {
                     route.params && typeof route.params.onOpen === 'function' && route.params.onOpen();
-                    const eventBus = require('../utils/eventBus').default;
+                    const { default: eventBus } = await import('../utils/eventBus');
                     eventBus && eventBus.emit && eventBus.emit('chatOpened', { chatId: resolvedId });
                     markChatAsRead(resolvedId).catch(e => console.warn('markChatAsRead failed:', e && e.message ? e.message : e));
                 } catch (e) {
@@ -526,7 +526,7 @@ const ChatDetailScreen = ({ navigation, route }) => {
             try {
                 const token = await getAuthToken();
                 if (token) {
-                    await fetch(`http://abc.ridealmobility.com/api/chat/message/${msgId}`, {
+                    await fetch(`https://abc.bhoomitechzone.us/api/chat/message/${msgId}`, {
                         method: 'PATCH',
                         headers: {
                             'Content-Type': 'application/json',
@@ -645,7 +645,7 @@ const ChatDetailScreen = ({ navigation, route }) => {
                         try {
                             const token = await getAuthToken();
                             if (token) {
-                                await fetch(`http://abc.ridealmobility.com/api/chat/message/${item.id}`, {
+                                await fetch(`https://abc.bhoomitechzone.us/api/chat/message/${item.id}`, {
                                     method: 'DELETE',
                                     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
                                 });

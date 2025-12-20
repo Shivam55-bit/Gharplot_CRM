@@ -21,18 +21,18 @@ def enableProguardInReleaseBuilds = false
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
 android {
-    namespace "com.gharplot"
+    namespace "com.bhoomitechzone.gharplot.app"
 
     compileSdk rootProject.ext.compileSdkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
     ndkVersion rootProject.ext.ndkVersion
 
     defaultConfig {
-        applicationId "com.gharplot"
+        applicationId "com.bhoomitechzone.gharplot.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 3
+        versionName "1.0.2"
 
         // Needed for new Gradle plugin
         multiDexEnabled true
@@ -52,6 +52,14 @@ android {
             keyAlias "androiddebugkey"
             keyPassword "android"
         }
+        release {
+            if (project.hasProperty('MYAPP_RELEASE_STORE_FILE')) {
+                storeFile file(MYAPP_RELEASE_STORE_FILE)
+                storePassword MYAPP_RELEASE_STORE_PASSWORD
+                keyAlias MYAPP_RELEASE_KEY_ALIAS
+                keyPassword MYAPP_RELEASE_KEY_PASSWORD
+            }
+        }
     }
 
     buildTypes {
@@ -60,7 +68,7 @@ android {
             matchingFallbacks = ['release', 'debug']
         }
         release {
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
             minifyEnabled enableProguardInReleaseBuilds
             shrinkResources enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
@@ -92,6 +100,18 @@ android {
     }
 }
 
+configurations.all {
+    resolutionStrategy {
+        // Force all support libraries to use AndroidX
+        force 'androidx.core:core:1.16.0'
+        
+        // Exclude old Android Support libraries
+        exclude group: 'com.android.support', module: 'support-compat'
+        exclude group: 'com.android.support', module: 'support-v4'
+        exclude group: 'com.android.support', module: 'support-core-utils'
+    }
+}
+
 dependencies {
     // React Native core
     implementation("com.facebook.react:react-android")
@@ -116,4 +136,7 @@ dependencies {
     // Firebase dependencies
     implementation platform("com.google.firebase:firebase-bom:32.7.0")
     implementation("com.google.firebase:firebase-messaging")
+    
+    // Force AndroidX Core for compatibility
+    implementation("androidx.core:core:1.16.0")
 }

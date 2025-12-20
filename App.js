@@ -1,8 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import AppNavigator from './src/navigation/AppNavigator';
 import { initializeFCM } from './src/utils/fcmService';
 import { Alert } from 'react-native';
-import { DeviceEventEmitter } from 'react-native';
+import ReminderPopup from './src/crm/components/Reminders/ReminderPopup';
+import reminderManager from './src/crm/services/reminderManager';
 
 // Import FCM debug helper in development mode
 if (__DEV__) {
@@ -11,9 +12,18 @@ if (__DEV__) {
 
 const App = () => {
   const navigationRef = useRef();
+  const [currentReminder, setCurrentReminder] = useState(null);
+  const [showReminderPopup, setShowReminderPopup] = useState(false);
 
   useEffect(() => {
     let fcmCleanup = null;
+
+    // Initialize Reminder Manager
+    reminderManager.initialize((reminder) => {
+      console.log('🔔 Reminder popup triggered for:', reminder.name);
+      setCurrentReminder(reminder);
+      setShowReminderPopup(true);
+    });
 
     // Initialize Firebase Cloud Messaging
     const setupFCM = async () => {
@@ -108,10 +118,30 @@ const App = () => {
       if (fcmCleanup) {
         fcmCleanup();
       }
+      reminderManager.stopChecking();
     };
   }, []);
 
-  return <AppNavigator ref={navigationRef} />;
+  const handleReminderClose = async (response) => {
+    if (currentReminder && response) {
+      await reminderManager.markAsCompleted(currentReminder.id, response);
+    }
+    setShowReminderPopup(false);
+    setCurrentReminder(null);
+  };
+
+  return (
+    <>
+      <AppNavigator ref={navigationRef} />
+      
+      {/* Reminder Popup */}
+      <ReminderPopup
+        visible={showReminderPopup}
+        reminder={currentReminder}
+        onClose={handleReminderClose}
+      />
+    </>
+  );
 };
 
 export default App;

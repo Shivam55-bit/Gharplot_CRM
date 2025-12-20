@@ -33,7 +33,7 @@ const getCurrentUserId = async () => {
 };
 // --------------------------------------------------------
 
-const BASE_URL = 'http://abc.ridealmobility.com/api/chat';
+const BASE_URL = 'https://abc.bhoomitechzone.us/api/chat';
 
 /**
  * Initiates or retrieves an existing chat between the current user and a receiver.
