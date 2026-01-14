@@ -216,9 +216,16 @@ export const createEmployee = async (employeeData) => {
 
 // Update employee
 export const updateEmployee = async (employeeId, employeeData) => {
+  console.log('✏️ Updating employee:', employeeId, employeeData);
+  
   try {
     const headers = await getAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}/admin/employees/${employeeId}`, {
+    const adminToken = await AsyncStorage.getItem('adminToken');
+    const url = adminToken 
+      ? `${API_BASE_URL}/admin/employees/${employeeId}` 
+      : `${API_BASE_URL}/api/employees/${employeeId}`;
+    
+    const response = await fetch(url, {
       method: 'PUT',
       headers,
       body: JSON.stringify(employeeData),
@@ -228,21 +235,28 @@ export const updateEmployee = async (employeeId, employeeData) => {
     console.log('✏️ Update Employee Response:', result);
 
     if (result.success) {
-      return result.data;
+      return { success: true, data: result.data };
     } else {
-      throw new Error(result.message || 'Failed to update employee');
+      return { success: false, message: result.message || 'Failed to update employee' };
     }
   } catch (error) {
     console.error('❌ Update employee error:', error);
-    throw error;
+    return { success: false, message: error.message };
   }
 };
 
 // Delete employee
 export const deleteEmployee = async (employeeId) => {
+  console.log('🗑️ Deleting employee:', employeeId);
+  
   try {
     const headers = await getAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}/admin/employees/${employeeId}`, {
+    const adminToken = await AsyncStorage.getItem('adminToken');
+    const url = adminToken 
+      ? `${API_BASE_URL}/admin/employees/${employeeId}` 
+      : `${API_BASE_URL}/api/employees/${employeeId}`;
+    
+    const response = await fetch(url, {
       method: 'DELETE',
       headers,
     });
@@ -251,13 +265,44 @@ export const deleteEmployee = async (employeeId) => {
     console.log('🗑️ Delete Employee Response:', result);
 
     if (result.success) {
-      return result.data;
+      return { success: true, data: result.data };
     } else {
-      throw new Error(result.message || 'Failed to delete employee');
+      return { success: false, message: result.message || 'Failed to delete employee' };
     }
   } catch (error) {
     console.error('❌ Delete employee error:', error);
-    throw error;
+    return { success: false, message: error.message };
+  }
+};
+
+// Change employee password
+export const changeEmployeePassword = async (employeeId, passwordData) => {
+  console.log('🔒 Changing password for employee:', employeeId);
+  
+  try {
+    const headers = await getAuthHeaders();
+    const adminToken = await AsyncStorage.getItem('adminToken');
+    const url = adminToken 
+      ? `${API_BASE_URL}/admin/employees/${employeeId}/password` 
+      : `${API_BASE_URL}/api/employees/${employeeId}/password`;
+    
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(passwordData),
+    });
+
+    const result = await response.json();
+    console.log('🔒 Change Password Response:', result);
+
+    if (result.success) {
+      return { success: true, data: result.data };
+    } else {
+      return { success: false, message: result.message || 'Failed to update password' };
+    }
+  } catch (error) {
+    console.error('❌ Change password error:', error);
+    return { success: false, message: error.message };
   }
 };
 

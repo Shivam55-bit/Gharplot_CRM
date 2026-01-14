@@ -10,6 +10,7 @@ import {
   StatusBar,
   RefreshControl,
   Alert,
+  Platform,
 } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
 import LinearGradient from "react-native-linear-gradient";
@@ -163,8 +164,12 @@ const DashboardEmployee = ({ navigation }) => {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#3b82f6" />
+    <View style={styles.container}>
+      <StatusBar 
+        barStyle="light-content" 
+        backgroundColor="#3b82f6" 
+        translucent={false}
+      />
 
       {/* HEADER */}
       <LinearGradient
@@ -178,12 +183,17 @@ const DashboardEmployee = ({ navigation }) => {
 
           <Text style={styles.headerTitle}>Dashboard</Text>
 
-          <View style={{flexDirection: 'row', alignItems: 'center', gap: 12}}>
-            <TouchableOpacity onPress={() => navigation.navigate('EmployeeProfile')}>
+          <View style={styles.headerRight}>
+            <TouchableOpacity onPress={() => navigation.navigate('EmployeeProfile')}> 
               <Icon name="person-circle-outline" color="#fff" size={30} />
             </TouchableOpacity>
             <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
               <Icon name="log-out-outline" size={26} color="#fff" />
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => navigation.navigate('CreateAlert')} style={[styles.createAlertButton, { marginTop: 10 }]}> 
+              <Icon name="notifications-outline" size={14} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.createAlertText}>CREATE ALERT</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -335,7 +345,7 @@ const DashboardEmployee = ({ navigation }) => {
 
         <View style={{ height: 50 }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -345,11 +355,15 @@ export default DashboardEmployee;
 /* ----------------------- STYLES -------------------------- */
 /* --------------------------------------------------------- */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f2f6ff" },
+  container: { 
+    flex: 1, 
+    backgroundColor: "#f2f6ff",
+  },
 
   /* Header */
   headerWrapper: {
-    padding: 18,
+    paddingHorizontal: 18,
+    paddingTop: Platform.OS === 'ios' ? 60 : (StatusBar.currentHeight || 0) + 18,
     paddingBottom: 30,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
@@ -560,5 +574,24 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#6b7280',
     fontStyle: 'italic',
+  },
+  createAlertButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 18,
+    backgroundColor: '#7c3aed',
+    marginRight: 8,
+  },
+  createAlertText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12,
+    letterSpacing: 0.4,
+  },
+  headerRight: {
+    flexDirection: 'column',
+    alignItems: 'flex-end',
   },
 });

@@ -50,6 +50,7 @@ import TestLoginScreen from '../screens/TestLoginScreen';
 import AdminLogin from '../crm/crmscreens/CRM/AdminLogin';
 import EmployeeLogin from '../crm/crmscreens/CRM/EmployeeLogin';
 import DashboardAdmin from '../crm/crmscreens/Admin/DashboardAdmin';
+import EnquiriesScreen from '../crm/crmscreens/Admin/EnquiriesScreen';
 
 // --- NAVIGATION ---
 import BottomTabNavigation from '../navigation/BottomTabNavigation';
@@ -63,6 +64,10 @@ import AddSellScreen from '../screens/AddSellScreen';
 import BuyScreen from '../screens/Quick_Action/BuyScreen';
 import RentScreen from '../screens/Quick_Action/RentScreen';
 import SellScreen from '../screens/Quick_Action/SellScreen';
+
+// --- EDIT SCREENS FOR NOTIFICATIONS ---
+import EditReminderScreen from '../screens/EditReminderScreen';
+import EditAlertScreen from '../screens/EditAlertScreen';
 
 const Stack = createStackNavigator();
 
@@ -166,6 +171,41 @@ const AppNavigator = React.forwardRef((props, ref) => {
         <Stack.Screen name="EmployeeLogin" component={EmployeeLogin} />
         <Stack.Screen name="AdminApp" component={AdminNavigator} />
         <Stack.Screen name="EmployeeApp" component={EmployeeBottomTabNavigation} />
+        
+        {/* Direct CRM Screens for Notifications */}
+        <Stack.Screen name="Enquiries" component={EnquiriesScreen} />
+        
+        {/* Edit Screens for Notification Navigation */}
+        <Stack.Screen 
+          name="EditReminder" 
+          component={EditReminderScreen}
+          options={{
+            headerShown: true,
+            title: 'Edit Reminder',
+            headerStyle: {
+              backgroundColor: '#28a745',
+            },
+            headerTintColor: '#fff',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+          }}
+        />
+        <Stack.Screen 
+          name="EditAlert" 
+          component={EditAlertScreen}
+          options={{
+            headerShown: true,
+            title: 'Edit Alert',
+            headerStyle: {
+              backgroundColor: '#FF9800',
+            },
+            headerTintColor: '#fff',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+          }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );

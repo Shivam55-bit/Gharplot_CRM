@@ -65,6 +65,17 @@ const SignupScreen = ({ navigation, route }) => {
     }
   }, []); // Empty dependency array - run only once
 
+  // Update phone number when route params change
+  useEffect(() => {
+    if (phoneNumber && phoneNumber !== form.phone) {
+      console.log('📱 Auto-filling phone number:', phoneNumber);
+      setForm(prevForm => ({
+        ...prevForm,
+        phone: phoneNumber
+      }));
+    }
+  }, [phoneNumber]);
+
   // Toast notification function
   const showToast = (message, type = "success") => {
     setToastMessage(message);
@@ -293,7 +304,7 @@ const SignupScreen = ({ navigation, route }) => {
     setIsLoading(true);
     
     try {
-      console.log('Starting registration completion...');
+      console.log('Starting registration...');
 
       // Prepare user data for complete-registration API
       const userData = {
@@ -303,30 +314,66 @@ const SignupScreen = ({ navigation, route }) => {
         dob: form.dob.trim(), // YYYY-MM-DD format
       };
 
-      console.log('Completing registration with data:', { ...userData });
+      console.log('Completing registration with data:', userData);
 
-      // Call the complete registration API (this will UPDATE the existing user created during OTP)
+      // Call the complete-registration API (returns token directly)
       const result = await authApi.completeRegistration(userData);
       
       console.log('Registration completed:', result);
       
-      if (result.token || result.success) {
-        // Store credentials for persistent login
-        if (result.token && result.user && result.user.id) {
+      if (result.success && result.token) {
+        // Token already saved by completeRegistration function
+        // Store userId if available
+        if (result.user?.id) {
           await storeUserCredentials(result.token, result.user.id);
         }
         
+        // Update the userProfile in AsyncStorage with complete data
+        const updatedProfile = {
+          id: result.user?.id || Date.now().toString(),
+          phone: userData.phone,
+          fullName: userData.fullName,
+          email: userData.email,
+          dob: userData.dob
+        };
+        await AsyncStorage.setItem('userProfile', JSON.stringify(updatedProfile));
+        
         // Show success toast
-        showToast("Profile completed successfully! 🎉", "success");
+        showToast("Account created successfully! 🎉", "success");
         
-        // Navigate directly to Home screen after 1.5 seconds
+        // Check if coming from AddProperty or Profile flow
+        const fromAddProperty = route?.params?.fromAddProperty;
+        const fromProfile = route?.params?.fromProfile;
+        
         setTimeout(() => {
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'Home' }],
-          });
+          if (fromAddProperty) {
+            // Navigate back to Home with AddSell tab
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Home' }],
+            });
+            // Then navigate to AddSell
+            setTimeout(() => {
+              navigation.navigate('AddSell');
+            }, 500);
+          } else if (fromProfile) {
+            // Navigate back to Home (which will automatically refresh Profile)
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Home' }],
+            });
+            // Then navigate to Profile tab
+            setTimeout(() => {
+              navigation.navigate('Profile');
+            }, 500);
+          } else {
+            // Navigate directly to Home screen
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Home' }],
+            });
+          }
         }, 1500);
-        
       } else {
         throw new Error(result.message || 'Registration failed');
       }
@@ -341,16 +388,44 @@ const SignupScreen = ({ navigation, route }) => {
         if (error.message.includes('email already exists') || 
             error.message.includes('User with this email already exists') ||
             error.message.includes('already registered') ||
-            error.message.includes('Phone number already')) {
-          // If user already exists, that's actually OK - but we need to get credentials
-          // The credentials should have been stored during OTP verification
-          showToast("Welcome! Logging you in... 🎉", "success");
-          setTimeout(() => {
-            navigation.reset({
-              index: 0,
-              routes: [{ name: 'Home' }],
-            });
-          }, 1500);
+            error.message.includes('Phone number already') ||
+            error.message.includes('User already exists') ||
+            error.message.includes('already exist')) {
+          
+          console.log('⚠️ User already exists - Checking for existing token...');
+          
+          // User already registered - Check if we have token in AsyncStorage
+          try {
+            const existingToken = await AsyncStorage.getItem('userToken');
+            const existingUserId = await AsyncStorage.getItem('userId');
+            
+            if (existingToken && existingUserId) {
+              console.log('✅ Found existing credentials - Logging in...');
+              showToast("Welcome back! Logging you in... 🎉", "success");
+              
+              setTimeout(() => {
+                navigation.reset({
+                  index: 0,
+                  routes: [{ name: 'Home' }],
+                });
+              }, 1500);
+              return;
+            } else {
+              console.log('⚠️ No existing token found - Redirecting to login...');
+              showToast("Account already exists. Please login.", "info");
+              
+              setTimeout(() => {
+                navigation.reset({
+                  index: 0,
+                  routes: [{ name: 'LoginScreen' }],
+                });
+              }, 1500);
+              return;
+            }
+          } catch (storageError) {
+            console.error('Error checking AsyncStorage:', storageError);
+          }
+          
           return;
         } else if (error.message.includes('validation')) {
           errorMessage = "Please check your details and try again.";

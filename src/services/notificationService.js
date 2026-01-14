@@ -86,6 +86,57 @@ export const sendChatNotification = async (messageData) => {
 };
 
 /**
+ * Send reminder notification
+ * Uses FCM to send reminder notifications from backend
+ */
+export const sendReminderNotification = async (reminderData) => {
+    try {
+        const payload = {
+            title: "⏰ रिमाइंडर",
+            body: `${reminderData.clientName} को कॉल करने का समय - ${reminderData.note}`,
+            data: {
+                type: 'reminder',
+                reminderId: reminderData.id || reminderData.reminderId,
+                enquiryId: reminderData.enquiryId,
+                clientName: reminderData.clientName,
+                phoneNumber: reminderData.phoneNumber || reminderData.contactNumber,
+                action: 'view_reminder'
+            },
+            userId: reminderData.assignedTo || reminderData.employeeId
+        };
+
+        // Send to backend FCM endpoint
+        const response = await post('/api/notifications/reminder', payload);
+        console.log('✅ Reminder notification sent:', response);
+        return response;
+    } catch (error) {
+        console.error('❌ Failed to send reminder notification:', error);
+        throw error;
+    }
+};
+
+/**
+ * Send batch reminder notifications
+ * For sending multiple reminders at once
+ */
+export const sendBatchReminderNotifications = async (reminders) => {
+    try {
+        const results = await Promise.allSettled(
+            reminders.map(reminder => sendReminderNotification(reminder))
+        );
+
+        const successful = results.filter(r => r.status === 'fulfilled').length;
+        const failed = results.filter(r => r.status === 'rejected').length;
+
+        console.log(`✅ Batch reminder notifications: ${successful} sent, ${failed} failed`);
+        return { successful, failed, results };
+    } catch (error) {
+        console.error('❌ Failed to send batch reminder notifications:', error);
+        throw error;
+    }
+};
+
+/**
  * Send service cancellation notification
  * Uses existing 'service cancel' API
  */
@@ -202,7 +253,43 @@ export const broadcastAppUpdate = async (version, customMessage) => {
 export const handleNotificationAction = (notificationData, navigation) => {
     const { type, action, propertyId } = notificationData;
 
-    console.log('🔔 Handling notification action:', { type, action, propertyId });
+    console.log('🔔 Handling notification action - Full Data:', JSON.stringify(notificationData, null, 2));
+    console.log('🔔 Type:', type, 'Action:', action, 'PropertyId:', propertyId);
+
+    // Handle reminder notifications - navigate to edit screen directly
+    if (type === 'reminder' || type === 'enquiry_reminder') {
+        console.log('✅ MATCHED REMINDER TYPE - Navigating to EditReminderScreen');
+        console.log('📤 Navigation params:', {
+            reminderId: notificationData.reminderId || notificationData.id,
+            clientName: notificationData.clientName || 'Client',
+            originalMessage: notificationData.message || notificationData.body || notificationData.note || '',
+            enquiryId: notificationData.enquiryId,
+        });
+        
+        // Navigate directly to EditReminderScreen
+        navigation.navigate('EditReminder', {
+            reminderId: notificationData.reminderId || notificationData.id,
+            clientName: notificationData.clientName || 'Client',
+            originalMessage: notificationData.message || notificationData.body || notificationData.note || '',
+            enquiryId: notificationData.enquiryId,
+        });
+        return;
+    }
+
+    // Handle alert notifications - navigate to edit alert screen directly
+    if (type === 'alert') {
+        console.log('✅ MATCHED ALERT TYPE - Navigating to EditAlertScreen');
+        
+        // Navigate directly to EditAlertScreen
+        navigation.navigate('EditAlert', {
+            alertId: notificationData.alertId?.replace('alert_', '') || notificationData.id?.replace('alert_', ''),
+            originalReason: notificationData.reason || notificationData.message || notificationData.body || '',
+            originalDate: notificationData.date,
+            originalTime: notificationData.time,
+            repeatDaily: notificationData.repeatDaily || false,
+        });
+        return;
+    }
 
     // Handle backend's new property notification format
     if (propertyId && !action) {
@@ -225,6 +312,20 @@ export const handleNotificationAction = (notificationData, navigation) => {
                 tab: 'inquiries',
                 inquiryId: notificationData.inquiryId
             });
+            break;
+
+        case 'view_reminder':
+        case 'call_reminder':
+            // Handle reminder actions
+            if (notificationData.enquiryId) {
+                navigation.navigate('EnquiriesScreen', {
+                    enquiryId: notificationData.enquiryId,
+                    showReminder: true,
+                    autoCall: action === 'call_reminder' ? notificationData.phoneNumber : null
+                });
+            } else {
+                navigation.navigate('EnquiriesScreen');
+            }
             break;
 
         case 'open_chat':

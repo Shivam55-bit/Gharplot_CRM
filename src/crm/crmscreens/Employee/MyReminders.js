@@ -11,9 +11,11 @@ import {
   RefreshControl,
   Alert,
   Modal,
+  ScrollView,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 
 const API_BASE_URL = 'https://abc.bhoomitechzone.us';
 
@@ -26,6 +28,8 @@ const MyReminders = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
+  const [selectedReminder, setSelectedReminder] = useState(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const [statsData, setStatsData] = useState({
     totalReminders: 0,
     pending: 0,
@@ -40,40 +44,171 @@ const MyReminders = ({ navigation }) => {
     try {
       if (showLoading) setLoading(true);
       
-      const token = await AsyncStorage.getItem('employee_token');
+      // Check for multiple token types (matching web version)
+      let token = await AsyncStorage.getItem('adminToken');
+      if (!token) {
+        token = await AsyncStorage.getItem('employeeToken');
+      }
+      if (!token) {
+        token = await AsyncStorage.getItem('token');
+      }
+      if (!token) {
+        token = await AsyncStorage.getItem('employee_token');
+      }
+      
+      if (!token) {
+        console.error('❌ No authentication token found');
+        Alert.alert('Authentication Error', 'Please login again.');
+        return;
+      }
+      
+      console.log('🔑 Using token for reminders fetch');
+      console.log('📱 Token preview:', token.substring(0, 30) + '...');
+      
       const headers = {
+        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : '',
       };
 
-      // Fetch both reminders and stats in parallel
-      const [remindersResponse, statsResponse] = await Promise.all([
-        fetch(`${API_BASE_URL}/api/reminder/list`, { method: 'GET', headers }),
-        fetch(`${API_BASE_URL}/api/reminder/stats`, { method: 'GET', headers })
-      ]);
+      console.log('📡 Fetching employee reminders...');
 
-      const remindersData = await remindersResponse.json();
-      const statsData = await statsResponse.json();
-      
-      console.log('📅 Reminders Response:', remindersData);
-      console.log('📊 Stats Response:', statsData);
-      
-      if (remindersData.success) {
-        const remindersList = remindersData.data?.reminders || remindersData.reminders || [];
-        setReminders(remindersList);
+      // Try employee endpoint first (exactly matching web version)
+      try {
+        console.log('🔗 Trying employee endpoints (matching web version)...');
+        
+        // Build params like web version
+        const params = {
+          page: 1,
+          limit: 50,
+          populate: 'history,modifications', // Fetch history data
+        };
+        
+        const [remindersResponse, statsResponse] = await Promise.all([
+          axios.get(`${API_BASE_URL}/employee/reminders/list`, {
+            headers,
+            params,
+            timeout: 15000
+          }),
+          axios.get(`${API_BASE_URL}/employee/reminders/stats`, {
+            headers,
+            timeout: 15000
+          })
+        ]);
+        
+        console.log('📅 Employee Reminders Response:', remindersResponse.data);
+        console.log('📊 Employee Stats Response:', statsResponse.data);
+        
+        if (remindersResponse.data.success) {
+          // Handle response structure like web version
+          const remindersList = remindersResponse.data.data?.reminders || [];
+          console.log('📋 Loaded', remindersList.length, 'reminders');
+          if (remindersList.length > 0) {
+            console.log('📋 Sample reminder:', JSON.stringify(remindersList[0], null, 2));
+          }
+          setReminders(remindersList);
+          console.log('✅ Loaded', remindersList.length, 'reminders from employee endpoint');
+          console.log('📋 Sample reminder data:', remindersList[0]);
+          
+          if (remindersList.length === 0) {
+            console.log('ℹ️ No reminders found in API response');
+          }
+        }
+        
+        if (statsResponse.data.success) {
+          const statsData = statsResponse.data.data;
+          setStatsData({
+            totalReminders: statsData?.total || 0,
+            pending: statsData?.pending || 0,
+            dueNow: statsData?.due || 0,
+            completed: statsData?.completed || 0,
+          });
+          console.log('📊 Stats loaded:', statsData);
+        }
+        
+        return; // Success, exit function
+        
+      } catch (employeeError) {
+        console.log('⚠️ Employee endpoint failed, trying fallback:', employeeError.message);
+        
+        // Fallback to older API endpoints
+        console.log('🔄 Trying fallback endpoints...');
+        const [remindersResponse, statsResponse] = await Promise.all([
+          axios.get(`${API_BASE_URL}/api/reminder/list`, {
+            headers,
+            timeout: 15000
+          }),
+          axios.get(`${API_BASE_URL}/api/reminder/stats`, {
+            headers,
+            timeout: 15000
+          })
+        ]);
+        
+        console.log('📅 Fallback Reminders Response:', remindersResponse.data);
+        console.log('📊 Fallback Stats Response:', statsResponse.data);
+        
+        if (remindersResponse.data.success) {
+          const remindersList = remindersResponse.data.data?.reminders || remindersResponse.data.reminders || [];
+          setReminders(remindersList);
+          console.log('✅ Loaded', remindersList.length, 'reminders from fallback');
+          
+          // Add test data if no reminders found for debugging
+          if (remindersList.length === 0) {
+            console.log('⚠️ No reminders found from fallback API, adding test data for debugging');
+            const testReminders = [
+              {
+                _id: 'fallback1',
+                title: 'Fallback Test Reminder 1',
+                description: 'This is a fallback test reminder for debugging',
+                status: 'pending',
+                clientName: 'Fallback Client',
+                reminderDateTime: new Date().toISOString(),
+                createdAt: new Date().toISOString()
+              },
+              {
+                _id: 'fallback2',
+                title: 'Fallback Test Reminder 2',
+                description: 'Another fallback test reminder',
+                status: 'snoozed',
+                clientName: 'Fallback Client 2',
+                reminderDateTime: new Date().toISOString(),
+                createdAt: new Date().toISOString()
+              }
+            ];
+            setReminders(testReminders);
+            console.log('✅ Added', testReminders.length, 'fallback test reminders');
+          }
+        }
+        
+        if (statsResponse.data.success) {
+          setStatsData({
+            totalReminders: statsResponse.data.stats?.total || 0,
+            pending: statsResponse.data.stats?.pending || 0,
+            dueNow: statsResponse.data.stats?.due || 0,
+            completed: statsResponse.data.stats?.completed || 0,
+          });
+        }
       }
       
-      if (statsData.success) {
-        setStatsData({
-          totalReminders: statsData.stats?.total || 0,
-          pending: statsData.stats?.pending || 0,
-          dueNow: statsData.stats?.due || 0,
-          completed: statsData.stats?.completed || 0,
-        });
-      }
     } catch (error) {
       console.error('❌ Reminders fetch error:', error);
-      Alert.alert('Error', 'Failed to load reminders data. Please try again.');
+      console.error('📛 Error details:', error.response?.data || error.message);
+      
+      // Provide more specific error messages
+      let errorMessage = 'Failed to load reminders data. Please try again.';
+      
+      if (error.message?.includes('Network request failed')) {
+        errorMessage = 'Network connection failed. Please check your internet connection and try again.';
+      } else if (error.response?.status === 401) {
+        errorMessage = 'Authentication failed. Please login again.';
+      } else if (error.response?.status === 403) {
+        errorMessage = 'Access denied. You may not have permission to view reminders.';
+      } else if (error.response?.status >= 500) {
+        errorMessage = 'Server error. Please try again later.';
+      } else if (error.code === 'ECONNABORTED') {
+        errorMessage = 'Request timeout. Please check your connection and try again.';
+      }
+      
+      Alert.alert('Error', errorMessage);
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -81,11 +216,17 @@ const MyReminders = ({ navigation }) => {
 
   // Apply filters
   useEffect(() => {
+    console.log('🔍 Applying filters...');
+    console.log('📋 Total reminders:', reminders.length);
+    console.log('🎯 Status filter:', statusFilter);
+    console.log('🔍 Search query:', searchQuery);
+    
     let filtered = reminders;
     
     // Apply status filter
     if (statusFilter !== 'All Status') {
       filtered = filtered.filter(r => r.status === statusFilter);
+      console.log('📊 After status filter:', filtered.length);
     }
     
     // Apply search filter
@@ -98,9 +239,29 @@ const MyReminders = ({ navigation }) => {
         
         return title.includes(query) || description.includes(query) || clientName.includes(query);
       });
+      console.log('📊 After search filter:', filtered.length);
     }
     
+    console.log('✅ Final filtered reminders:', filtered.length);
     setFilteredReminders(filtered);
+    
+    // Calculate stats from actual reminders data
+    if (reminders.length > 0) {
+      const now = new Date();
+      const calculatedStats = {
+        totalReminders: reminders.length,
+        pending: reminders.filter(r => r.status === 'pending' || r.status === 'snoozed').length,
+        dueNow: reminders.filter(r => {
+          if (r.status !== 'pending') return false;
+          const reminderDate = new Date(r.reminderDateTime || r.dateTime);
+          return reminderDate <= now;
+        }).length,
+        completed: reminders.filter(r => r.status === 'completed').length,
+      };
+      
+      console.log('📊 Calculated stats from reminders:', calculatedStats);
+      setStatsData(calculatedStats);
+    }
   }, [reminders, statusFilter, searchQuery]);
 
   // Handle pull to refresh
@@ -112,6 +273,9 @@ const MyReminders = ({ navigation }) => {
 
   // Load data on component mount
   useEffect(() => {
+    console.log('🚀 MyReminders component mounted, starting data fetch...');
+    console.log('📊 Current reminders state:', reminders.length);
+    console.log('🎯 Current statusFilter:', statusFilter);
     fetchReminders();
   }, [statusFilter]);
 
@@ -261,44 +425,111 @@ const MyReminders = ({ navigation }) => {
 
   // Render individual reminder item
   const renderReminderItem = ({ item: reminder }) => {
-    const isOverdue = new Date(reminder.dateTime) < new Date() && reminder.status === 'pending';
+    // Use correct field name from backend - reminderDateTime not dateTime
+    const dateTimeValue = reminder.reminderDateTime || reminder.dateTime;
+    const isOverdue = dateTimeValue && new Date(dateTimeValue) < new Date() && reminder.status === 'pending';
+    
+    // Format date properly
+    let formattedDate = 'No Date';
+    let formattedTime = '';
+    if (dateTimeValue) {
+      try {
+        const date = new Date(dateTimeValue);
+        if (!isNaN(date.getTime())) {
+          formattedDate = date.toLocaleDateString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+          });
+          formattedTime = date.toLocaleTimeString('en-IN', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          });
+        }
+      } catch (error) {
+        console.error('Date formatting error:', error);
+      }
+    }
     
     return (
-      <View style={[
-        styles.reminderCard,
-        isOverdue && styles.overdueCard
-      ]}>
-        {/* Header */}
-        <View style={styles.cardHeader}>
-          <View>
-            <Text style={styles.reminderTitle}>{reminder.title}</Text>
-            <Text style={styles.reminderDate}>
-              {new Date(reminder.dateTime).toLocaleString()}
-            </Text>
-          </View>
-          <View style={[
-            styles.statusBadge,
-            reminder.status === 'completed' && styles.completedBadge,
-            reminder.status === 'snoozed' && styles.snoozedBadge,
-            reminder.status === 'dismissed' && styles.dismissedBadge,
-            isOverdue && styles.overdueBadge
-          ]}>
-            <Text style={styles.statusText}>
-              {isOverdue ? 'OVERDUE' : reminder.status.toUpperCase()}
-            </Text>
-          </View>
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => {
+          setSelectedReminder(reminder);
+          setShowDetailModal(true);
+        }}
+      >
+        <View style={[
+          styles.reminderCard,
+          isOverdue && styles.overdueCard
+        ]}>
+        {/* Status Badge - Top Right */}
+        <View style={[
+          styles.statusBadge,
+          reminder.status === 'completed' && styles.completedBadge,
+          reminder.status === 'snoozed' && styles.snoozedBadge,
+          reminder.status === 'dismissed' && styles.dismissedBadge,
+          isOverdue && styles.overdueBadge
+        ]}>
+          <Text style={styles.statusText}>
+            {isOverdue ? 'OVERDUE' : reminder.status?.toUpperCase() || 'PENDING'}
+          </Text>
+        </View>
+        
+        {/* Title */}
+        <Text style={styles.reminderTitle}>
+          {reminder.title || reminder.note || 'Follow-up Reminder'}
+        </Text>
+        
+        {/* Date & Time */}
+        <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 8}}>
+          <Icon name="calendar-outline" size={16} color="#6366f1" />
+          <Text style={styles.reminderDate}> {formattedDate} at {formattedTime}</Text>
         </View>
 
-        {/* Description */}
-        {reminder.description && (
-          <Text style={styles.reminderDescription}>{reminder.description}</Text>
+        {/* Comment/Note */}
+        {(reminder.comment || reminder.note) && (
+          <View style={styles.commentBox}>
+            <Icon name="chatbox-outline" size={14} color="#6366f1" />
+            <Text style={styles.commentText}>{reminder.comment || reminder.note}</Text>
+          </View>
         )}
 
-        {/* Client Info */}
-        {reminder.clientInfo && (
-          <View style={styles.clientInfo}>
-            <Text style={styles.clientName}>Client: {reminder.clientInfo.name}</Text>
-            <Text style={styles.clientContact}>{reminder.clientInfo.phone}</Text>
+        {/* Client Info - Use correct field names */}
+        {(reminder.clientName || reminder.clientInfo?.name) && (
+          <View style={styles.clientInfoRow}>
+            <Icon name="person-outline" size={14} color="#6b7280" />
+            <Text style={styles.clientInfoText}>
+              {reminder.clientName || reminder.clientInfo?.name}
+              {(reminder.phone || reminder.clientInfo?.phone) && ` • ${reminder.phone || reminder.clientInfo.phone}`}
+            </Text>
+          </View>
+        )}
+        
+        {/* Location */}
+        {reminder.location && (
+          <View style={styles.clientInfoRow}>
+            <Icon name="location-outline" size={14} color="#6b7280" />
+            <Text style={styles.clientInfoText}>{reminder.location}</Text>
+          </View>
+        )}
+        
+        {/* Property Type */}
+        {reminder.propertyType && (
+          <View style={styles.clientInfoRow}>
+            <Icon name="home-outline" size={14} color="#6b7280" />
+            <Text style={styles.clientInfoText}>{reminder.propertyType}</Text>
+          </View>
+        )}
+        
+        {/* Assignment Type */}
+        {reminder.assignmentType && (
+          <View style={styles.metaInfo}>
+            <Text style={styles.metaText}>
+              Type: {reminder.assignmentType}
+              {reminder.createdAt && ` • Created: ${new Date(reminder.createdAt).toLocaleDateString('en-IN')}`}
+            </Text>
           </View>
         )}
 
@@ -312,7 +543,8 @@ const MyReminders = ({ navigation }) => {
 
         {/* Actions (only for pending reminders) */}
         {reminder.status === 'pending' && renderActionMenu(reminder)}
-      </View>
+        </View>
+      </TouchableOpacity>
     );
   };
 
@@ -335,6 +567,233 @@ const MyReminders = ({ navigation }) => {
       </Text>
     </View>
   );
+
+  // Render Detail Modal
+  const renderDetailModal = () => {
+    if (!selectedReminder) return null;
+
+    const dateTimeValue = selectedReminder.reminderDateTime || selectedReminder.dateTime;
+    let formattedDateTime = 'No Date';
+    if (dateTimeValue) {
+      try {
+        const date = new Date(dateTimeValue);
+        if (!isNaN(date.getTime())) {
+          formattedDateTime = date.toLocaleString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          });
+        }
+      } catch (error) {
+        formattedDateTime = 'Invalid Date';
+      }
+    }
+
+    return (
+      <Modal
+        visible={showDetailModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowDetailModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.detailModalContent}>
+            {/* Modal Header */}
+            <View style={styles.detailModalHeader}>
+              <Text style={styles.detailModalTitle}>Reminder Details</Text>
+              <TouchableOpacity onPress={() => setShowDetailModal(false)}>
+                <Icon name="close" size={24} color="#6b7280" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Modal Body */}
+            <ScrollView style={styles.detailModalBody}>
+              {/* Status Badge */}
+              <View style={[
+                styles.detailStatusBadge,
+                selectedReminder.status === 'completed' && styles.completedBadge,
+                selectedReminder.status === 'snoozed' && styles.snoozedBadge,
+                selectedReminder.status === 'dismissed' && styles.dismissedBadge,
+              ]}>
+                <Text style={styles.detailStatusText}>
+                  {selectedReminder.status?.toUpperCase() || 'PENDING'}
+                </Text>
+              </View>
+
+              {/* Title */}
+              <Text style={styles.detailTitle}>
+                {selectedReminder.title || selectedReminder.note || 'Follow-up Reminder'}
+              </Text>
+
+              {/* Date & Time */}
+              <View style={styles.detailRow}>
+                <Icon name="calendar-outline" size={20} color="#6366f1" />
+                <View style={{marginLeft: 12, flex: 1}}>
+                  <Text style={styles.detailLabel}>Scheduled Date & Time</Text>
+                  <Text style={styles.detailValue}>{formattedDateTime}</Text>
+                </View>
+              </View>
+
+              {/* Action Plan / Comment */}
+              {(selectedReminder.comment || selectedReminder.note) && (
+                <View style={styles.detailSection}>
+                  <View style={styles.detailSectionHeader}>
+                    <Icon name="document-text-outline" size={20} color="#6366f1" />
+                    <Text style={styles.detailSectionTitle}>Action Plan / Note</Text>
+                  </View>
+                  <Text style={styles.detailSectionContent}>
+                    {selectedReminder.comment || selectedReminder.note}
+                  </Text>
+                </View>
+              )}
+
+              {/* Client Information */}
+              {(selectedReminder.clientName || selectedReminder.clientInfo?.name) && (
+                <View style={styles.detailSection}>
+                  <View style={styles.detailSectionHeader}>
+                    <Icon name="person-outline" size={20} color="#6366f1" />
+                    <Text style={styles.detailSectionTitle}>Client Information</Text>
+                  </View>
+                  <Text style={styles.detailSectionContent}>
+                    👤 {selectedReminder.clientName || selectedReminder.clientInfo?.name}
+                  </Text>
+                  {(selectedReminder.phone || selectedReminder.clientInfo?.phone) && (
+                    <Text style={styles.detailSectionContent}>
+                      📞 {selectedReminder.phone || selectedReminder.clientInfo.phone}
+                    </Text>
+                  )}
+                  {selectedReminder.location && (
+                    <Text style={styles.detailSectionContent}>
+                      📍 {selectedReminder.location}
+                    </Text>
+                  )}
+                  {selectedReminder.propertyType && (
+                    <Text style={styles.detailSectionContent}>
+                      🏠 {selectedReminder.propertyType}
+                    </Text>
+                  )}
+                </View>
+              )}
+
+              {/* Reminder History / Edit History */}
+              <View style={styles.detailSection}>
+                <View style={styles.detailSectionHeader}>
+                  <Icon name="time-outline" size={20} color="#6366f1" />
+                  <Text style={styles.detailSectionTitle}>
+                    Reminder History ({(selectedReminder.history?.length || 0) + 1})
+                  </Text>
+                </View>
+                
+                {/* Current/Latest Reminder */}
+                <View style={[styles.historyItem, styles.currentHistoryItem]}>
+                  <Text style={styles.historyDate}>
+                    {formattedDateTime}
+                  </Text>
+                  {(selectedReminder.comment || selectedReminder.note) && (
+                    <View style={{marginTop: 8}}>
+                      <Text style={styles.historyLabel}>Note:</Text>
+                      <Text style={styles.historyComment}>
+                        {selectedReminder.comment || selectedReminder.note}
+                      </Text>
+                    </View>
+                  )}
+                  {selectedReminder.createdBy && (
+                    <Text style={styles.historyBy}>
+                      Set by: {selectedReminder.createdBy.fullName || selectedReminder.createdBy.name}
+                    </Text>
+                  )}
+                </View>
+
+                {/* Previous Modifications */}
+                {selectedReminder.history && selectedReminder.history.length > 0 && (
+                  <>
+                    <Text style={styles.previousLabel}>Previous Modifications:</Text>
+                    {selectedReminder.history.map((historyItem, index) => (
+                      <View key={index} style={styles.historyItem}>
+                        <Text style={styles.historyDate}>
+                          {historyItem.scheduledDateTime 
+                            ? new Date(historyItem.scheduledDateTime).toLocaleString('en-IN', {
+                                day: '2-digit',
+                                month: 'short', 
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                hour12: true
+                              })
+                            : new Date(historyItem.modifiedAt || historyItem.createdAt).toLocaleString('en-IN')}
+                        </Text>
+                        <Text style={styles.historyAction}>
+                          {historyItem.action || 'Rescheduled'}
+                        </Text>
+                        {(historyItem.comment || historyItem.note) && (
+                          <View style={{marginTop: 8}}>
+                            <Text style={styles.historyLabel}>Note:</Text>
+                            <Text style={styles.historyComment}>
+                              {historyItem.comment || historyItem.note}
+                            </Text>
+                          </View>
+                        )}
+                        {historyItem.modifiedBy && (
+                          <Text style={styles.historyBy}>
+                            Modified by: {historyItem.modifiedBy.name || historyItem.modifiedBy.fullName}
+                          </Text>
+                        )}
+                      </View>
+                    ))}
+                  </>
+                )}
+              </View>
+
+              {/* Response */}
+              {selectedReminder.response && (
+                <View style={styles.detailSection}>
+                  <View style={styles.detailSectionHeader}>
+                    <Icon name="checkmark-circle-outline" size={20} color="#10b981" />
+                    <Text style={styles.detailSectionTitle}>Response</Text>
+                  </View>
+                  <Text style={styles.detailSectionContent}>
+                    {selectedReminder.response}
+                  </Text>
+                </View>
+              )}
+
+              {/* Created By & Date */}
+              <View style={styles.detailFooter}>
+                {selectedReminder.createdBy && (
+                  <Text style={styles.detailFooterText}>
+                    Created by: {selectedReminder.createdBy.fullName || selectedReminder.createdBy.name}
+                  </Text>
+                )}
+                {selectedReminder.createdAt && (
+                  <Text style={styles.detailFooterText}>
+                    Created: {new Date(selectedReminder.createdAt).toLocaleString('en-IN')}
+                  </Text>
+                )}
+                {selectedReminder.assignmentType && (
+                  <Text style={styles.detailFooterText}>
+                    Type: {selectedReminder.assignmentType}
+                  </Text>
+                )}
+              </View>
+            </ScrollView>
+
+            {/* Modal Footer with Actions */}
+            <View style={styles.detailModalFooter}>
+              <TouchableOpacity
+                style={styles.detailModalButton}
+                onPress={() => setShowDetailModal(false)}
+              >
+                <Text style={styles.detailModalButtonText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -409,11 +868,6 @@ const MyReminders = ({ navigation }) => {
         )}
       </View>
 
-      {/* TEST BUTTON */}
-      <TouchableOpacity style={styles.testButton}>
-        <Text style={styles.testButtonText}>🧪 Test Alert Saved</Text>
-      </TouchableOpacity>
-
       {/* Status Filter Modal */}
       <Modal
         visible={showStatusModal}
@@ -455,6 +909,9 @@ const MyReminders = ({ navigation }) => {
           </View>
         </View>
       </Modal>
+
+      {/* Detail Modal */}
+      {renderDetailModal()}
     </SafeAreaView>
   );
 };
@@ -619,13 +1076,14 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderRadius: 12,
     padding: 16,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+    elevation: 3,
+    borderLeftWidth: 4,
+    borderLeftColor: '#6366f1',
+    position: 'relative',
   },
   overdueCard: {
-    borderColor: '#EF4444',
-    borderWidth: 2,
+    borderLeftColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -635,13 +1093,15 @@ const styles = StyleSheet.create({
   },
   reminderTitle: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#111827',
     marginBottom: 4,
+    paddingRight: 90,
   },
   reminderDate: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: 13,
+    color: '#6366f1',
+    fontWeight: '600',
   },
   reminderDescription: {
     fontSize: 14,
@@ -652,10 +1112,14 @@ const styles = StyleSheet.create({
 
   // Status badge styles
   statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
     backgroundColor: '#1e40af',
+    elevation: 1,
   },
   completedBadge: {
     backgroundColor: '#10B981',
@@ -671,11 +1135,58 @@ const styles = StyleSheet.create({
   },
   statusText: {
     color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
   },
 
-  // Client info styles
+  // Comment box
+  commentBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#eff6ff',
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 10,
+    marginBottom: 8,
+    gap: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#6366f1',
+  },
+  commentText: {
+    fontSize: 13,
+    color: '#1e40af',
+    lineHeight: 19,
+    flex: 1,
+    fontStyle: 'italic',
+  },
+
+  // Client info row
+  clientInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  clientInfoText: {
+    fontSize: 12,
+    color: '#4b5563',
+    fontWeight: '500',
+  },
+
+  // Meta info
+  metaInfo: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  metaText: {
+    fontSize: 11,
+    color: '#9ca3af',
+  },
+
+  // Client info styles (old)
   clientInfo: {
     backgroundColor: '#F3F4F6',
     padding: 12,
@@ -783,5 +1294,179 @@ const styles = StyleSheet.create({
   selectedOptionText: {
     color: '#1e40af',
     fontWeight: '600',
+  },
+
+  // Detail Modal Styles
+  detailModalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '90%',
+  },
+  detailModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  detailModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  detailModalBody: {
+    padding: 20,
+    maxHeight: 600,
+  },
+  detailStatusBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginBottom: 16,
+    backgroundColor: '#1e40af',
+  },
+  detailStatusText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  detailTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 20,
+    lineHeight: 28,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  detailLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 4,
+    fontWeight: '500',
+  },
+  detailValue: {
+    fontSize: 15,
+    color: '#111827',
+    fontWeight: '600',
+  },
+  detailSection: {
+    marginTop: 20,
+    padding: 16,
+    backgroundColor: '#f9fafb',
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#6366f1',
+  },
+  detailSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  detailSectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  detailSectionContent: {
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 22,
+    marginBottom: 8,
+  },
+  currentHistoryItem: {
+    backgroundColor: '#eff6ff',
+    borderLeftColor: '#3b82f6',
+    borderLeftWidth: 4,
+  },
+  currentBadge: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  currentBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  previousLabel: {
+    fontSize: 13,
+    color: '#6b7280',
+    fontWeight: '600',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  historyLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  historyItem: {
+    backgroundColor: '#fff',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#f59e0b',
+  },
+  historyDate: {
+    fontSize: 12,
+    color: '#6b7280',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  historyAction: {
+    fontSize: 13,
+    color: '#111827',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  historyComment: {
+    fontSize: 13,
+    color: '#374151',
+    marginBottom: 4,
+    fontStyle: 'italic',
+  },
+  historyBy: {
+    fontSize: 11,
+    color: '#9ca3af',
+  },
+  detailFooter: {
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+    gap: 8,
+  },
+  detailFooterText: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  detailModalFooter: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#f3f4f6',
+  },
+  detailModalButton: {
+    backgroundColor: '#6366f1',
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  detailModalButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
   },
 });

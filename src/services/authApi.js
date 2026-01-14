@@ -7,8 +7,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { post } from './api.js'; // Import generic POST helper
 import { BASE_URL } from './api.js'; // Import BASE_URL from main API
 
-// Use the same BASE_URL for OTP service to ensure consistency
-const OTP_BASE_URL = BASE_URL;
+// New API base URL for authentication
+const AUTH_BASE_URL = 'https://abc.ridealmobility.com';
 
 // Define endpoint paths relative to BASE_URL (backend has auth under /auth)
 const LOGIN_ENDPOINT = `/auth/login`;
@@ -22,10 +22,10 @@ const VERIFY_PHONE_OTP_ENDPOINT = `/auth/verify-phone-otp`;
 
 /**
  * Helper function to make POST request to OTP service
- * Uses separate OTP_BASE_URL for OTP operations
+ * Uses AUTH_BASE_URL for OTP operations
  */
 async function postToOtpService(endpoint, body) {
-    const url = `${OTP_BASE_URL}${endpoint}`;
+    const url = `${AUTH_BASE_URL}${endpoint}`;
     const token = await AsyncStorage.getItem('userToken');
     
     console.log(`[OTP Service] ${endpoint}`, body);
@@ -315,21 +315,23 @@ export async function sendPhoneOtp(phone) {
  */
 export async function verifyPhoneOtp(phone, otp) {
     try {
-        console.log('Verifying phone OTP for:', phone, 'OTP:', otp);
+        console.log('📞 Verifying phone OTP for:', phone, 'OTP:', otp);
         const response = await postToOtpService(VERIFY_PHONE_OTP_ENDPOINT, { phone, otp });
         
-        console.log('Verify Phone OTP Response:', response);
+        console.log('📥 Verify Phone OTP Raw Response:', JSON.stringify(response, null, 2));
         
         // Check if verification was successful
         if (response && response.success === true) {
             // If token exists, user is already registered - save token
             if (response.token) {
+                console.log('✅ EXISTING USER DETECTED - Token found in response');
+                
                 await AsyncStorage.setItem('userToken', response.token);
-                console.log('Token saved for existing user:', response.token);
+                console.log('💾 Token saved for existing user:', response.token.substring(0, 20) + '...');
                 
                 if (response.user?.id) {
                     await AsyncStorage.setItem('userId', String(response.user.id));
-                    console.log('User ID saved:', response.user.id);
+                    console.log('💾 User ID saved:', response.user.id);
                 }
                 
                 return {
@@ -341,6 +343,8 @@ export async function verifyPhoneOtp(phone, otp) {
                 };
             } else {
                 // No token means new user needs to complete registration
+                console.log('🆕 NEW USER DETECTED - No token in response');
+                
                 return {
                     success: true,
                     message: response.message || 'OTP verified successfully',
@@ -351,6 +355,7 @@ export async function verifyPhoneOtp(phone, otp) {
         }
         
         // Handle error response
+        console.log('❌ OTP verification failed:', response.message);
         return {
             success: false,
             message: response.message || 'Invalid OTP. Please try again.',
@@ -389,13 +394,56 @@ export async function verifyPhoneOtp(phone, otp) {
 export async function completeRegistration(userData) {
     try {
         console.log('Completing registration for user:', userData);
-        const response = await post(COMPLETE_REGISTRATION_ENDPOINT, userData);
+        
+        // Use AUTH_BASE_URL for complete-registration endpoint
+        const url = `${AUTH_BASE_URL}${COMPLETE_REGISTRATION_ENDPOINT}`;
+        const token = await AsyncStorage.getItem('userToken');
+        
+        const headers = {
+            'Content-Type': 'application/json',
+        };
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+        
+        const fetchResponse = await fetch(url, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(userData),
+        });
+        
+        if (!fetchResponse.ok) {
+            const errorText = await fetchResponse.text();
+            console.error('Complete Registration Error Response:', errorText);
+            throw new Error(`HTTP ${fetchResponse.status}: ${errorText || 'Registration failed'}`);
+        }
+        
+        const response = await fetchResponse.json();
         
         console.log('Complete Registration Response:', response);
         
-        // Check if registration was successful
-        if (response && response.success === true) {
+        // If response has token directly (successful registration)
+        if (response && response.token) {
             // Save token after successful registration
+            await AsyncStorage.setItem('userToken', response.token);
+            console.log('Token saved after registration:', response.token);
+            
+            if (response.user?.id) {
+                await AsyncStorage.setItem('userId', String(response.user.id));
+                console.log('User ID saved:', response.user.id);
+            }
+            
+            return {
+                success: true,
+                message: response.message || 'Registration completed successfully',
+                token: response.token,
+                user: response.user
+            };
+        }
+        
+        // Check if response indicates success (alternative format)
+        if (response && response.success === true) {
+            // Save token if present
             if (response.token) {
                 await AsyncStorage.setItem('userToken', response.token);
                 console.log('Token saved after registration:', response.token);
@@ -421,12 +469,24 @@ export async function completeRegistration(userData) {
             error: response.error || 'Registration error'
         };
     } catch (error) {
-        console.error("Complete Registration Error:", error.message);
-        return {
-            success: false,
-            message: 'Unable to complete registration. Please check your internet connection and try again.',
-            error: 'Network error'
-        };
+        console.error("Complete Registration Error:", error);
+        
+        // Provide specific error messages
+        let userMessage = 'Unable to complete registration. Please try again.';
+        
+        if (error.message) {
+            if (error.message.includes('404')) {
+                userMessage = 'Registration endpoint not found. Please contact support.';
+            } else if (error.message.includes('500')) {
+                userMessage = 'Server error. Please try again later.';
+            } else if (error.message.includes('network') || error.message.includes('timeout')) {
+                userMessage = 'Network error. Please check your internet connection.';
+            } else {
+                userMessage = error.message;
+            }
+        }
+        
+        throw new Error(userMessage);
     }
 }
 

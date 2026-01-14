@@ -30,6 +30,45 @@ const AdminLogin = () => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(40)).current;
 
+  // Check for saved credentials and auto-login
+  useEffect(() => {
+    checkSavedCredentials();
+  }, []);
+
+  const checkSavedCredentials = async () => {
+    try {
+      const savedEmail = await AsyncStorage.getItem('admin_email');
+      const savedPassword = await AsyncStorage.getItem('admin_password');
+      const adminToken = await AsyncStorage.getItem('admin_token');
+      
+      console.log('🔍 Checking saved credentials:', { 
+        hasEmail: !!savedEmail, 
+        hasPassword: !!savedPassword,
+        hasToken: !!adminToken 
+      });
+      
+      // If we have valid token, navigate directly
+      if (adminToken) {
+        console.log('✅ Valid token found, navigating to AdminApp');
+        navigation.replace("AdminApp");
+        return;
+      }
+      
+      // If we have saved credentials, auto-login
+      if (savedEmail && savedPassword) {
+        console.log('🔄 Auto-logging in with saved credentials');
+        setEmail(savedEmail);
+        setPassword(savedPassword);
+        // Small delay to show UI before auto-login
+        setTimeout(() => {
+          handleAdminLogin(true);
+        }, 500);
+      }
+    } catch (error) {
+      console.error('Error checking saved credentials:', error);
+    }
+  };
+
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
@@ -45,7 +84,7 @@ const AdminLogin = () => {
     ]).start();
   }, []);
 
-  const handleAdminLogin = async () => {
+  const handleAdminLogin = async (isAutoLogin = false) => {
     if (!email.trim() || !password.trim()) {
       Alert.alert("Error", "Please fill in all fields");
       return;
@@ -97,9 +136,14 @@ const AdminLogin = () => {
           await AsyncStorage.setItem('adminData', JSON.stringify(user)); // Also store with consistent key
         }
         
+        // Save credentials for auto-login
+        await AsyncStorage.setItem('admin_email', email.trim());
+        await AsyncStorage.setItem('admin_password', password.trim());
+        console.log('✅ Admin credentials saved for auto-login');
+        
         setLoading(false);
         // Navigate directly without showing alert
-        navigation.navigate("AdminApp");
+        navigation.replace("AdminApp");
       } else {
         setLoading(false);
         const errorMessage = response.status === 401 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,493 +6,386 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
-  TextInput,
   Alert,
+  ActivityIndicator,
+  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import * as crmAlertApi from '../../services/crmAlertApi';
+import AlertNotificationService from '../../../services/AlertNotificationService';
 
 const AlertsScreen = ({ navigation }) => {
-  const [alerts, setAlerts] = useState([
-    {
-      id: '1',
-      title: 'High Priority Lead',
-      message: 'New lead from premium property inquiry',
-      type: 'Lead',
-      priority: 'High',
-      timestamp: '2024-12-09 10:30 AM',
-      read: false,
-      actionRequired: true,
-    },
-    {
-      id: '2',
-      title: 'Follow-up Reminder',
-      message: 'Follow up with client for property viewing',
-      type: 'Reminder',
-      priority: 'Medium',
-      timestamp: '2024-12-09 09:15 AM',
-      read: false,
-      actionRequired: true,
-    },
-    {
-      id: '3',
-      title: 'Payment Received',
-      message: 'Token amount received for property booking',
-      type: 'Payment',
-      priority: 'Low',
-      timestamp: '2024-12-08 04:20 PM',
-      read: true,
-      actionRequired: false,
-    },
-    {
-      id: '4',
-      title: 'Document Verification',
-      message: 'Customer documents pending verification',
-      type: 'Document',
-      priority: 'High',
-      timestamp: '2024-12-08 02:15 PM',
-      read: false,
-      actionRequired: true,
-    },
-  ]);
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
+  const [showStartPicker, setShowStartPicker] = useState(false);
+  const [showEndPicker, setShowEndPicker] = useState(false);
 
-  const [searchText, setSearchText] = useState('');
-  const [filterType, setFilterType] = useState('All');
-  const [filterPriority, setFilterPriority] = useState('All');
+  useEffect(() => {
+    fetchAlerts();
+  }, []);
 
-  const alertTypes = ['All', 'Lead', 'Reminder', 'Payment', 'Document'];
-  const priorities = ['All', 'High', 'Medium', 'Low'];
-
-  const filteredAlerts = alerts.filter(alert => {
-    const matchesSearch = alert.title.toLowerCase().includes(searchText.toLowerCase()) ||
-                         alert.message.toLowerCase().includes(searchText.toLowerCase());
-    const matchesType = filterType === 'All' || alert.type === filterType;
-    const matchesPriority = filterPriority === 'All' || alert.priority === filterPriority;
-    return matchesSearch && matchesType && matchesPriority;
-  });
-
-  const getPriorityColor = (priority) => {
-    switch (priority) {
-      case 'High': return '#ef4444';
-      case 'Medium': return '#f59e0b';
-      case 'Low': return '#10b981';
-      default: return '#6b7280';
+  const fetchAlerts = async (params = {}) => {
+    try {
+      setLoading(true);
+      const response = await crmAlertApi.getSystemAlerts(params);
+      const data = response?.alerts || response?.data || [];
+      setAlerts(Array.isArray(data) ? data : []);
+    } catch (e) {
+      Alert.alert('Error', 'Failed to fetch alerts');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const getTypeIcon = (type) => {
-    switch (type) {
-      case 'Lead': return 'person-add';
-      case 'Reminder': return 'alarm';
-      case 'Payment': return 'cash';
-      case 'Document': return 'document-text';
-      default: return 'notifications';
-    }
+  const formatDate = (iso) => {
+    if (!iso) return '';
+    return new Date(iso).toISOString().split('T')[0];
   };
 
-  const handleAlertPress = (alert) => {
-    // Mark as read
-    setAlerts(alerts.map(a => 
-      a.id === alert.id ? { ...a, read: true } : a
-    ));
+  const formatTime = (iso) => {
+    if (!iso) return '';
+    return new Date(iso).toTimeString().slice(0, 5);
+  };
 
-    Alert.alert(
-      alert.title,
-      alert.message,
-      alert.actionRequired ? [
-        { text: 'Dismiss' },
-        { text: 'Take Action', onPress: () => handleAction(alert) },
-      ] : [
-        { text: 'OK' }
-      ]
+  const handleFilter = () => {
+    const params = {};
+    if (startDate) params.startDate = formatDate(startDate);
+    if (endDate) params.endDate = formatDate(endDate);
+    fetchAlerts(params);
+  };
+
+  const clearFilter = () => {
+    setStartDate(null);
+    setEndDate(null);
+    fetchAlerts();
+  };
+
+  const handleDelete = (id) => {
+    Alert.alert('Delete Alert', 'Are you sure?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            // Delete from backend
+            await crmAlertApi.deleteSystemAlert(id);
+            
+            // Cancel scheduled notification
+            await AlertNotificationService.cancelAlert(id);
+            console.log('✅ Alert and notification deleted:', id);
+            
+            // Refresh list
+            fetchAlerts();
+          } catch (error) {
+            console.error('Error deleting alert:', error);
+            Alert.alert('Error', 'Failed to delete alert');
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleEdit = (alert) => {
+    console.log('📝 Editing alert:', alert._id);
+    navigation.navigate('EditAlert', {
+      alertId: alert._id,
+      originalTitle: alert.title,
+      originalReason: alert.reason,
+      originalDate: alert.date,
+      originalTime: alert.time,
+      repeatDaily: alert.repeatDaily
+    });
+  };
+
+  /* ================= MOBILE CARD ================= */
+  const renderRow = ({ item }) => {
+    const created = item.createdAt || item.date;
+
+    return (
+      <View style={styles.alertCard}>
+        <Text style={styles.cardDate}>
+          {formatDate(created)} • {formatTime(created)}
+        </Text>
+
+        <Text style={styles.cardTitle} numberOfLines={1}>
+          {item.title || item.reason}
+        </Text>
+        
+        {item.title && (
+          <Text style={styles.cardReason} numberOfLines={2}>
+            {item.reason}
+          </Text>
+        )}
+
+        <View style={styles.badgeRow}>
+          <View
+            style={[
+              styles.badge,
+              item.repeatDaily ? styles.badgeYes : styles.badgeNo,
+            ]}
+          >
+            <Text style={styles.badgeText}>
+              {item.repeatDaily ? 'REPEAT: YES' : 'REPEAT: NO'}
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.badge,
+              item.isActive ? styles.badgeActive : styles.badgeInactive,
+            ]}
+          >
+            <Text style={styles.badgeText}>
+              {item.isActive ? 'ACTIVE' : 'INACTIVE'}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.cardActions}>
+          <TouchableOpacity
+            style={styles.editBtn}
+            onPress={() => handleEdit(item)}
+          >
+            <Text style={styles.actionText}>Edit</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.deleteBtn}
+            onPress={() => handleDelete(item._id || item.id)}
+          >
+            <Text style={styles.actionText}>Delete</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     );
   };
 
-  const handleAction = (alert) => {
-    switch (alert.type) {
-      case 'Lead':
-        Alert.alert('Action', 'Navigate to lead management');
-        break;
-      case 'Reminder':
-        Alert.alert('Action', 'Mark reminder as completed');
-        break;
-      case 'Payment':
-        Alert.alert('Action', 'View payment details');
-        break;
-      case 'Document':
-        Alert.alert('Action', 'Open document verification');
-        break;
-    }
-  };
-
-  const markAllAsRead = () => {
-    setAlerts(alerts.map(alert => ({ ...alert, read: true })));
-  };
-
-  const renderAlertItem = ({ item }) => (
-    <TouchableOpacity
-      style={[styles.alertCard, !item.read && styles.unreadAlert]}
-      onPress={() => handleAlertPress(item)}
-    >
-      <View style={styles.alertHeader}>
-        <View style={styles.alertIcon}>
-          <Icon
-            name={getTypeIcon(item.type)}
-            size={20}
-            color={getPriorityColor(item.priority)}
-          />
-        </View>
-        <View style={styles.alertInfo}>
-          <Text style={[styles.alertTitle, !item.read && styles.unreadTitle]}>
-            {item.title}
-          </Text>
-          <Text style={styles.alertMessage}>{item.message}</Text>
-        </View>
-        <View style={styles.alertMeta}>
-          <View style={[styles.priorityBadge, { backgroundColor: getPriorityColor(item.priority) }]}>
-            <Text style={styles.priorityText}>{item.priority}</Text>
-          </View>
-          {!item.read && <View style={styles.unreadDot} />}
-        </View>
-      </View>
-      
-      <View style={styles.alertFooter}>
-        <View style={styles.timestampContainer}>
-          <Icon name="time" size={14} color="#6b7280" />
-          <Text style={styles.timestamp}>{item.timestamp}</Text>
-        </View>
-        <View style={styles.typeContainer}>
-          <Text style={styles.typeText}>{item.type}</Text>
-          {item.actionRequired && (
-            <View style={styles.actionBadge}>
-              <Text style={styles.actionText}>Action Required</Text>
-            </View>
-          )}
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+      {/* Header */}
+      <View style={styles.topRow}>
+        <Text style={styles.title}>Alert Management</Text>
         <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          style={styles.createBtn}
+          onPress={() => navigation.navigate('CreateAlert')}
         >
-          <Icon name="arrow-back" size={24} color="#ffffff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Alerts</Text>
-        <TouchableOpacity style={styles.markAllButton} onPress={markAllAsRead}>
-          <Icon name="checkmark-done" size={24} color="#ffffff" />
+          <Text style={styles.createBtnText}>+ Create Alert</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={styles.content}>
-        <View style={styles.searchContainer}>
-          <Icon name="search" size={20} color="#6b7280" style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search alerts..."
-            value={searchText}
-            onChangeText={setSearchText}
-            placeholderTextColor="#9ca3af"
-          />
-        </View>
-
-        <View style={styles.filtersContainer}>
-          <View style={styles.filterRow}>
-            <Text style={styles.filterLabel}>Type:</Text>
-            {alertTypes.slice(0, 3).map(type => (
-              <TouchableOpacity
-                key={type}
-                style={[
-                  styles.filterButton,
-                  filterType === type && styles.activeFilterButton
-                ]}
-                onPress={() => setFilterType(type)}
-              >
-                <Text style={[
-                  styles.filterButtonText,
-                  filterType === type && styles.activeFilterButtonText
-                ]}>
-                  {type}
-                </Text>
-              </TouchableOpacity>
-            ))}
+      {/* Filter */}
+      <View style={styles.filterCard}>
+        <View style={styles.inputRow}>
+          <View style={styles.inputCol}>
+            <Text style={styles.label}>Start Date</Text>
+            <TouchableOpacity
+              style={styles.dateInput}
+              onPress={() => setShowStartPicker(true)}
+            >
+              <Text>
+                {startDate ? formatDate(startDate) : 'dd-mm-yyyy'}
+              </Text>
+              <Icon name="calendar-outline" size={18} />
+            </TouchableOpacity>
+            {showStartPicker && (
+              <DateTimePicker
+                value={startDate || new Date()}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={(e, d) => {
+                  setShowStartPicker(false);
+                  if (d) setStartDate(d);
+                }}
+              />
+            )}
           </View>
-          
-          <View style={styles.filterRow}>
-            <Text style={styles.filterLabel}>Priority:</Text>
-            {priorities.map(priority => (
-              <TouchableOpacity
-                key={priority}
-                style={[
-                  styles.filterButton,
-                  filterPriority === priority && styles.activeFilterButton
-                ]}
-                onPress={() => setFilterPriority(priority)}
-              >
-                <Text style={[
-                  styles.filterButtonText,
-                  filterPriority === priority && styles.activeFilterButtonText
-                ]}>
-                  {priority}
-                </Text>
-              </TouchableOpacity>
-            ))}
+
+          <View style={styles.inputCol}>
+            <Text style={styles.label}>End Date</Text>
+            <TouchableOpacity
+              style={styles.dateInput}
+              onPress={() => setShowEndPicker(true)}
+            >
+              <Text>{endDate ? formatDate(endDate) : 'dd-mm-yyyy'}</Text>
+              <Icon name="calendar-outline" size={18} />
+            </TouchableOpacity>
+            {showEndPicker && (
+              <DateTimePicker
+                value={endDate || new Date()}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={(e, d) => {
+                  setShowEndPicker(false);
+                  if (d) setEndDate(d);
+                }}
+              />
+            )}
           </View>
         </View>
 
-        <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{alerts.length}</Text>
-            <Text style={styles.statLabel}>Total Alerts</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statNumber, { color: '#ef4444' }]}>
-              {alerts.filter(a => !a.read).length}
-            </Text>
-            <Text style={styles.statLabel}>Unread</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={[styles.statNumber, { color: '#f59e0b' }]}>
-              {alerts.filter(a => a.actionRequired).length}
-            </Text>
-            <Text style={styles.statLabel}>Action Required</Text>
-          </View>
+        <View style={styles.filterActions}>
+          <TouchableOpacity style={styles.filterBtn} onPress={handleFilter}>
+            <Text style={styles.filterText}>Filter</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.clearBtn} onPress={clearFilter}>
+            <Text style={styles.filterText}>Clear</Text>
+          </TouchableOpacity>
         </View>
+      </View>
 
+      {loading ? (
+        <ActivityIndicator style={{ marginTop: 30 }} />
+      ) : (
         <FlatList
-          data={filteredAlerts}
-          renderItem={renderAlertItem}
-          keyExtractor={(item) => item.id}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContainer}
+          data={alerts}
+          renderItem={renderRow}
+          keyExtractor={(i) => i._id || i.id}
+          contentContainerStyle={{ padding: 16 }}
+          ListEmptyComponent={
+            <Text style={{ textAlign: 'center', marginTop: 40 }}>
+              No alerts found
+            </Text>
+          }
         />
-      </View>
+      )}
     </SafeAreaView>
   );
 };
 
+export default AlertsScreen;
+
+/* ================= STYLES ================= */
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  header: {
-    backgroundColor: '#1e293b',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
+  container: { flex: 1, backgroundColor: '#f6f7fb' },
+
+  topRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    padding: 16,
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#ffffff',
-    flex: 1,
-    textAlign: 'center',
+
+  title: { fontSize: 18, fontWeight: '700' },
+
+  createBtn: {
+    backgroundColor: '#22c55e',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 6,
   },
-  markAllButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#10b981',
-    alignItems: 'center',
-    justifyContent: 'center',
+
+  createBtnText: { color: '#fff', fontWeight: '700' },
+
+  filterCard: {
+    backgroundColor: '#fff',
+    margin: 16,
+    padding: 12,
+    borderRadius: 8,
+    elevation: 2,
   },
-  content: {
-    flex: 1,
-    padding: 20,
-  },
-  searchContainer: {
+
+  inputRow: { flexDirection: 'row' },
+
+  inputCol: { flex: 1, marginRight: 8 },
+
+  label: { fontSize: 12, color: '#6b7280', marginBottom: 6 },
+
+  dateInput: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderRadius: 6,
+    padding: 10,
   },
-  searchIcon: {
-    marginRight: 12,
-  },
-  searchInput: {
-    flex: 1,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#374151',
-  },
-  filtersContainer: {
-    marginBottom: 16,
-  },
-  filterRow: {
+
+  filterActions: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
+    marginTop: 12,
   },
-  filterLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#374151',
-    width: 60,
-  },
-  filterButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#e5e7eb',
+
+  filterBtn: {
+    backgroundColor: '#0ea5e9',
+    padding: 10,
+    borderRadius: 6,
     marginRight: 8,
   },
-  activeFilterButton: {
-    backgroundColor: '#3b82f6',
+
+  clearBtn: {
+    backgroundColor: '#ef4444',
+    padding: 10,
+    borderRadius: 6,
   },
-  filterButtonText: {
-    fontSize: 12,
-    color: '#374151',
-  },
-  activeFilterButtonText: {
-    color: '#ffffff',
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  statCard: {
-    backgroundColor: '#ffffff',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    flex: 1,
-    marginHorizontal: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#6b7280',
-  },
-  listContainer: {
-    paddingBottom: 20,
-  },
+
+  filterText: { color: '#fff', fontWeight: '700' },
+
+  /* CARD */
   alertCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 14,
+    elevation: 2,
   },
-  unreadAlert: {
-    borderLeftWidth: 4,
-    borderLeftColor: '#3b82f6',
+
+  cardDate: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#2563eb',
+    marginBottom: 6,
   },
-  alertHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  alertIcon: {
-    marginRight: 12,
-    marginTop: 2,
-  },
-  alertInfo: {
-    flex: 1,
-  },
-  alertTitle: {
+
+  cardTitle: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b',
-    marginBottom: 4,
+    fontWeight: '700',
+    marginBottom: 6,
+    color: '#111827',
   },
-  unreadTitle: {
-    fontWeight: 'bold',
-  },
-  alertMessage: {
+
+  cardReason: {
     fontSize: 14,
+    marginBottom: 10,
     color: '#6b7280',
-    lineHeight: 20,
+    fontStyle: 'italic',
   },
-  alertMeta: {
-    alignItems: 'flex-end',
-  },
-  priorityBadge: {
-    paddingHorizontal: 8,
+
+  badgeRow: { flexDirection: 'row', marginBottom: 12 },
+
+  badge: {
+    paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
-    marginBottom: 4,
-  },
-  priorityText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  unreadDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#3b82f6',
-  },
-  alertFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  timestampContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  timestamp: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginLeft: 4,
-  },
-  typeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  typeText: {
-    fontSize: 12,
-    color: '#6b7280',
     marginRight: 8,
   },
-  actionBadge: {
-    backgroundColor: '#fef3c7',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  actionText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#92400e',
-  },
-});
 
-export default AlertsScreen;
+  badgeYes: { backgroundColor: '#dcfce7' },
+  badgeNo: { backgroundColor: '#fee2e2' },
+  badgeActive: { backgroundColor: '#bbf7d0' },
+  badgeInactive: { backgroundColor: '#e5e7eb' },
+
+  badgeText: { fontSize: 12, fontWeight: '700' },
+
+  cardActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+
+  editBtn: {
+    backgroundColor: '#2563eb',
+    padding: 10,
+    borderRadius: 6,
+    marginRight: 10,
+  },
+
+  deleteBtn: {
+    backgroundColor: '#ef4444',
+    padding: 10,
+    borderRadius: 6,
+  },
+
+  actionText: { color: '#fff', fontWeight: '700' },
+});

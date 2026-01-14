@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import Icon from "react-native-vector-icons/Ionicons";
 import LinearGradient from "react-native-linear-gradient";
 import { launchImageLibrary } from "react-native-image-picker";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CommonActions } from '@react-navigation/native';
 // Import the regular property API
 import { addProperty } from "../services/propertyapi";
 import { simulatePropertyAddedNotification } from "../utils/testNotifications";
@@ -85,8 +86,64 @@ const AddSellScreen = ({ navigation }) => {
   const [parking, setParking] = useState("Available");
   const [purpose, setPurpose] = useState("Sell");
   const [propertyType, setPropertyType] = useState("Residential");
-  const [commercialType, setCommercialType] = useState("office");
-  const [residentialType, setResidentialType] = useState("apartment");
+  const [commercialType, setCommercialType] = useState("Office");
+  const [residentialType, setResidentialType] = useState("Apartment");
+  const [bedrooms, setBedrooms] = useState("");
+  const [bathrooms, setBathrooms] = useState("");
+  const [balconies, setBalconies] = useState("");
+  const [floorNumber, setFloorNumber] = useState("");
+  const [totalFloors, setTotalFloors] = useState("");
+  const [facingDirection, setFacingDirection] = useState("North");
+  const [contactNumber, setContactNumber] = useState("");
+
+  // Check if user is fully registered on screen mount
+  useEffect(() => {
+    checkUserRegistration();
+  }, []);
+
+  const checkUserRegistration = async () => {
+    try {
+      const userProfileString = await AsyncStorage.getItem('userProfile');
+      
+      if (!userProfileString) {
+        // No user profile at all - redirect to login
+        Alert.alert(
+          "Login Required",
+          "Please login to post properties.",
+          [
+            {
+              text: "OK",
+              onPress: () => navigation.replace('LoginScreen')
+            }
+          ]
+        );
+        return;
+      }
+
+      const userProfile = JSON.parse(userProfileString);
+      
+      // Check if user has completed full registration
+      // A fully registered user should have: email, fullName (not 'User'), and preferably dob
+      const isFullyRegistered = 
+        userProfile.email && 
+        userProfile.email.trim() !== '' && 
+        userProfile.fullName && 
+        userProfile.fullName !== 'User' &&
+        userProfile.fullName.trim() !== '';
+
+      if (!isFullyRegistered) {
+        console.log('⚠️ User not fully registered. Redirecting to SignupScreen...');
+        
+        // Directly navigate to SignupScreen without alert
+        navigation.replace('SignupScreen', {
+          phoneNumber: userProfile.phone || '',
+          fromAddProperty: true
+        });
+      }
+    } catch (error) {
+      console.error('Error checking user registration:', error);
+    }
+  };
 
   // Handle purpose change with property type logic
   const handlePurposeChange = (newPurpose) => {
@@ -165,6 +222,7 @@ const AddSellScreen = ({ navigation }) => {
   }, []);
 
   const handleSubmit = useCallback(async () => {
+    // Validation
     if (!propertyLocation || !price || !areaDetails || !description) {
       Alert.alert("Error", "Please fill all required fields.");
       return;
@@ -175,192 +233,167 @@ const AddSellScreen = ({ navigation }) => {
       return;
     }
 
+    if (contactNumber && contactNumber.length !== 10) {
+      Alert.alert("Error", "Contact number must be 10 digits.");
+      return;
+    }
+
     try {
       setSubmitting(true);
 
-      const payload = {
+      // Get auth token
+      const userToken = await AsyncStorage.getItem('userToken');
+      if (!userToken) {
+        Alert.alert("Error", "Please login to add property.");
+        navigation.replace('LoginScreen');
+        return;
+      }
+
+      console.log('🔑 Using token:', userToken.substring(0, 20) + '...');
+
+      // Create FormData
+      const formData = new FormData();
+      
+      // Required fields
+      formData.append('propertyLocation', propertyLocation);
+      formData.append('areaDetails', areaDetails);
+      formData.append('availability', availability);
+      formData.append('price', price);
+      formData.append('description', description);
+      formData.append('furnishingStatus', furnishingStatus);
+      formData.append('parking', parking);
+      formData.append('purpose', purpose);
+      formData.append('propertyType', propertyType);
+      
+      // Conditional fields
+      if (propertyType === "Residential") {
+        formData.append('residentialType', residentialType);
+      } else if (propertyType === "Commercial") {
+        formData.append('commercialType', commercialType);
+      }
+      
+      // Additional fields (if filled)
+      if (bedrooms) formData.append('bedrooms', bedrooms);
+      if (bathrooms) formData.append('bathrooms', bathrooms);
+      if (balconies) formData.append('balconies', balconies);
+      if (floorNumber) formData.append('floorNumber', floorNumber);
+      if (totalFloors) formData.append('totalFloors', totalFloors);
+      if (facingDirection) formData.append('facingDirection', facingDirection);
+      if (contactNumber) formData.append('contactNumber', contactNumber);
+      
+      // Add photos and videos with proper file type handling
+      console.log('📸 Processing files:', photosAndVideo.length);
+      
+      if (photosAndVideo.length > 0) {
+        photosAndVideo.forEach((file, index) => {
+          // Get proper MIME type
+          let mimeType = file.type || 'image/jpeg';
+          let fileName = file.fileName;
+          
+          // Clean up filename - remove spaces and special characters
+          if (fileName) {
+            // Remove extra extensions and clean filename
+            fileName = fileName.replace(/\.[^/.]+$/, ''); // Remove existing extension
+            fileName = fileName.replace(/[^a-zA-Z0-9_-]/g, '_'); // Replace special chars
+          }
+          
+          // Generate proper filename with correct extension
+          if (!fileName || fileName === `file-${Date.now()}` || fileName.length < 3) {
+            fileName = `property_${Date.now()}_${index}`;
+          }
+          
+          // Add proper extension based on MIME type
+          if (mimeType.startsWith('video/')) {
+            const ext = mimeType.split('/')[1] || 'mp4';
+            fileName = `${fileName}.${ext}`;
+          } else {
+            // Convert webp to jpeg for better backend compatibility
+            if (mimeType === 'image/webp') {
+              mimeType = 'image/jpeg';
+              fileName = `${fileName}.jpg`;
+            } else {
+              const ext = mimeType.split('/')[1] || 'jpeg';
+              fileName = `${fileName}.${ext}`;
+            }
+          }
+          
+          // Fix URI format for Android/iOS
+          let fileUri = file.uri;
+          if (Platform.OS === 'android' && !fileUri.startsWith('file://')) {
+            fileUri = 'file://' + fileUri;
+          }
+          
+          console.log(`📎 File ${index}:`, { uri: fileUri, type: mimeType, name: fileName });
+          
+          formData.append('photosAndVideo', {
+            uri: fileUri,
+            type: mimeType,
+            name: fileName,
+          });
+        });
+      } else {
+        console.log('⚠️ No files selected - submitting without photos');
+      }
+
+      console.log('🚀 Submitting property to new API...', {
         propertyLocation,
-        areaDetails: Number(areaDetails),
-        availability,
-        price: Number(price),
-        description,
-        furnishingStatus,
-        parking,
+        price,
+        areaDetails,
         purpose,
         propertyType,
-        commercialType: propertyType === "Commercial" ? commercialType : undefined,
-        residentialType: propertyType === "Residential" ? residentialType : undefined,
-        // Add property fields
-        title: `${propertyType} ${purpose} in ${propertyLocation}`,
-        status: 'active',
-        contactNumber: "", // Can be filled from user profile
-        phoneNumber: "", 
-        mobile: "",
-        // Add media files in proper format
-        media: photosAndVideo.map(file => ({
-          uri: file.uri,
-          type: file.type || 'image/jpeg',
-          name: file.fileName || file.name || `media-${Date.now()}.jpg`,
-        }))
-      };
-
-      // Try multiple property creation approaches
-      let data;
-      try {
-        // Try property API
-        console.log('🚀 Attempting property creation...');
-        const response = await addProperty(payload);
-        
-        data = {
-          message: "Property added successfully",
-          property: response.data || response
-        };
-        console.log('✅ Property creation successful');
-        
-      } catch (propertyError) {
-        console.log('Property creation failed:', propertyError.message);
-        
-        // Fallback: Try direct API call to working server
-        try {
-          console.log('🚀 Attempting direct API call...');
-          const directResponse = await fetch('https://abc.bhoomitechzone.us/api/property/create', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${await AsyncStorage.getItem('userToken')}`,
-            },
-            body: JSON.stringify(propertyPayload),
-          });
-          
-          if (directResponse.ok) {
-            const directData = await directResponse.json();
-            data = {
-              message: "Property added successfully",
-              property: directData.property || directData
-            };
-            console.log('✅ Direct API call successful');
-          } else {
-            throw new Error(`Server responded with status: ${directResponse.status}`);
-          }
-        } catch (directError) {
-          console.log('Direct API call also failed:', directError.message);
-          
-          // Final fallback: Create local property record
-          console.log('💾 Creating local property record...');
-          
-          const localProperty = {
-            id: `local_${Date.now()}`,
-            ...payload,
-            createdAt: new Date().toISOString(),
-            status: 'pending_sync',
-            isLocal: true,
-            // Handle images properly for offline viewing
-            images: photosAndVideo.map(file => ({
-              uri: file.uri,
-              url: file.uri,
-              type: file.type || 'image/jpeg',
-              name: file.fileName || file.name || `image_${Date.now()}.jpg`
-            })),
-            photos: photosAndVideo.map(file => file.uri), // Legacy format
-            photosAndVideo: photosAndVideo // Full file objects
-          };
-          
-          // Store locally
-          const existingProperties = await AsyncStorage.getItem('local_properties');
-          const localProperties = existingProperties ? JSON.parse(existingProperties) : [];
-          localProperties.push(localProperty);
-          await AsyncStorage.setItem('local_properties', JSON.stringify(localProperties));
-          
-          data = {
-            message: "Property saved locally. Will sync when server connection is restored.",
-            property: localProperty
-          };
-        }
-      }
-
-      // Add notification for property added (simulating backend notification)
-      try {
-        // Local notification for immediate feedback
-        await simulatePropertyAddedNotification({
-          _id: data.property?._id,
-          description: description,
-          propertyLocation: propertyLocation,
-          price: price,
-          photosAndVideo: photosAndVideo
-        });
-
-        // Send notification to ALL users via backend API
-        try {
-          const notificationPayload = {
-            title: "🏠 New Property Listed!",
-            message: `A new ${propertyType} property has been listed in ${propertyLocation}. Check it out now!`,
-            propertyId: data.property?._id,
-            type: 'new_property'
-          };
-
-          const response = await fetch('https://abc.bhoomitechzone.us/application/notify-update', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(notificationPayload),
-          });
-
-          const result = await response.json();
-          
-          if (result.success) {
-            console.log('✅ Property notification sent to all users via backend:', result);
-            console.log(`📊 Sent to: ${result.sentCount} users, Failed: ${result.failedCount} users`);
-          } else {
-            console.warn('⚠️ Backend notification partially failed:', result);
-          }
-        } catch (backendError) {
-          console.error('❌ Failed to send backend notification:', backendError);
-          // Continue with success even if backend notification fails
-        }
-        
-      } catch (notificationError) {
-        console.warn('Failed to add property notification:', notificationError);
-      }
-
-      Alert.alert("Success", data.message || "Property added successfully");
-      
-      // Show additional info if saved locally
-      if (data.property?.isLocal) {
-        setTimeout(() => {
-          Alert.alert(
-            "Offline Mode", 
-            "Your property has been saved locally with photos and will be uploaded automatically when the server connection is restored. You can view it in your property list.",
-            [
-              {
-                text: "View Property",
-                onPress: () => {
-                  // Property details screen will already be shown
-                }
-              },
-              { text: "OK" }
-            ]
-          );
-        }, 1000);
-      }
-      
-      navigation.replace("PropertyDetailsScreen", { 
-        property: {
-          ...data.property,
-          // Ensure images are properly formatted for display
-          images: photosAndVideo.map(file => ({
-            uri: file.uri,
-            url: file.uri, // Fallback for different image display patterns
-            type: file.type || 'image/jpeg'
-          })),
-          photosAndVideo: photosAndVideo, // Keep original format
-          isLocalProperty: data.property?.isLocal || false
-        },
-        fromAddProperty: true,
-        isOffline: data.property?.isLocal || false
+        filesCount: photosAndVideo.length,
+        fileTypes: photosAndVideo.map(f => f.type).join(', ')
       });
+      
+      // Make API call
+      // Note: Don't set Content-Type for multipart/form-data - fetch will set it automatically with boundary
+      const response = await fetch('https://abc.ridealmobility.com/property/add', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${userToken}`,
+        },
+        body: formData,
+      });
+
+      // Check content type before parsing
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const textResponse = await response.text();
+        console.error('❌ Non-JSON response:', textResponse);
+        console.error('❌ Response Status:', response.status);
+        console.error('❌ Response URL:', response.url);
+        throw new Error(`Server error (${response.status}): Backend is returning HTML instead of JSON. The API endpoint might be down or incorrect.`);
+      }
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.message || `Server error: ${response.status}`);
+      }
+
+      console.log('✅ Property added successfully:', result);
+      
+      Alert.alert(
+        "Success", 
+        result.message || "Property added successfully!",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              // Navigate back or to home screen
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              } else {
+                navigation.navigate('HomeScreen');
+              }
+            }
+          }
+        ]
+      );
+      
     } catch (err) {
-      Alert.alert("Error", err.message || "Failed to add property");
+      console.error('❌ Property submission error:', err);
+      Alert.alert("Error", err.message || "Failed to add property. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -376,6 +409,13 @@ const AddSellScreen = ({ navigation }) => {
     propertyType,
     commercialType,
     residentialType,
+    bedrooms,
+    bathrooms,
+    balconies,
+    floorNumber,
+    totalFloors,
+    facingDirection,
+    contactNumber,
     photosAndVideo,
     navigation,
   ]);
@@ -424,9 +464,9 @@ const AddSellScreen = ({ navigation }) => {
           <Selector
             label="Residential Type"
             options={[
-              { label: "Apartment", value: "apartment" },
-              { label: "Villa", value: "villa" },
-              { label: "Plot", value: "plot" },
+              { label: "Apartment", value: "Apartment" },
+              { label: "Villa", value: "Villa" },
+              { label: "Plot", value: "Plot" },
             ]}
             selectedValue={residentialType}
             onSelect={setResidentialType}
@@ -435,9 +475,9 @@ const AddSellScreen = ({ navigation }) => {
           <Selector
             label="Commercial Type"
             options={[
-              { label: "Office", value: "office" },
-              { label: "Shop", value: "shop" },
-              { label: "Warehouse", value: "warehouse" },
+              { label: "Office", value: "Office" },
+              { label: "Shop", value: "Shop" },
+              { label: "Warehouse", value: "Warehouse" },
             ]}
             selectedValue={commercialType}
             onSelect={setCommercialType}
@@ -504,6 +544,70 @@ const AddSellScreen = ({ navigation }) => {
           value={description}
           onChangeText={setDescription}
           multiline
+        />
+
+        {propertyType === "Residential" && (
+          <>
+            <FormInput
+              label="🛏️ Bedrooms"
+              placeholder="e.g., 2"
+              value={bedrooms}
+              onChangeText={setBedrooms}
+              keyboardType="numeric"
+            />
+
+            <FormInput
+              label="🚿 Bathrooms"
+              placeholder="e.g., 2"
+              value={bathrooms}
+              onChangeText={setBathrooms}
+              keyboardType="numeric"
+            />
+
+            <FormInput
+              label="🌅 Balconies"
+              placeholder="e.g., 1"
+              value={balconies}
+              onChangeText={setBalconies}
+              keyboardType="numeric"
+            />
+
+            <FormInput
+              label="🏢 Floor Number"
+              placeholder="e.g., 3"
+              value={floorNumber}
+              onChangeText={setFloorNumber}
+              keyboardType="numeric"
+            />
+
+            <FormInput
+              label="🏗️ Total Floors"
+              placeholder="e.g., 10"
+              value={totalFloors}
+              onChangeText={setTotalFloors}
+              keyboardType="numeric"
+            />
+
+            <Selector
+              label="🧭 Facing Direction"
+              options={[
+                { label: "North", value: "North" },
+                { label: "South", value: "South" },
+                { label: "East", value: "East" },
+                { label: "West", value: "West" },
+              ]}
+              selectedValue={facingDirection}
+              onSelect={setFacingDirection}
+            />
+          </>
+        )}
+
+        <FormInput
+          label="📞 Contact Number"
+          placeholder="Enter 10-digit mobile number"
+          value={contactNumber}
+          onChangeText={setContactNumber}
+          keyboardType="phone-pad"
         />
 
         {/* Upload Media */}

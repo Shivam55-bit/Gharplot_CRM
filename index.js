@@ -14,8 +14,12 @@ import './src/utils/hmrConfig';
 import './src/utils/workletsErrorHandler';
 
 import App from './App';
-import { name as appName } from './app.json';
+// Import app name from app.json - use the correct 'name' property
+const appName = 'Gharplot'; // Directly use the app name that matches MainActivity.kt
 
+// ============================================
+// FCM BACKGROUND HANDLER
+// ============================================
 // Only import Firebase messaging for mobile platforms with error handling
 if (Platform.OS !== 'web') {
   try {

@@ -27,47 +27,6 @@ const PHONE_ALERT_ICON = require('../../assets/phone_alert.png');
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = width - 40;
 
-// --- Mock Data ---
-const rentalsData = [
-  {
-    id: "1",
-    title: "Modern Apartment",
-    price: "$1200/month",
-    location: "Downtown, NY",
-    type: "Apartment",
-    image:
-      "https://images.unsplash.com/photo-1560184897-dfc0cf40b29c?auto=format&fit=crop&w=1080&q=80",
-    beds: 2,
-    baths: 2,
-    sqft: 1050,
-  },
-  {
-    id: "2",
-    title: "Cozy Studio",
-    price: "$900/month",
-    location: "Brooklyn, NY",
-    type: "Studio",
-    image:
-      "https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=1080&q=80",
-    beds: 1,
-    baths: 1,
-    sqft: 600,
-  },
-  {
-    id: "3",
-    title: "Luxury Condo",
-    price: "$2000/month",
-    location: "Manhattan, NY",
-    type: "Condo",
-    image:
-      "https://images.unsplash.com/photo-1572120360610-d971b9c5c57d?auto=format&fit=crop&w=1080&q=80",
-    beds: 3,
-    baths: 3,
-    sqft: 1800,
-  },
-];
-// --- End Mock Data ---
-
 const COLORS = {
   primary: "#1E90FF",
   secondary: "#34C759",
@@ -85,7 +44,7 @@ const COLORS = {
 
 const RentScreen = ({ navigation }) => {
   const [favorites, setFavorites] = useState([]);
-  const [rentals, setRentals] = useState(rentalsData);
+  const [rentals, setRentals] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -132,24 +91,10 @@ const RentScreen = ({ navigation }) => {
             propertyType: p.propertyType || "Residential",
           }));
           setRentals(mapped);
-        } else {
-          // Fallback to mock data if no properties found
-          setRentals(
-            rentalsData.map((r) => ({
-              ...r,
-              price: r.price.replace("/month", "/mo"),
-            }))
-          );
         }
       } catch (e) {
         console.warn("Could not load rent properties:", e.message || e);
-        // Fallback to mock data on error
-        setRentals(
-          rentalsData.map((r) => ({
-            ...r,
-            price: r.price.replace("/month", "/mo"),
-          }))
-        );
+        setRentals([]);
       } finally {
         if (mounted) setLoading(false);
         setRefreshing(false);
@@ -162,15 +107,20 @@ const RentScreen = ({ navigation }) => {
   }, []);
   // --- End Fetch Rentals ---
 
-  // --- Filter Rentals (omitted for brevity, keep existing logic) ---
-  const filteredRentals =
-    selectedType === "All"
-      ? rentals
-      : rentals.filter(
-          (item) =>
-            item.type &&
-            item.type.toLowerCase() === selectedType.toLowerCase()
-        );
+  // --- Filter Rentals with search ---
+  const filteredRentals = rentals.filter((item) => {
+    // Filter by type
+    const matchesType = selectedType === "All" || 
+      (item.type && item.type.toLowerCase() === selectedType.toLowerCase());
+    
+    // Filter by search query
+    const matchesSearch = !searchQuery.trim() || 
+      item.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.location?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.type?.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    return matchesType && matchesSearch;
+  });
 
   // --- Handlers (omitted for brevity, keep existing logic) ---
   const toggleFavorite = (id) => {
@@ -202,7 +152,7 @@ const RentScreen = ({ navigation }) => {
       <TouchableOpacity
         style={styles.card}
         onPress={() =>
-          navigation.navigate("PropertyDetails", { property: item })
+          navigation.navigate("PropertyDetailsScreen", { property: item.raw || item })
         }
         activeOpacity={0.85}
       >
@@ -338,7 +288,7 @@ const RentScreen = ({ navigation }) => {
         <Text style={styles.headerTitle}>Rent Homes</Text>
         <TouchableOpacity
           style={styles.addBtn}
-          onPress={() => navigation.navigate("PostProperty")}
+          onPress={() => navigation.navigate("AddSell")}
         >
           <Icon name="add-circle-outline" size={28} color={COLORS.primary} />
         </TouchableOpacity>
@@ -360,6 +310,11 @@ const RentScreen = ({ navigation }) => {
             value={searchQuery}
             onChangeText={handleSearch}
           />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery("")}>
+              <Icon name="close-circle" size={20} color={COLORS.textSecondary} />
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         {/* Filters */}
@@ -404,6 +359,11 @@ const RentScreen = ({ navigation }) => {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           refreshing={refreshing}
+          ListEmptyComponent={
+            <View style={{ padding: 20, alignItems: 'center' }}>
+              <Text style={{ color: COLORS.textSecondary, fontSize: 16 }}>No rental properties found</Text>
+            </View>
+          }
           onRefresh={() => {
             setRefreshing(true);
             (async () => {

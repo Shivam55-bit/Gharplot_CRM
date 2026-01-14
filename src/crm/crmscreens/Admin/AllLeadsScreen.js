@@ -11,6 +11,7 @@ import {
   RefreshControl,
   ScrollView,
   StatusBar,
+  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -144,8 +145,12 @@ const AllLeadsScreen = ({ navigation }) => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#3b82f6" />
+    <View style={styles.container}>
+      <StatusBar 
+        barStyle="light-content" 
+        backgroundColor="#3b82f6" 
+        translucent={false}
+      />
       
       {/* HEADER */}
       <LinearGradient colors={['#3b82f6', '#2563eb']} style={styles.header}>
@@ -214,7 +219,7 @@ const AllLeadsScreen = ({ navigation }) => {
           }
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -225,13 +230,13 @@ export default AllLeadsScreen;
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
-    backgroundColor: '#f3f4f6' 
+    backgroundColor: '#f3f4f6',
   },
 
   // Header
   header: {
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: Platform.OS === 'ios' ? 60 : (StatusBar.currentHeight || 0) + 16,
     paddingBottom: 20,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,

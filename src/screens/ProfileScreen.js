@@ -58,7 +58,94 @@ const ProfileScreen = ({ navigation }) => {
     const loadProfileData = useCallback(async () => {
         setLoading(true);
         setError('');
+        
         try {
+            // First, check if user is fully registered
+            const cachedProfile = await AsyncStorage.getItem('userProfile');
+            
+            if (cachedProfile) {
+                const data = JSON.parse(cachedProfile);
+                
+                // Check if user is fully registered
+                const isFullyRegistered = 
+                    data.email && 
+                    data.email.trim() !== '' && 
+                    data.fullName && 
+                    data.fullName !== 'User' &&
+                    data.fullName.trim() !== '';
+                
+                if (!isFullyRegistered) {
+                    // New user - Show default/placeholder data
+                    console.log('ℹ️ New user detected - Showing default profile data');
+                    setName('Guest User');
+                    setEmail('Complete your registration');
+                    setShortlistedCount(0);
+                    setMyListingsCount(0);
+                    setEnquiriesCount(0);
+                    setAvatar(null);
+                    setAvatarVersion(Date.now());
+                    setLoading(false);
+                    return; // Exit early - no API call needed
+                }
+                
+                // Fully registered user - Try to fetch from API first
+                console.log('✅ Fully registered user - Fetching from API...');
+                try {
+                    const apiData = await getCurrentUserProfile();
+                    const fullName = apiData.fullName || apiData.name || apiData.full_name || data.fullName;
+
+                    setName(fullName);
+                    setEmail(apiData.email || data.email);
+                    setShortlistedCount(apiData.shortlistedCount || 0);
+                    setMyListingsCount(apiData.myListingsCount || 0);
+                    setEnquiriesCount(apiData.enquiriesCount || 0);
+                    
+                    // Load avatar from API or cached data
+                    const avatarUrl = (Array.isArray(apiData.photosAndVideo) && apiData.photosAndVideo.length > 0)
+                        ? apiData.photosAndVideo[0]
+                        : (apiData.avatar || apiData.profileImage || apiData.photo || apiData.image || null);
+                    
+                    // Check for local optimistic avatar
+                    const updatedAt = await AsyncStorage.getItem('avatarUpdatedAt');
+                    const localUri = await AsyncStorage.getItem('avatarLocalUri');
+
+                    if (updatedAt && localUri) {
+                        setAvatar(localUri);
+                        setAvatarVersion(Date.now());
+                        pollForServerAvatar(avatarUrl, /*maxAttempts=*/6, /*intervalMs=*/1000).catch(() => {});
+                    } else {
+                        setAvatar(avatarUrl);
+                        setAvatarVersion(Date.now());
+                    }
+                    
+                    setLoading(false);
+                    console.log('✅ Profile loaded successfully from API');
+                    return;
+                } catch (apiError) {
+                    // API failed - Fall back to cached data
+                    console.log('⚠️ API failed, using cached profile data:', apiError.message);
+                    const fullName = data.fullName || data.name || data.full_name || 'N/A';
+
+                    setName(fullName);
+                    setEmail(data.email || 'N/A');
+                    setShortlistedCount(data.shortlistedCount || 0);
+                    setMyListingsCount(data.myListingsCount || 0);
+                    setEnquiriesCount(data.enquiriesCount || 0);
+                    
+                    const avatarUrl = (Array.isArray(data.photosAndVideo) && data.photosAndVideo.length > 0)
+                        ? data.photosAndVideo[0]
+                        : (data.avatar || data.profileImage || data.photo || data.image || null);
+                    setAvatar(avatarUrl);
+                    setAvatarVersion(Date.now());
+                    
+                    setLoading(false);
+                    console.log('✅ Profile loaded from cache after API failure');
+                    return;
+                }
+            }
+            
+            // If no cached profile at all, try API call
+            console.log('ℹ️ No cached profile, fetching from API...');
             const data = await getCurrentUserProfile();
             const fullName = data.fullName || data.name || data.full_name || 'N/A';
 
@@ -103,6 +190,39 @@ const ProfileScreen = ({ navigation }) => {
                 });
                 
                 return; // Exit early, don't show error
+            }
+            
+            // Check if error is "User not found" - Load from AsyncStorage instead
+            if (err.message && err.message.includes('User not found')) {
+                console.warn('⚠️ User profile not found in backend - Loading from local storage');
+                
+                try {
+                    // Load user data from AsyncStorage
+                    const userId = await AsyncStorage.getItem('userId');
+                    const userProfile = await AsyncStorage.getItem('userProfile');
+                    
+                    if (userProfile) {
+                        const data = JSON.parse(userProfile);
+                        setName(data.fullName || data.name || 'User');
+                        setEmail(data.email || 'N/A');
+                        setShortlistedCount(0);
+                        setMyListingsCount(0);
+                        setEnquiriesCount(0);
+                        console.log('✅ Loaded profile from AsyncStorage');
+                        setLoading(false);
+                        return; // Successfully loaded from local
+                    }
+                    
+                    // If no profile in storage, use default values
+                    setName('User');
+                    setEmail('N/A');
+                    console.log('ℹ️ Using default profile values');
+                    setLoading(false);
+                    return;
+                    
+                } catch (storageError) {
+                    console.error('Error loading from AsyncStorage:', storageError);
+                }
             }
             
             let errorMessage = err.message.includes("HTTP error") ? err.message : 'Could not load profile. Please try again.';
@@ -182,6 +302,7 @@ const ProfileScreen = ({ navigation }) => {
 
     const getInitials = (fullName) => {
         if (!fullName || fullName === 'N/A') return 'SS';
+        if (fullName === 'Guest User') return 'GU';
         const parts = fullName.split(' ').filter(p => p.length > 0);
         if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
         if (parts.length >= 2) return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
@@ -276,14 +397,33 @@ const ProfileScreen = ({ navigation }) => {
                     <Text style={styles.userName}>{name}</Text>
                     <Text style={styles.userEmail}>{email}</Text>
                     
-                    <TouchableOpacity 
-                        style={styles.editProfileButton}
-                        onPress={() => navigation.navigate('EditProfileScreen')}
-                        activeOpacity={0.8}
-                    >
-                        <Icon name="create-outline" size={16} color={COLORS.primary} />
-                        <Text style={styles.editProfileText}>Edit Profile</Text>
-                    </TouchableOpacity>
+                    {/* Show Complete Registration button for new users */}
+                    {(name === 'Guest User' || email === 'Complete your registration') ? (
+                        <TouchableOpacity 
+                            style={[styles.editProfileButton, styles.completeRegistrationButton]}
+                            onPress={async () => {
+                                const userProfileString = await AsyncStorage.getItem('userProfile');
+                                const userProfile = userProfileString ? JSON.parse(userProfileString) : {};
+                                navigation.navigate('SignupScreen', {
+                                    phoneNumber: userProfile.phone || '',
+                                    fromProfile: true
+                                });
+                            }}
+                            activeOpacity={0.8}
+                        >
+                            <Icon name="person-add-outline" size={16} color={COLORS.white} />
+                            <Text style={[styles.editProfileText, styles.completeRegistrationText]}>Complete Registration</Text>
+                        </TouchableOpacity>
+                    ) : (
+                        <TouchableOpacity 
+                            style={styles.editProfileButton}
+                            onPress={() => navigation.navigate('EditProfileScreen')}
+                            activeOpacity={0.8}
+                        >
+                            <Icon name="create-outline" size={16} color={COLORS.primary} />
+                            <Text style={styles.editProfileText}>Edit Profile</Text>
+                        </TouchableOpacity>
+                    )}
                 </View>
             </View>
             
@@ -540,6 +680,13 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: COLORS.primary,
         marginLeft: 6,
+    },
+    completeRegistrationButton: {
+        backgroundColor: COLORS.primary,
+        borderWidth: 0,
+    },
+    completeRegistrationText: {
+        color: COLORS.white,
     },
 
     // Stats Section

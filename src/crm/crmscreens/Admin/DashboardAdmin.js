@@ -12,6 +12,7 @@ import {
   SafeAreaView,
   ActivityIndicator,
   Modal,
+  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -19,7 +20,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import * as crmDashboardApi from '../../services/crmDashboardApi';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 const AdminDashboardScreen = ({ navigation, user }) => {
   const [loading, setLoading] = useState(true);
@@ -96,10 +97,10 @@ const AdminDashboardScreen = ({ navigation, user }) => {
                 'userProfile'
               ]);
               
-              // Navigate to admin login
+              // Navigate to CRM login
               navigation.reset({
                 index: 0,
-                routes: [{ name: 'AdminLogin' }],
+                routes: [{ name: 'CRMLogin' }],
               });
             } catch (error) {
               console.error('Logout error:', error);
@@ -178,8 +179,12 @@ const AdminDashboardScreen = ({ navigation, user }) => {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#3b82f6" />
+      <View style={styles.container}>
+        <StatusBar 
+          barStyle="light-content" 
+          backgroundColor="#3b82f6" 
+          translucent={false}
+        />
         <LinearGradient
           colors={["#3b82f6", "#1e40af"]}
           style={styles.headerWrapper}
@@ -198,13 +203,17 @@ const AdminDashboardScreen = ({ navigation, user }) => {
           <ActivityIndicator size="large" color="#3b82f6" />
           <Text style={styles.loadingText}>Loading dashboard...</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#3b82f6" />
+    <View style={styles.container}>
+      <StatusBar 
+        barStyle="light-content" 
+        backgroundColor="#3b82f6" 
+        translucent={false}
+      />
 
       {/* HEADER */}
       <LinearGradient
@@ -212,18 +221,27 @@ const AdminDashboardScreen = ({ navigation, user }) => {
         style={styles.headerWrapper}
       >
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => setDrawerVisible(true)}>
+          <TouchableOpacity onPress={() => setDrawerVisible(true)} style={styles.menuButton}>
             <Icon name="menu" size={26} color="#fff" />
           </TouchableOpacity>
 
-          <Text style={styles.headerTitle}>Admin Dashboard</Text>
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>Admin Dashboard</Text>
+            <Text style={styles.headerSubtitle}>Welcome, {user?.name || 'Admin'}</Text>
+          </View>
 
           <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
-            <Icon name="log-out-outline" size={26} color="#fff" />
+            <Icon name="log-out-outline" size={24} color="#fff" />
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.headerSubtitle}>Welcome back, {user?.name || 'Admin'}</Text>
+        <TouchableOpacity 
+          onPress={() => navigation.navigate('CreateAlert')} 
+          style={styles.createAlertButton}
+        > 
+          <Icon name="alarm-outline" size={16} color="#fff" />
+          <Text style={styles.createAlertText}>MY REMINDERS</Text>
+        </TouchableOpacity>
       </LinearGradient>
 
       {/* BODY */}
@@ -521,18 +539,6 @@ const AdminDashboardScreen = ({ navigation, user }) => {
               {/* USP MANAGEMENT Section */}
               <View style={styles.drawerSection}>
                 <Text style={styles.sectionTitle}>USP MANAGEMENT</Text>
-                
-                <TouchableOpacity 
-                  style={styles.drawerItem}
-                  onPress={() => {
-                    setDrawerVisible(false);
-                    navigation.navigate('USPCategories');
-                  }}
-                >
-                  <Icon name="list" size={20} color="#3b82f6" />
-                  <Text style={styles.drawerItemText}>USP Categories</Text>
-                  <Icon name="chevron-forward" size={16} color="#9ca3af" />
-                </TouchableOpacity>
 
                 <TouchableOpacity 
                   style={styles.drawerItem}
@@ -542,7 +548,7 @@ const AdminDashboardScreen = ({ navigation, user }) => {
                   }}
                 >
                   <Icon name="person" size={20} color="#3b82f6" />
-                  <Text style={styles.drawerItemText}>USP Employees</Text>
+                  <Text style={styles.drawerItemText}>Team's USP</Text>
                   <Icon name="chevron-forward" size={16} color="#9ca3af" />
                 </TouchableOpacity>
               </View>
@@ -563,7 +569,7 @@ const AdminDashboardScreen = ({ navigation, user }) => {
                   <Icon name="chevron-forward" size={16} color="#9ca3af" />
                 </TouchableOpacity>
 
-                <TouchableOpacity 
+                {/* <TouchableOpacity 
                   style={styles.drawerItem}
                   onPress={() => {
                     setDrawerVisible(false);
@@ -573,7 +579,7 @@ const AdminDashboardScreen = ({ navigation, user }) => {
                   <Icon name="call" size={20} color="#10b981" />
                   <Text style={styles.drawerItemText}>Follow-ups</Text>
                   <Icon name="chevron-forward" size={16} color="#9ca3af" />
-                </TouchableOpacity>
+                </TouchableOpacity> */}
 
                 <TouchableOpacity 
                   style={styles.drawerItem}
@@ -597,64 +603,117 @@ const AdminDashboardScreen = ({ navigation, user }) => {
           />
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f2f6ff" },
+  container: { 
+    flex: 1, 
+    backgroundColor: "#f2f6ff",
+  },
 
   /* Header */
   headerWrapper: {
-    padding: 18,
-    paddingBottom: 30,
+    paddingHorizontal: 18,
+    paddingTop: Platform.OS === 'ios' ? 50 : (StatusBar.currentHeight || 0) + 10,
+    paddingBottom: 20,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
   },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: 16,
+  },
+  menuButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  headerCenter: {
+    flex: 1,
+    marginHorizontal: 12,
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "700",
     color: "#fff",
+    marginBottom: 2,
   },
   headerSubtitle: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginTop: 8,
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.85)',
   },
   logoutButton: {
     padding: 8,
     borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  createAlertButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#7c3aed',
+    elevation: 3,
+    shadowColor: '#7c3aed',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  createAlertText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
+    letterSpacing: 0.8,
+    marginLeft: 8,
   },
 
   /* Stats Cards */
   statsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    padding: 14,
+    padding: 16,
     justifyContent: "space-between",
+    marginTop: -30,
   },
   card: {
     width: width / 2.25,
     backgroundColor: "#fff",
-    padding: 18,
+    padding: 16,
     marginBottom: 14,
     borderRadius: 16,
-    elevation: 4,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
   },
-  cardTitle: { fontSize: 13, color: "#6b7280", fontWeight: "600" },
+  cardTitle: { 
+    fontSize: 12, 
+    color: "#6b7280", 
+    fontWeight: "600",
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
   cardValue: {
-    fontSize: 26,
-    marginVertical: 8,
+    fontSize: 28,
+    marginVertical: 10,
     fontWeight: "900",
   },
-  chartBox: { height: 30 },
+  chartBox: { 
+    height: 30,
+    marginTop: 4,
+  },
 
   /* Mini Chart Styles */
   line: {
@@ -678,13 +737,21 @@ const styles = StyleSheet.create({
   /* White Cards */
   whiteCard: {
     backgroundColor: "#fff",
-    marginHorizontal: 12,
-    marginTop: 10,
+    marginHorizontal: 16,
+    marginTop: 12,
     borderRadius: 16,
-    padding: 18,
+    padding: 20,
     elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
   },
-  sectionHeader: { flexDirection: "row", alignItems: "center" },
+  sectionHeader: { 
+    flexDirection: "row", 
+    alignItems: "center",
+    marginBottom: 4,
+  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "700",
@@ -694,57 +761,104 @@ const styles = StyleSheet.create({
   sectionTitleMain: {
     fontSize: 18,
     fontWeight: "700",
-    marginTop: 18,
-    marginLeft: 18,
+    marginTop: 20,
+    marginLeft: 20,
     color: "#1e40af",
+    marginBottom: 4,
   },
 
   /* Enquiry */
-  enquiryRow: { flexDirection: "row", marginTop: 16 },
+  enquiryRow: { 
+    flexDirection: "row", 
+    marginTop: 20,
+    alignItems: 'center',
+  },
   circleBox: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 8,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 6,
     borderColor: "#3b82f6",
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: '#eff6ff',
   },
-  circleValue: { fontSize: 22, fontWeight: "700", color: "#1e293b" },
-  circleLabel: { fontSize: 10, color: "#6b7280" },
+  circleValue: { 
+    fontSize: 28, 
+    fontWeight: "900", 
+    color: "#1e40af",
+  },
+  circleLabel: { 
+    fontSize: 11, 
+    color: "#6b7280",
+    marginTop: 2,
+    fontWeight: '600',
+  },
 
-  enquiryList: { flex: 1, marginLeft: 20 },
+  enquiryList: { 
+    flex: 1, 
+    marginLeft: 24,
+  },
   enquiryItem: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 10,
+    marginBottom: 14,
+    backgroundColor: '#f9fafb',
+    padding: 12,
+    borderRadius: 10,
   },
-  dot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
-  enquiryText: { flex: 1, fontSize: 14, color: "#1f2937" },
-  enquiryValue: { fontSize: 16, fontWeight: "700" },
+  dot: { 
+    width: 12, 
+    height: 12, 
+    borderRadius: 6, 
+    marginRight: 12,
+  },
+  enquiryText: { 
+    flex: 1, 
+    fontSize: 14, 
+    color: "#1f2937",
+    fontWeight: '500',
+  },
+  enquiryValue: { 
+    fontSize: 18, 
+    fontWeight: "700",
+    color: '#1e40af',
+  },
 
   /* Analytics */
   analyticsGrid: {
     flexDirection: "row",
     marginTop: 12,
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
+    gap: 12,
   },
   blueCard: {
     flex: 1,
     backgroundColor: "#1e40af",
-    padding: 16,
+    padding: 18,
     borderRadius: 16,
-    marginRight: 10,
     elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
   },
-  blueHeader: { flexDirection: "row", alignItems: "center" },
+  blueHeader: { 
+    flexDirection: "row", 
+    alignItems: "center",
+    marginBottom: 8,
+  },
   blueTitle: {
     color: "#fff",
     fontWeight: "700",
     marginLeft: 8,
     fontSize: 14,
   },
-  blueMiniText: { color: "#e0e7ff", marginTop: 10 },
+  blueMiniText: { 
+    color: "#e0e7ff", 
+    marginTop: 10,
+    fontSize: 13,
+  },
 
   /* Leads */
   leadRow: { marginTop: 12 },
@@ -756,15 +870,29 @@ const styles = StyleSheet.create({
   },
 
   /* Property Card */
-  propRow: { flexDirection: "row", alignItems: "center", marginTop: 16 },
-  pieCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#10b981",
-    marginRight: 20,
+  propRow: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    marginTop: 20,
   },
-  propText: { marginBottom: 6, fontSize: 14, color: "#1f2937" },
+  pieCircle: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: "#10b981",
+    marginRight: 24,
+    elevation: 3,
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  propText: { 
+    marginBottom: 8, 
+    fontSize: 14, 
+    color: "#1f2937",
+    fontWeight: '500',
+  },
 
   /* Follow-up / Quick Actions */
   followCard: {
@@ -815,18 +943,18 @@ const styles = StyleSheet.create({
   /* Drawer Styles */
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     flexDirection: 'row',
     justifyContent: 'flex-start',
   },
   drawerContainer: {
-    width: width * 0.75,
+    width: width * 0.78,
     backgroundColor: '#ffffff',
-    elevation: 10,
+    elevation: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 2, height: 0 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
+    shadowOffset: { width: 4, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
   },
   closeArea: {
     flex: 1,
@@ -837,41 +965,45 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#3b82f6',
     paddingHorizontal: 20,
-    paddingVertical: 20,
+    paddingVertical: 24,
+    paddingTop: Platform.OS === 'ios' ? 60 : 24,
+    elevation: 4,
   },
   drawerHeaderTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#ffffff',
+    letterSpacing: 0.5,
   },
   drawerContent: {
     flex: 1,
     paddingHorizontal: 0,
   },
   drawerSection: {
-    paddingVertical: 15,
+    paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    borderBottomColor: '#e5e7eb',
   },
   sectionTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
     color: '#6b7280',
-    marginBottom: 10,
+    marginBottom: 12,
     paddingHorizontal: 20,
-    letterSpacing: 0.5,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
   drawerItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 15,
+    paddingVertical: 14,
     backgroundColor: '#ffffff',
   },
   drawerItemText: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#374151',
-    marginLeft: 15,
+    marginLeft: 16,
     flex: 1,
     fontWeight: '500',
   },

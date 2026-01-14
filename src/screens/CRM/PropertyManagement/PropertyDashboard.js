@@ -234,12 +234,13 @@ const PropertyDashboard = ({ navigation }) => {
               {isAdmin ? 'Admin Dashboard' : 'Employee Dashboard'}
             </Text>
           </View>
-          <TouchableOpacity 
+          {/* Analytics button temporarily hidden */}
+          {/* <TouchableOpacity 
             style={styles.analyticsButton}
             onPress={navigateToAnalytics}
           >
             <MaterialIcons name="analytics" size={20} color="#FFFFFF" />
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
       </LinearGradient>
 
@@ -334,7 +335,8 @@ const PropertyDashboard = ({ navigation }) => {
             <MaterialIcons name="chevron-right" size={24} color="#9CA3AF" />
           </TouchableOpacity>
 
-          <TouchableOpacity
+          {/* Property Analytics button temporarily hidden */}
+          {/* <TouchableOpacity
             style={styles.actionButton}
             onPress={navigateToAnalytics}
           >
@@ -344,7 +346,7 @@ const PropertyDashboard = ({ navigation }) => {
               <Text style={styles.actionButtonSubtitle}>View detailed reports and insights</Text>
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#9CA3AF" />
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
       </ScrollView>
     </SafeAreaView>

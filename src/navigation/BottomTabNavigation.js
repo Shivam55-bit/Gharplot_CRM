@@ -5,7 +5,10 @@ import {
   TouchableOpacity,
   Dimensions,
   Text,
+  Platform,
+  Alert,
 } from "react-native";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS as THEME_COLORS, FONTS } from '../constants/theme';
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Icon from "react-native-vector-icons/Ionicons";
@@ -24,6 +27,32 @@ const tabs = ["Home", "Services", "AddSell", "Saved", "Profile"];
 const CustomTabBar = ({ state, descriptors, navigation }) => {
   const tabWidth = width / state.routes.length;
 
+  // Function to check if user is fully registered
+  const checkUserRegistration = async () => {
+    try {
+      const userProfileString = await AsyncStorage.getItem('userProfile');
+      
+      if (!userProfileString) {
+        return { isRegistered: false, userProfile: null };
+      }
+
+      const userProfile = JSON.parse(userProfileString);
+      
+      // Check if user has completed full registration
+      const isFullyRegistered = 
+        userProfile.email && 
+        userProfile.email.trim() !== '' && 
+        userProfile.fullName && 
+        userProfile.fullName !== 'User' &&
+        userProfile.fullName.trim() !== '';
+
+      return { isRegistered: isFullyRegistered, userProfile };
+    } catch (error) {
+      console.error('Error checking user registration:', error);
+      return { isRegistered: false, userProfile: null };
+    }
+  };
+
   return (
     <View style={styles.tabBarContainer} pointerEvents="box-none">
       <View style={styles.tabItemsContainer}>
@@ -35,7 +64,22 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
             ? options.tabBarIconName.replace("-outline", "")
             : options.tabBarIconName;
 
-          const onPress = () => {
+          const onPress = async () => {
+            // Special handling for AddSell tab - check registration first
+            if (route.name === "AddSell") {
+              const { isRegistered, userProfile } = await checkUserRegistration();
+              
+              if (!isRegistered) {
+                // Directly navigate to SignupScreen without alert for smoother UX
+                console.log('🚀 New user detected - Redirecting to SignupScreen');
+                navigation.navigate('SignupScreen', {
+                  phoneNumber: userProfile?.phone || '',
+                  fromAddProperty: true
+                });
+                return;
+              }
+            }
+
             const event = navigation.emit({
               type: "tabPress",
               target: route.key,
@@ -141,8 +185,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 70,
+    height: Platform.OS === 'ios' ? 90 : 70,
     backgroundColor: "transparent",
+    paddingBottom: Platform.OS === 'ios' ? 20 : 0,
   },
   tabItemsContainer: {
     flexDirection: "row",

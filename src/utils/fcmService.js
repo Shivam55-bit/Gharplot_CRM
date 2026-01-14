@@ -91,54 +91,165 @@ export const setupForegroundNotificationHandler = () => {
   const unsubscribe = messaging().onMessage(async (remoteMessage) => {
     console.log('📩 🔥 FOREGROUND notification received:', JSON.stringify(remoteMessage, null, 2));
 
-    // IMMEDIATELY show alert - don't wait for anything
-    const { title, body } = remoteMessage.notification || {};
+    // Get notification details - Support both data-only and notification+data formats
+    const title = remoteMessage.notification?.title || remoteMessage.data?.title || '🔔 सूचना';
+    const body = remoteMessage.notification?.body || remoteMessage.data?.body || remoteMessage.data?.message || '';
     const data = remoteMessage.data || {};
+    const notificationType = data.type || data.notificationType || 'system';
 
-    // Show alert IMMEDIATELY for foreground notification
-    if (title || body) {
-      console.log('🚨 SHOWING FOREGROUND ALERT:', { title, body });
+    // Handle ALERT notifications - Navigate directly to EditAlertScreen
+    if (notificationType === 'alert' || notificationType === 'system_alert') {
+      console.log('🔔 ALERT notification received in foreground');
       
       Alert.alert(
-        title || '🔔 नई सूचना',
-        body || 'आपके लिए एक नया मैसेज है',
+        title || '🔔 अलर्ट सूचना',
+        body || 'आपके लिए एक अलर्ट है',
         [
           {
-            text: 'बंद करें',
+            text: 'बाद में',
             style: 'cancel',
-            onPress: () => console.log('Notification dismissed')
+            onPress: () => console.log('Alert dismissed')
           },
           {
-            text: 'देखें',
+            text: 'एडिट करें',
             onPress: () => {
-              console.log('User tapped View on notification:', data);
-              // TODO: Add navigation logic here based on notification data
-              // This should navigate to appropriate screen based on data.type
+              console.log('🎯 Navigating to EditAlertScreen from foreground alert');
+              const NavigationService = require('../services/NavigationService').default;
+              NavigationService.navigate('EditAlert', {
+                alertId: data.alertId?.replace('alert_', '') || Date.now().toString(),
+                originalReason: data.reason || body,
+                originalDate: data.date,
+                originalTime: data.time,
+                repeatDaily: data.repeatDaily === 'true' || data.repeatDaily === true
+              });
+            },
+          },
+        ],
+        { cancelable: true }
+      );
+    }
+    // Handle reminder notifications specially
+    else if (notificationType === 'reminder') {
+      console.log('🔔 Reminder notification received in foreground');
+      
+      // For reminder notifications, show a specialized alert with reminder actions
+      const reminderTitle = title || '⏰ रिमाइंडर';
+      const reminderBody = body || 'आपके लिए एक रिमाइंडर है';
+      
+      Alert.alert(
+        reminderTitle,
+        reminderBody,
+        [
+          {
+            text: 'बाद में',
+            style: 'cancel',
+            onPress: () => {
+              console.log('Reminder dismissed');
+              // Optionally reschedule for later
+            }
+          },
+          {
+            text: 'कॉल करें',
+            onPress: () => {
+              console.log('Call reminder action triggered:', data);
+              // Import and use call functionality
+              if (data.phoneNumber || data.phone) {
+                const phoneNumber = data.phoneNumber || data.phone;
+                const { Linking } = require('react-native');
+                Linking.openURL(`tel:${phoneNumber}`);
+              }
+            },
+          },
+          {
+            text: 'विवरण देखें',
+            onPress: () => {
+              console.log('View reminder details:', data);
+              // Navigate directly to Enquiries screen for reminder notifications
+              const NavigationService = require('../services/NavigationService').default;
+              NavigationService.navigate('CRMStack', {
+                screen: 'AdminTabs',
+                params: {
+                  screen: 'EnquiriesTab',
+                  params: {
+                    screen: 'EnquiriesScreen',
+                    params: {
+                      fromNotification: true,
+                      reminderData: data,
+                      scrollToEnquiry: data.enquiryId || data.reminderId
+                    }
+                  }
+                }
+              });
             },
           },
         ],
         { 
           cancelable: true,
-          userInterfaceStyle: 'light' // Ensure visibility
+          userInterfaceStyle: 'light'
         }
       );
     } else {
-      console.log('⚠️ No title/body in foreground notification');
+      // Handle other notifications normally
+      if (title || body) {
+        console.log('🚨 SHOWING FOREGROUND ALERT:', { title, body });
+        
+        Alert.alert(
+          title || '🔔 नई सूचना',
+          body || 'आपके लिए एक नया मैसेज है',
+          [
+            {
+              text: 'बंद करें',
+              style: 'cancel',
+              onPress: () => console.log('Notification dismissed')
+            },
+            {
+              text: 'देखें',
+              onPress: () => {
+                console.log('User tapped View on notification:', data);
+                // Navigate based on notification data
+                const { handleNotificationAction } = require('../services/notificationService');
+                const navigationRef = require('../services/NavigationService').navigationRef;
+                if (navigationRef.current) {
+                  handleNotificationAction(data, navigationRef.current);
+                }
+              },
+            },
+          ],
+          { 
+            cancelable: true,
+            userInterfaceStyle: 'light'
+          }
+        );
+      } else {
+        console.log('⚠️ No title/body in foreground notification');
+      }
     }
 
-    // Save notification to local storage (secondary action)
+    // Save notification to local storage
     try {
       const { addNotification } = await import('./notificationManager');
       
-      if (remoteMessage && remoteMessage.notification) {
+      // Support both data-only and notification+data formats
+      if (remoteMessage && (remoteMessage.notification || remoteMessage.data)) {
         const notification = {
-          type: remoteMessage.data?.type || 'system',
-          title: remoteMessage.notification.title,
-          message: remoteMessage.notification.body,
-          propertyId: remoteMessage.data?.propertyId,
-          chatId: remoteMessage.data?.chatId,
-          inquiryId: remoteMessage.data?.inquiryId,
-          image: remoteMessage.data?.image
+          type: notificationType,
+          title: title,
+          message: body,
+          body: body,
+          data: data, // Store complete FCM data
+          propertyId: data.propertyId,
+          chatId: data.chatId,
+          inquiryId: data.inquiryId,
+          reminderId: data.reminderId,
+          alertId: data.alertId,
+          enquiryId: data.enquiryId,
+          reason: data.reason,
+          date: data.date,
+          time: data.time,
+          repeatDaily: data.repeatDaily,
+          phoneNumber: data.phoneNumber || data.phone,
+          clientName: data.clientName,
+          image: data.image
         };
         
         await addNotification(notification);
@@ -159,25 +270,51 @@ export const setupForegroundNotificationHandler = () => {
  */
 export const setupBackgroundNotificationHandler = () => {
   messaging().setBackgroundMessageHandler(async (remoteMessage) => {
-    console.log('📩 Background notification received:', JSON.stringify(remoteMessage, null, 2));
+    console.log('📩 🔥 BACKGROUND/KILL MODE notification received:', JSON.stringify(remoteMessage, null, 2));
+    
+    // Extract data - support both formats
+    const data = remoteMessage.data || {};
+    const title = remoteMessage.notification?.title || data.title || 'Notification';
+    const body = remoteMessage.notification?.body || data.body || data.message || '';
+    const notificationType = data.type || data.notificationType || 'system';
+    
+    console.log('🎯 Notification Type:', notificationType);
     
     // Save notification to local storage even when app is killed
     try {
       const { addNotification } = await import('./notificationManager');
       
-      if (remoteMessage && remoteMessage.notification) {
+      // Accept both data-only and notification+data formats
+      if (remoteMessage && (remoteMessage.notification || remoteMessage.data)) {
         const notification = {
-          type: remoteMessage.data?.type || 'system',
-          title: remoteMessage.notification.title,
-          message: remoteMessage.notification.body,
-          propertyId: remoteMessage.data?.propertyId,
-          chatId: remoteMessage.data?.chatId,
-          inquiryId: remoteMessage.data?.inquiryId,
-          image: remoteMessage.data?.image
+          type: notificationType,
+          title: title,
+          message: body,
+          body: body,
+          data: data, // Store complete FCM data for navigation
+          propertyId: data.propertyId,
+          chatId: data.chatId,
+          inquiryId: data.inquiryId,
+          reminderId: data.reminderId,
+          alertId: data.alertId,
+          enquiryId: data.enquiryId,
+          reason: data.reason,
+          date: data.date,
+          time: data.time,
+          repeatDaily: data.repeatDaily,
+          phoneNumber: data.phoneNumber || data.phone,
+          clientName: data.clientName,
+          image: data.image
         };
         
         await addNotification(notification);
         console.log('✅ Background notification saved to local storage');
+        
+        // For reminder notifications, log special handling
+        if (notificationType === 'reminder') {
+          console.log('🔔 Reminder notification saved in background for:', 
+            remoteMessage.data?.clientName || 'Unknown Client');
+        }
       }
     } catch (error) {
       console.error('❌ Error saving background notification:', error);
@@ -380,6 +517,10 @@ export const sendTokenToBackend = async (userId, token) => {
     
     console.log('📤 Sending FCM token to backend...');
     
+    // Add timeout to prevent hanging requests
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    
     // Use your existing API structure
     const response = await fetch('https://abc.bhoomitechzone.us/api/users/fcm-token', {
       method: 'POST',
@@ -396,33 +537,43 @@ export const sendTokenToBackend = async (userId, token) => {
           os: Platform.OS,
           version: Platform.Version
         }
-      })
+      }),
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
     
     if (response.ok) {
       console.log('✅ FCM token sent to backend successfully');
       await AsyncStorage.setItem('fcm_token_synced', 'true');
       return true;
     } else {
-      console.warn('⚠️ Failed to send FCM token to backend:', response.status);
+      console.warn(`⚠️ Failed to send FCM token to backend: ${response.status}`);
       return false;
     }
     
   } catch (error) {
-    console.error('❌ Error sending FCM token to backend:', error);
+    if (error.name === 'AbortError') {
+      console.warn('⚠️ FCM token request timed out');
+    } else if (error.message.includes('Network request failed')) {
+      console.warn('⚠️ Network error while sending FCM token - backend may be offline');
+    } else {
+      console.warn('⚠️ Failed to send FCM token to backend:', error.message);
+    }
+    // Don't throw error to prevent app crash
     return false;
   }
 };
 
 /**
- * Initialize FCM service
+ * Initialize FCM service with enhanced reminder notification support
  * Call this once when app starts
  * @param {Function} onTokenRefresh - Optional callback for token refresh
  * @param {Function} onNotificationOpened - Optional callback for notification opened
- * @returns {Object} Cleanup functions
+ * @returns {Object} Cleanup functions and configuration status
  */
 export const initializeFCM = async (onTokenRefresh, onNotificationOpened) => {
-  console.log('🚀 Initializing FCM Service...');
+  console.log('🚀 Initializing FCM Service with reminder support...');
   
   try {
     // First check if FCM is properly configured
@@ -437,7 +588,12 @@ export const initializeFCM = async (onTokenRefresh, onNotificationOpened) => {
         [{ text: 'OK' }]
       );
       
-      return { token: null, cleanup: () => {} };
+      return { 
+        configured: false,
+        token: null, 
+        cleanup: () => {}, 
+        error: configCheck.error 
+      };
     }
 
     // Setup background handler (must be done outside component)
@@ -449,15 +605,22 @@ export const initializeFCM = async (onTokenRefresh, onNotificationOpened) => {
     if (token) {
       console.log('✅ FCM token obtained:', token.substring(0, 20) + '...');
       
-      // Try to send token to backend
-      try {
-        const userId = await AsyncStorage.getItem('userId');
-        if (userId) {
-          await sendTokenToBackend(userId, token);
+      // Try to send token to backend (non-blocking)
+      setTimeout(async () => {
+        try {
+          const userId = await AsyncStorage.getItem('userId');
+          if (userId) {
+            const success = await sendTokenToBackend(userId, token);
+            if (!success) {
+              console.log('ℹ️ FCM token sync to backend skipped - will retry later');
+            }
+          } else {
+            console.log('ℹ️ No userId found - FCM token will be synced after login');
+          }
+        } catch (syncError) {
+          console.warn('⚠️ Token sync to backend failed (non-critical):', syncError.message);
         }
-      } catch (syncError) {
-        console.warn('⚠️ Token sync to backend failed (non-critical):', syncError.message);
-      }
+      }, 2000); // Delay by 2 seconds to not block app startup
     }
 
     // Setup listeners
@@ -510,5 +673,103 @@ export const initializeFCM = async (onTokenRefresh, onNotificationOpened) => {
       error: error.message,
       cleanup: () => {} 
     };
+  }
+};
+
+/**
+ * Create reminder notification payload for FCM
+ * Helper function to format reminder notifications consistently
+ * @param {Object} reminderData - Reminder information
+ * @returns {Object} Formatted FCM notification payload
+ */
+export const createReminderNotificationPayload = (reminderData) => {
+  const { clientName, note, phoneNumber, enquiryId, reminderId, assignedTo } = reminderData;
+  
+  return {
+    notification: {
+      title: '⏰ रिमाइंडर',
+      body: `${clientName || 'Client'} को कॉल करने का समय${note ? ` - ${note}` : ''}`,
+      sound: 'default',
+      priority: 'high'
+    },
+    data: {
+      type: 'reminder',
+      reminderId: String(reminderId || ''),
+      enquiryId: String(enquiryId || ''),
+      clientName: clientName || '',
+      phoneNumber: phoneNumber || '',
+      note: note || '',
+      action: 'view_reminder',
+      timestamp: new Date().toISOString()
+    },
+    android: {
+      priority: 'high',
+      notification: {
+        channelId: 'enquiry_reminders',
+        priority: 'max',
+        defaultSound: true,
+        defaultVibratePattern: true
+      }
+    },
+    apns: {
+      payload: {
+        aps: {
+          badge: 1,
+          sound: 'default',
+          alert: {
+            title: '⏰ रिमाइंडर',
+            body: `${clientName || 'Client'} को कॉल करने का समय`
+          }
+        }
+      }
+    }
+  };
+};
+
+/**
+ * Test reminder notification 
+ * For debugging reminder notifications in development
+ * @param {Object} testData - Test reminder data
+ */
+export const testReminderNotification = async (testData = {}) => {
+  if (!__DEV__) {
+    console.warn('⚠️ Test notifications only available in development mode');
+    return;
+  }
+  
+  try {
+    const token = await getFCMToken();
+    if (!token) {
+      console.error('❌ No FCM token available for testing');
+      return;
+    }
+    
+    const reminderData = {
+      clientName: testData.clientName || 'Test Client',
+      note: testData.note || 'Test reminder call',
+      phoneNumber: testData.phoneNumber || '9999999999',
+      enquiryId: testData.enquiryId || 'test-enquiry-123',
+      reminderId: testData.reminderId || 'test-reminder-123',
+      assignedTo: testData.assignedTo || 'test-user'
+    };
+    
+    const payload = createReminderNotificationPayload(reminderData);
+    
+    console.log('🧪 Test reminder notification payload created:');
+    console.log(JSON.stringify(payload, null, 2));
+    
+    // In a real scenario, this payload would be sent to your FCM backend endpoint
+    // For testing, you can manually trigger the foreground handler
+    const { setupForegroundNotificationHandler } = require('./fcmService');
+    
+    Alert.alert(
+      'Test Reminder Notification',
+      `Test reminder created for ${reminderData.clientName}\nIn production, this would be sent via FCM backend.`,
+      [{ text: 'OK' }]
+    );
+    
+    return payload;
+  } catch (error) {
+    console.error('❌ Test reminder notification failed:', error);
   }
 };

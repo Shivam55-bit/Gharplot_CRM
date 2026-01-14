@@ -58,7 +58,17 @@ export const toggleSaveProperty = async (propertyId) => {
  */
 export const getSavedProperties = async () => {
     try {
-    const response = await get(PROPERTY_SAVED_ALL_ENDPOINT);
+    // Check if userId exists before making API call
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    const userId = await AsyncStorage.getItem('userId');
+    const token = await AsyncStorage.getItem('userToken');
+    
+    if (!token || !userId) {
+        console.log('[propertyapi] No userId/token found - returning empty saved properties');
+        return [];
+    }
+    
+    const response = await get(PROPERTY_SAVED_ALL_ENDPOINT, { userId });
     console.log('[propertyapi] getSavedProperties raw response:', response);
         // --- FIX: Extract data from the 'savedProperties' field ---
         if (response && Array.isArray(response.savedProperties)) {
@@ -77,7 +87,7 @@ export const getSavedProperties = async () => {
         // If the expected array is not found, return an empty array
         return [];
     } catch (error) {
-        console.error('Failed to fetch saved properties:', error);
+        console.log('[propertyapi] getSavedProperties error - returning empty array:', error.message);
         // Throw the error so the calling component (SavedScreen) can handle it
         throw error;
     }
@@ -175,21 +185,27 @@ export const getAllOtherProperties = async () => {
  * Create a new property (with optional media files).
  * If `files` is provided (array of { uri, type, fileName }), this will upload multipart/form-data.
  * Otherwise it will POST JSON to the API using the shared `post` helper.
+ * NOTE: Backend property endpoints are not yet available, so this will save locally for now.
  * @param {Object} data The property fields
  * @param {Array} files Optional array of file objects returned by image picker
  */
 export const addProperty = async (data = {}, files = []) => {
-    // Use the correct API endpoint pattern matching other services
-    const endpointUrl = `${BASE_URL.replace(/\/+$/, '')}/api/property/create`;
+    // Backend doesn't have property endpoints yet - properties will be saved locally
+    // This allows offline-first functionality
+    const endpointUrl = `${BASE_URL.replace(/\/+$/, '')}/api/properties`;
 
     // If there are no files, use the JSON POST helper which handles token and errors
     if (!files || files.length === 0) {
         // reuse post helper from api.js (expects endpoint path without base)
         try {
-            return await post('api/property/create', data);
+            return await post('api/properties', data);
         } catch (err) {
-            console.error('[propertyapi] addProperty (json) failed:', err);
-            throw err;
+            console.log('[propertyapi] Backend not available, property will be saved locally');
+            // Throw a specific error that the AddProperty screen can catch
+            const error = new Error('Backend property service not available');
+            error.code = 'BACKEND_UNAVAILABLE';
+            error.originalError = err;
+            throw error;
         }
     }
 
@@ -224,6 +240,17 @@ export const addProperty = async (data = {}, files = []) => {
             xhr.onload = () => {
                 const status = xhr.status;
                 const text = xhr.responseText;
+                
+                // Handle 404 - backend not available
+                if (status === 404) {
+                    console.log('[propertyapi] Backend not available (404), property will be saved locally');
+                    const error = new Error('Backend property service not available');
+                    error.code = 'BACKEND_UNAVAILABLE';
+                    error.status = 404;
+                    reject(error);
+                    return;
+                }
+                
                 try {
                     const json = JSON.parse(text);
                     if (status >= 200 && status < 300) resolve(json);
@@ -234,7 +261,11 @@ export const addProperty = async (data = {}, files = []) => {
                 }
             };
 
-            xhr.onerror = (e) => reject(new Error('Network request failed'));
+            xhr.onerror = (e) => {
+                const error = new Error('Network request failed');
+                error.code = 'NETWORK_ERROR';
+                reject(error);
+            };
             xhr.send(formData);
         } catch (err) {
             reject(err);

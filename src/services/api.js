@@ -280,7 +280,17 @@ export async function post(endpoint, data) {
         return response.json();
 
     } catch (error) {
-        console.error(`API POST request failed for endpoint ${endpoint}:`, error);
+        // For save-token endpoint (non-critical), only log as warning not error
+        if (endpoint.includes('/save-token')) {
+            console.warn(`API POST request failed for endpoint ${endpoint}:`, error.message);
+        } 
+        // For schedule-notification endpoints (404 expected if not implemented yet), log as warning
+        else if (endpoint.includes('/schedule-notification') && error.message && error.message.includes('404')) {
+            console.warn(`⚠️ Notification endpoint not available yet (${endpoint}):`, error.message);
+        } 
+        else {
+            console.error(`API POST request failed for endpoint ${endpoint}:`, error);
+        }
         throw error;
     }
 }
@@ -384,10 +394,28 @@ export async function get(endpoint, params = {}) {
 
         if (!response.ok) {
             const parsed = await parseErrorResponse(response);
+            
+            // Special handling for saved properties endpoint - don't crash app
+            if (endpoint.includes('saved/all') && parsed.status === 400) {
+                console.log(`ℹ️ Saved properties endpoint: ${parsed.message} - returning empty response`);
+                return { savedProperties: [], data: [] }; // Return empty but valid response
+            }
+            
             throw new Error(`HTTP error! Status: ${parsed.status}. Message: ${parsed.message}`);
         }
         return response.json();
     } catch (error) {
+        // Special handling for non-critical endpoints
+        if (endpoint.includes('saved/all')) {
+            console.log(`ℹ️ Saved properties error (non-critical): ${error.message}`);
+            return { savedProperties: [], data: [] }; // Return empty but valid response
+        }
+        
+        if (endpoint.includes('/api/services')) {
+            console.log(`ℹ️ Services endpoint error (non-critical): ${error.message}`);
+            return []; // Return empty array for services
+        }
+        
         console.error(`API GET request failed for endpoint ${endpoint}:`, error);
         throw error;
     }
@@ -477,22 +505,185 @@ export async function getCurrentLocation() {
  */
 export async function sendFCMTokenToBackend(userId, fcmToken) {
     try {
-        console.log('📤 Sending FCM token to backend...', { userId, fcmToken: fcmToken.substring(0, 20) + '...' });
+        // Validate inputs
+        if (!userId) {
+            console.warn('⚠️ userId is missing. Cannot send FCM token.');
+            return { success: false, message: 'userId missing' };
+        }
         
-        const response = await post('/api/save-token', {
-            userId,
-            fcmToken,
+        if (!fcmToken || typeof fcmToken !== 'string') {
+            console.warn('⚠️ fcmToken is missing or invalid. Cannot send FCM token.');
+            return { success: false, message: 'fcmToken missing or invalid' };
+        }
+        
+        console.log('📤 Sending FCM token to backend...', { 
+            userId, 
+            fcmToken: fcmToken.substring(0, 20) + '...',
+            tokenLength: fcmToken.length 
         });
+        
+        const payload = {
+            userId: String(userId).trim(),
+            fcmToken: String(fcmToken).trim(),
+        };
+        
+        console.log('📦 FCM Payload:', { 
+            userId: payload.userId, 
+            fcmToken: payload.fcmToken.substring(0, 20) + '...' 
+        });
+        
+        const response = await post('/api/save-token', payload);
         
         console.log('✅ FCM token sent to backend successfully:', response);
         return response;
     } catch (error) {
         // Don't throw error - FCM token is optional, shouldn't block login
-        if (error.message && error.message.includes('404')) {
+        const errorMessage = error.message || 'Unknown error';
+        
+        if (errorMessage.includes('404')) {
             console.warn('⚠️ FCM token endpoint not available (404). Skipping token save.');
+        } else if (errorMessage.includes('500')) {
+            console.warn('⚠️ Backend error (500) while saving FCM token. Server may have an issue.');
+            console.error('📋 Error details:', errorMessage);
         } else {
-            console.warn('⚠️ Failed to send FCM token to backend:', error.message);
+            console.warn('⚠️ Failed to send FCM token to backend:', errorMessage);
         }
+        
         return { success: false, message: 'FCM token save failed but login continued' };
+    }
+}
+
+/**
+ * Update reminder via API
+ * @param {string} reminderId - Reminder ID
+ * @param {Object} data - Reminder data (title, comment, reminderDateTime)
+ */
+export async function updateReminder(reminderId, data) {
+    try {
+        const endpoint = `/api/reminder/update/${reminderId}`;
+        const response = await put(endpoint, data);
+        console.log('✅ Reminder updated via API:', response);
+        return response;
+    } catch (error) {
+        console.error('❌ Failed to update reminder:', error);
+        throw error;
+    }
+}
+
+/**
+ * Create new alert via API
+ * POST /api/alerts
+ * @param {Object} data - Alert data containing:
+ *   - title: string (required)
+ *   - date: string in YYYY-MM-DD format (required)
+ *   - time: string in HH:MM format (required)
+ *   - reason: string (required)
+ *   - repeatDaily: boolean (optional, default false)
+ *   - isActive: boolean (optional, default true)
+ */
+export async function createAlert(data) {
+    try {
+        const url = cleanUrl(BASE_URL, '/api/alerts');
+        
+        // ⚠️ CRITICAL: Use CRM auth headers for alert APIs
+        const crmToken = await AsyncStorage.getItem('crm_token') ||
+                        await AsyncStorage.getItem('admin_token') ||
+                        await AsyncStorage.getItem('authToken') ||
+                        await AsyncStorage.getItem('userToken');
+        
+        if (!crmToken) {
+            throw new Error('No authentication token found. Please login to CRM.');
+        }
+        
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${crmToken}`,
+        };
+        
+        console.log('🆕 Creating new alert');
+        console.log('📡 URL:', url);
+        console.log('📝 Data:', data);
+        console.log('🔑 Token available:', !!crmToken);
+        
+        const response = await fetchWithTimeout(url, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(data),
+        });
+        
+        if (!response.ok) {
+            const parsed = await parseErrorResponse(response);
+            console.error('❌ Create alert failed:', parsed.status, parsed.message);
+            throw new Error(`HTTP error! Status: ${parsed.status}. Message: ${parsed.message}`);
+        }
+        
+        const result = await response.json();
+        console.log('✅ Alert created via API:', result);
+        return result;
+    } catch (error) {
+        console.error('❌ Failed to create alert:', error);
+        throw error;
+    }
+}
+
+/**
+ * Update alert via API
+ * PUT /api/alerts/{alertId}
+ * ⚠️ CRITICAL: Backend MUST automatically reschedule FCM notification when this is called
+ * Backend should:
+ * 1. Cancel old scheduled FCM notification
+ * 2. Schedule new FCM notification with updated time
+ * 3. Use data-only FCM format for kill mode support
+ * @param {string} alertId - Alert ID
+ * @param {Object} data - Alert data containing:
+ *   - title: string (optional)
+ *   - date: string in YYYY-MM-DD format (optional)
+ *   - time: string in HH:MM format (optional)
+ *   - reason: string (optional)
+ *   - repeatDaily: boolean (optional)
+ *   - isActive: boolean (optional)
+ */
+export async function updateAlert(alertId, data) {
+    try {
+        const url = cleanUrl(BASE_URL, `/api/alerts/${alertId}`);
+        
+        // ⚠️ CRITICAL: Use CRM auth headers for alert APIs
+        const crmToken = await AsyncStorage.getItem('crm_token') ||
+                        await AsyncStorage.getItem('admin_token') ||
+                        await AsyncStorage.getItem('authToken') ||
+                        await AsyncStorage.getItem('userToken');
+        
+        if (!crmToken) {
+            throw new Error('No authentication token found. Please login to CRM.');
+        }
+        
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${crmToken}`,
+        };
+        
+        console.log('🔄 Updating alert:', alertId);
+        console.log('📡 URL:', url);
+        console.log('🔑 Token available:', !!crmToken);
+        
+        const response = await fetchWithTimeout(url, {
+            method: 'PUT',
+            headers: headers,
+            body: JSON.stringify(data),
+        });
+        
+        if (!response.ok) {
+            const parsed = await parseErrorResponse(response);
+            console.error('❌ Update alert failed:', parsed.status, parsed.message);
+            throw new Error(`HTTP error! Status: ${parsed.status}. Message: ${parsed.message}`);
+        }
+        
+        const result = await response.json();
+        console.log('✅ Alert updated via API:', result);
+        console.log('⚠️ Backend should automatically reschedule FCM notification now');
+        return result;
+    } catch (error) {
+        console.error('❌ Failed to update alert:', error);
+        throw error;
     }
 }

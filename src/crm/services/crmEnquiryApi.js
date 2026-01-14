@@ -5,6 +5,44 @@
 import { CRM_BASE_URL, getCRMAuthHeaders, handleCRMResponse } from './crmAPI';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+/**
+ * Send FCM notification for new enquiry to backend
+ * Backend will handle sending notification to relevant users
+ */
+const sendEnquiryNotification = async (enquiryData) => {
+  try {
+    const headers = await getAuthHeaders();
+    
+    const notificationPayload = {
+      type: 'enquiry',
+      title: 'New Enquiry Created',
+      message: `New enquiry from ${enquiryData.clientName || 'Unknown Client'}`,
+      data: {
+        clientName: enquiryData.clientName,
+        contactNumber: enquiryData.contactNumber,
+        ClientCode: enquiryData.ClientCode,
+        s_No: enquiryData.s_No,
+        notificationType: 'enquiry_created'
+      }
+    };
+    
+    const response = await fetch(`${CRM_BASE_URL}/api/notification/send`, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(notificationPayload),
+    });
+    
+    if (response.ok) {
+      console.log('✅ Enquiry notification sent successfully');
+    } else {
+      console.warn('⚠️ Failed to send enquiry notification:', response.status);
+    }
+  } catch (error) {
+    console.warn('⚠️ Error sending enquiry notification:', error.message);
+    // Don't throw error - notification is secondary to enquiry creation
+  }
+};
+
 // Get Auth Token with priority order
 const getToken = async () => {
   const adminToken = await AsyncStorage.getItem('adminToken');
@@ -225,6 +263,17 @@ export const addManualEnquiry = async (enquiryData) => {
     
     console.log('✅ API Response data:', JSON.stringify(data, null, 2));
     
+    // Send FCM notification after successful enquiry creation
+    if (data.success !== false) {
+      try {
+        console.log('📤 Sending FCM notification for new enquiry...');
+        await sendEnquiryNotification(enquiryData);
+      } catch (notifError) {
+        console.warn('⚠️ Failed to send enquiry notification:', notifError);
+        // Don't fail the enquiry creation if notification fails
+      }
+    }
+    
     return {
       success: data.success !== false, // Consider success if not explicitly false
       data: data.data || data,
@@ -431,6 +480,210 @@ export const createFollowUp = async (followUpData) => {
   }
 };
 
+/**
+ * Get reminders for a specific enquiry by client info
+ */
+export const getEnquiryReminders = async (enquiry) => {
+  try {
+    const headers = await getAuthHeaders();
+    
+    // Try multiple approaches to find reminders
+    let reminders = [];
+    
+    const enquiryId = enquiry._id || enquiry;
+    const clientName = typeof enquiry === 'object' ? enquiry.clientName : null;
+    const phone = typeof enquiry === 'object' ? enquiry.contactNumber : null;
+    
+    console.log('🔍 ===== SEARCHING REMINDERS =====');
+    console.log('🔍 Enquiry ID:', enquiryId);
+    console.log('🔍 Client Name:', clientName);
+    console.log('🔍 Phone:', phone);
+    
+    // Try admin endpoint first (for admin users)
+    console.log('🔍 Trying admin reminders endpoint...');
+    let response = await fetch(`${CRM_BASE_URL}/admin/reminders/due-all`, {
+      method: 'GET',
+      headers,
+      timeout: 15000
+    });
+
+    let contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      let data = await response.json();
+      console.log('📊 Admin API Response:', data.success, 'Total reminders:', data.data?.length || 0);
+      
+      if (data.success && data.data && data.data.length > 0) {
+        // Filter by client name or phone
+        reminders = data.data.filter(reminder => {
+          const matchName = clientName && reminder.clientName === clientName;
+          const matchPhone = phone && reminder.phone === phone;
+          const matchContact = phone && reminder.contactNumber === phone;
+          
+          if (matchName || matchPhone || matchContact) {
+            console.log('✓ Match found:', {
+              clientName: reminder.clientName,
+              phone: reminder.phone,
+              contactNumber: reminder.contactNumber,
+              note: reminder.note
+            });
+          }
+          
+          return matchName || matchPhone || matchContact;
+        });
+        
+        console.log('✅ Filtered admin reminders:', reminders.length);
+        
+        if (reminders.length > 0) {
+          reminders.forEach((r, i) => {
+            console.log(`  Reminder ${i + 1}:`, {
+              date: r.reminderDateTime,
+              note: r.note,
+              comment: r.comment,
+              status: r.status
+            });
+          });
+          
+          return {
+            success: true,
+            data: reminders,
+            message: 'Reminders fetched successfully'
+          };
+        }
+      }
+    }
+    
+    // Fallback: Try employee endpoint
+    console.log('🔍 Trying employee reminders endpoint...');
+    response = await fetch(`${CRM_BASE_URL}/employee/reminders`, {
+      method: 'GET',
+      headers,
+      timeout: 10000
+    });
+
+    contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      let data = await response.json();
+      console.log('📊 Employee API Response:', data.success, 'Total reminders:', data.data?.length || 0);
+      
+      if (data.success && data.data && data.data.length > 0) {
+        // Filter reminders by client name or phone
+        reminders = data.data.filter(reminder => {
+          const matchName = clientName && reminder.clientName === clientName;
+          const matchPhone = phone && (reminder.phone === phone || reminder.contactNumber === phone);
+          
+          if (matchName || matchPhone) {
+            console.log('✓ Match found in employee API:', {
+              clientName: reminder.clientName,
+              phone: reminder.phone,
+              note: reminder.note
+            });
+          }
+          
+          return matchName || matchPhone;
+        });
+        
+        console.log('✅ Filtered employee reminders:', reminders.length);
+        
+        if (reminders.length > 0) {
+          reminders.forEach((r, i) => {
+            console.log(`  Reminder ${i + 1}:`, {
+              date: r.reminderDateTime,
+              note: r.note,
+              status: r.status
+            });
+          });
+          
+          return {
+            success: true,
+            data: reminders,
+            message: 'Reminders fetched successfully'
+          };
+        }
+      }
+    }
+
+    console.log('⚠️ No reminders found in any endpoint');
+    console.log('===== END SEARCHING REMINDERS =====');
+    return {
+      success: true,
+      data: [],
+      message: 'No reminders found'
+    };
+  } catch (error) {
+    console.error('❌ Error fetching reminders:', error.message);
+    return {
+      success: true,
+      data: [],
+      message: 'Reminders not available'
+    };
+  }
+};
+
+/**
+ * Get detailed enquiry by ID with populated reminders and followUps
+ * @param {string} enquiryId - The enquiry ID
+ * @param {string} source - 'client' or 'manual'
+ * @returns {Promise<Object>} - Enquiry with full details
+ */
+export const getEnquiryDetails = async (enquiryId, source = 'manual') => {
+  try {
+    const headers = await getAuthHeaders();
+    
+    // Choose endpoint based on source
+    const endpoint = source === 'client' 
+      ? `${CRM_BASE_URL}/api/enquiry/${enquiryId}?populate=reminders,followUps`
+      : `${CRM_BASE_URL}/api/manual-enquiry/${enquiryId}?populate=reminders,followUps`;
+    
+    console.log('📋 Fetching enquiry details from:', endpoint);
+    
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers,
+      timeout: 10000
+    });
+
+    // Check content type before parsing
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      console.warn('⚠️ Server returned non-JSON response - endpoint may not be available');
+      // Return basic success with empty data instead of throwing error
+      return {
+        success: true,
+        data: null,
+        message: 'Details not available'
+      };
+    }
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+      console.warn('⚠️ Server returned error:', response.status);
+      // Return success with null data instead of failing
+      return {
+        success: true,
+        data: null,
+        message: 'Details not available'
+      };
+    }
+
+    console.log('✅ Enquiry details fetched successfully');
+    return {
+      success: true,
+      data: data.data || data,
+      message: 'Enquiry details fetched successfully'
+    };
+  } catch (error) {
+    console.warn('⚠️ Could not fetch enquiry details:', error.message);
+    
+    // Return success with null data - don't show error to user
+    return {
+      success: true,
+      data: null,
+      message: 'Details not available'
+    };
+  }
+};
+
 export default {
   getAllEnquiries,
   getUserEnquiries,
@@ -443,4 +696,6 @@ export default {
   createReminder,
   createReminderFromLead,
   createFollowUp,
+  getEnquiryDetails,
+  getEnquiryReminders,
 };

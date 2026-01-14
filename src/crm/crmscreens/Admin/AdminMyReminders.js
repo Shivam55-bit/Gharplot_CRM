@@ -22,7 +22,11 @@ const API_BASE_URL = 'https://abc.bhoomitechzone.us';
 
 const AdminMyReminders = ({ navigation }) => {
   // Main Data States
-  const [stats, setStats] = useState(null);
+  const [stats, setStats] = useState({
+    employees: { total: 0, withPopupEnabled: 0 },
+    reminders: { total: 0, pending: 0, currentlyDue: 0, completed: 0, byStatus: [] },
+    topEmployees: []
+  });
   const [employees, setEmployees] = useState([]);
   const [dueReminders, setDueReminders] = useState([]);
   const [employeeReminders, setEmployeeReminders] = useState([]);
@@ -52,16 +56,66 @@ const AdminMyReminders = ({ navigation }) => {
   // Fetch Statistics
   const fetchStats = async () => {
     try {
+      // Prioritize adminToken for admin features (like web version)
       const adminToken = await AsyncStorage.getItem('adminToken');
+      const employeeToken = await AsyncStorage.getItem('employeeToken');
+      let token = adminToken || employeeToken;
+      
+      if (!token) {
+        console.error('❌ No token found for stats fetch');
+        // Set fallback stats instead of throwing error
+        setStats({
+          employees: { total: 0, withPopupEnabled: 0 },
+          reminders: { total: 0, pending: 0, currentlyDue: 0, completed: 0, byStatus: [] },
+          topEmployees: []
+        });
+        return;
+      }
+      
+      console.log('📊 Fetching admin reminder stats...');
+      if (adminToken) {
+        console.log('🔑 Using admin token');
+      } else {
+        console.log('⚠️ Using employee token as fallback');
+      }
+      
       const response = await axios.get(`${API_BASE_URL}/admin/reminders/stats`, {
-        headers: { Authorization: `Bearer ${adminToken}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 15000 // 15 second timeout (longer than web for mobile)
       });
 
-      if (response.data.success) {
+      console.log('📊 Stats API Response:', response.data);
+
+      if (response.data.success && response.data.data) {
+        console.log('✅ Stats loaded:', response.data.data);
         setStats(response.data.data);
+      } else {
+        console.warn('⚠️ Stats API returned success:false', response.data.message);
+        // Set fallback data when API returns success: false
+        setStats({
+          employees: { total: 0, withPopupEnabled: 0 },
+          reminders: { total: 0, pending: 0, currentlyDue: 0, completed: 0, byStatus: [] },
+          topEmployees: []
+        });
       }
     } catch (error) {
-      console.error('Error fetching stats:', error);
+      console.error('❌ Error fetching stats:', error.message);
+      console.error('📛 Error details:', error.response?.data);
+      
+      // Always set fallback data instead of showing error
+      setStats({
+        employees: { total: employees.length || 0, withPopupEnabled: 0 },
+        reminders: { total: 0, pending: 0, currentlyDue: dueReminders.length || 0, completed: 0, byStatus: [] },
+        topEmployees: []
+      });
+      
+      // Only alert for non-network errors
+      if (!error.message.includes('timeout') && !error.message.includes('Network Error')) {
+        console.warn('Non-critical stats error:', error.response?.data?.message || error.message);
+      }
     }
   };
 
@@ -69,58 +123,98 @@ const AdminMyReminders = ({ navigation }) => {
   const fetchEmployees = async (page = 1, search = '') => {
     try {
       setLoading(true);
-      const adminToken = await AsyncStorage.getItem('adminToken');
+      let token = await AsyncStorage.getItem('adminToken');
+      if (!token) {
+        // Try employeeToken as fallback but prefer adminToken for admin features
+        token = await AsyncStorage.getItem('employeeToken');
+      }
+      
+      if (!token) {
+        console.error('❌ No token found for employees fetch');
+        setLoading(false);
+        return;
+      }
+      
+      console.log('📋 Fetching employees with reminder status...');
+      console.log('🔍 Page:', page, 'Search:', search);
+      console.log('🔑 Token preview:', token.substring(0, 30) + '...');
 
-      // Try dedicated endpoint first
+      let employeeData = [];
+      
+      // Try dedicated endpoint first (exactly like web version)
       try {
+        console.log('🔍 Trying endpoint: /admin/reminders/employees-status');
         const response = await axios.get(`${API_BASE_URL}/admin/reminders/employees-status`, {
-          headers: { Authorization: `Bearer ${adminToken}` },
-          params: { page, limit: 20, search }
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          params: { page, limit: 20, search },
+          timeout: 15000
         });
-
+        
+        console.log('✅ employees-status Response:', response.data);
+        
         if (response.data.success && response.data.data && response.data.data.length > 0) {
-          setEmployees(response.data.data);
+          employeeData = response.data.data;
+          console.log('👥 Loaded from reminder endpoint:', employeeData.length);
+          
+          setEmployees(employeeData);
           setPagination(response.data.pagination || {
             currentPage: page,
             totalPages: 1,
-            totalItems: response.data.data.length,
+            totalItems: employeeData.length,
             itemsPerPage: 20
           });
           setLoading(false);
           return;
         }
       } catch (err) {
-        console.log('Reminder endpoint failed, using fallback');
+        console.log('⚠️ Reminder endpoint failed, using fallback:', err.message);
       }
 
-      // Fallback to regular employee endpoint
+      // Fallback to regular employee endpoint (exactly like web version)
+      console.log('🔄 Trying fallback: /admin/employees');
       const fallbackResponse = await axios.get(`${API_BASE_URL}/admin/employees`, {
-        headers: { Authorization: `Bearer ${adminToken}` },
-        params: { page, limit: 100, search }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        params: { page, limit: 100, search },
+        timeout: 15000
       });
+      
+      console.log('✅ Regular employees Response:', fallbackResponse.data);
 
-      let employeesData = [];
       if (fallbackResponse.data.success) {
-        employeesData = fallbackResponse.data.data || fallbackResponse.data.employees || [];
+        employeeData = Array.isArray(fallbackResponse.data.data) 
+          ? fallbackResponse.data.data 
+          : (fallbackResponse.data.employees || []);
+        
+        console.log('👥 Loaded from employee endpoint:', employeeData.length);
+        
+        // Manually set adminReminderPopupEnabled to false if not present (like web version)
+        employeeData = employeeData.map(emp => ({
+          ...emp,
+          adminReminderPopupEnabled: emp.adminReminderPopupEnabled || false,
+          reminderStats: emp.reminderStats || {
+            totalPending: 0,
+            currentlyDue: 0
+          }
+        }));
+        
+        setEmployees(employeeData);
+        setPagination({
+          currentPage: page,
+          totalPages: Math.ceil(employeeData.length / 20),
+          totalItems: employeeData.length,
+          itemsPerPage: 20
+        });
       }
-
-      // Process fallback data
-      const processedEmployees = employeesData.map(emp => ({
-        ...emp,
-        adminReminderPopupEnabled: emp.adminReminderPopupEnabled ?? false,
-        reminderStats: emp.reminderStats || { totalPending: 0, currentlyDue: 0 }
-      }));
-
-      setEmployees(processedEmployees);
-      setPagination({
-        currentPage: page,
-        totalPages: Math.ceil(processedEmployees.length / 20),
-        totalItems: processedEmployees.length,
-        itemsPerPage: 20
-      });
     } catch (error) {
-      console.error('Error fetching employees:', error);
-      Alert.alert('Error', 'Failed to fetch employees');
+      console.error('❌ Error fetching employees:', error.message);
+      console.error('📛 Error details:', error.response?.data);
+      Alert.alert('Error Loading Employees', error.response?.data?.message || error.message);
     } finally {
       setLoading(false);
     }
@@ -129,17 +223,58 @@ const AdminMyReminders = ({ navigation }) => {
   // Fetch Due Reminders
   const fetchDueReminders = async () => {
     try {
+      // Prioritize adminToken for admin features (like web version)
       const adminToken = await AsyncStorage.getItem('adminToken');
+      const employeeToken = await AsyncStorage.getItem('employeeToken');
+      let token = adminToken || employeeToken;
+      
+      if (!token) {
+        console.error('❌ No token found for due reminders fetch');
+        // Set empty array instead of return
+        setDueReminders([]);
+        return;
+      }
+      
+      console.log('⏰ Fetching all due reminders...');
+      if (adminToken) {
+        console.log('🔑 Using admin token for due reminders');
+      } else {
+        console.log('⚠️ Using employee token as fallback');
+      }
+      
       const response = await axios.get(`${API_BASE_URL}/admin/reminders/due-all`, {
-        headers: { Authorization: `Bearer ${adminToken}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 15000 // 15 second timeout
       });
+
+      console.log('✅ Due reminders response:', response.data);
+      if (response.data.count !== undefined && response.data.totalEmployees !== undefined) {
+        console.log('📊 Total due:', response.data.count, 'for', response.data.totalEmployees, 'employees');
+      }
 
       if (response.data.success) {
         const remindersData = Array.isArray(response.data.data) ? response.data.data : [];
+        console.log('🔔 Due reminders loaded:', remindersData.length, 'groups');
+        if (remindersData.length > 0) {
+          console.log('📋 Sample reminder group:', JSON.stringify(remindersData[0], null, 2));
+          if (remindersData[0].reminders && remindersData[0].reminders.length > 0) {
+            console.log('📋 Sample reminder detail:', JSON.stringify(remindersData[0].reminders[0], null, 2));
+          }
+        }
         setDueReminders(remindersData);
+      } else {
+        console.warn('⚠️ API returned success:false', response.data.message);
+        setDueReminders([]); // Set empty array for failed API calls
       }
     } catch (error) {
-      console.error('Error fetching due reminders:', error);
+      console.error('❌ Error fetching due reminders:', error.message);
+      console.error('📛 Error details:', error.response?.data);
+      
+      // Always set empty array instead of leaving undefined
+      setDueReminders([]);
     }
   };
 
@@ -249,13 +384,33 @@ const AdminMyReminders = ({ navigation }) => {
 
   // Format Date/Time
   const formatDateTime = (dateString) => {
-    if (!dateString) return { date: 'N/A', time: 'N/A' };
+    if (!dateString) return { date: 'No Date', time: 'No Time' };
 
-    const date = new Date(dateString);
-    const dateStr = date.toLocaleDateString();
-    const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    try {
+      const date = new Date(dateString);
+      
+      // Check if date is valid
+      if (isNaN(date.getTime())) {
+        console.warn('⚠️ Invalid date string:', dateString);
+        return { date: 'Invalid Date', time: 'Invalid Time' };
+      }
 
-    return { date: dateStr, time: timeStr };
+      const dateStr = date.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric'
+      });
+      const timeStr = date.toLocaleTimeString('en-IN', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: true 
+      });
+
+      return { date: dateStr, time: timeStr };
+    } catch (error) {
+      console.error('❌ Error formatting date:', error.message);
+      return { date: 'Error', time: 'Error' };
+    }
   };
 
   // Calculate total due count
@@ -264,24 +419,59 @@ const AdminMyReminders = ({ navigation }) => {
   // Initial Load
   useEffect(() => {
     const init = async () => {
+      console.log('🚀 AdminMyReminders initializing...');
+      
+      // Prioritize adminToken for admin features (like web version)
       const adminToken = await AsyncStorage.getItem('adminToken');
-      if (!adminToken) {
-        Alert.alert('Error', 'Admin token not found. Please login again.');
+      const employeeToken = await AsyncStorage.getItem('employeeToken');
+      
+      console.log('🔑 Admin Token:', adminToken ? 'Found ✅' : 'Missing ❌');
+      console.log('🔑 Employee Token:', employeeToken ? 'Found ✅' : 'Missing ❌');
+      
+      let token = adminToken || employeeToken;
+      
+      if (!token) {
+        console.error('❌ No token found - cannot initialize');
+        Alert.alert('Error', 'Authentication required. Please login again.');
         return;
       }
+      
+      if (adminToken) {
+        console.log('🔑 Using admin token for admin features');
+        console.log('🔑 Admin token preview:', adminToken.substring(0, 30) + '...');
+      } else {
+        console.log('⚠️ Using employee token as fallback (may have limited access)');
+        console.log('🔑 Employee token preview:', employeeToken.substring(0, 30) + '...');
+      }
 
-      await Promise.all([
-        fetchStats(),
-        fetchEmployees(1, ''),
-        fetchDueReminders(),
-      ]);
+      try {
+        setLoading(true);
+        console.log('⏳ Fetching all data sequentially...');
+        
+        // Fetch data sequentially for better error handling (like web version)
+        console.log('1️⃣ Fetching admin reminder stats...');
+        await fetchStats();
+        
+        console.log('2️⃣ Fetching employees with reminder status...');
+        await fetchEmployees(1, '');
+        
+        console.log('3️⃣ Fetching all due reminders...');
+        await fetchDueReminders();
+        
+        console.log('✅ All data loaded successfully');
 
-      // Start polling for due reminders
-      const interval = setInterval(() => {
-        fetchDueReminders();
-      }, 60000); // Every 60 seconds
+        // Start polling for due reminders every 1 minute (like web version)
+        const interval = setInterval(() => {
+          console.log('🔄 Polling for due reminders...');
+          fetchDueReminders();
+        }, 60000);
 
-      setPollingInterval(interval);
+        setPollingInterval(interval);
+      } catch (error) {
+        console.error('❌ Error during initialization:', error.message);
+      } finally {
+        setLoading(false);
+      }
     };
 
     init();
@@ -330,7 +520,8 @@ const AdminMyReminders = ({ navigation }) => {
 
   // Render Overview Tab
   const renderOverviewTab = () => {
-    if (!stats) {
+    // Show loading only during initial load
+    if (loading && (!stats || stats.employees.total === 0)) {
       return (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#6366f1" />
@@ -560,14 +751,42 @@ const AdminMyReminders = ({ navigation }) => {
   // Render Due Reminders Tab
   const renderDueRemindersTab = () => (
     <View style={styles.tabContent}>
-      {dueReminders.length === 0 ? (
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#6366f1" />
+          <Text style={styles.loadingText}>Loading due reminders...</Text>
+        </View>
+      ) : dueReminders.length === 0 ? (
         <View style={styles.emptyState}>
           <Icon name="check-circle" size={64} color="#10b981" />
           <Text style={styles.emptyStateTitle}>No Due Reminders</Text>
-          <Text style={styles.emptyStateText}>All reminders are up to date!</Text>
+          <Text style={styles.emptyStateText}>
+            {totalDueCount > 0 ? 
+              `${totalDueCount} reminders found but none are currently due` : 
+              'All reminders are up to date!'
+            }
+          </Text>
+          <TouchableOpacity 
+            style={styles.refreshButton}
+            onPress={() => {
+              console.log('🔄 Manual refresh triggered');
+              fetchDueReminders();
+            }}
+          >
+            <Icon name="refresh" size={20} color="#6366f1" />
+            <Text style={styles.refreshButtonText}>Refresh</Text>
+          </TouchableOpacity>
         </View>
       ) : (
-        dueReminders.map((item, index) => (
+        <>
+          {/* Debug Info */}
+          <View style={styles.debugInfo}>
+            <Text style={styles.debugText}>
+              📊 Loaded {dueReminders.length} reminder groups, Total due: {totalDueCount}
+            </Text>
+          </View>
+          
+          {dueReminders.map((item, index) => (
           <View key={index} style={styles.dueEmployeeGroup}>
             <View style={styles.dueEmployeeHeader}>
               <View>
@@ -583,30 +802,97 @@ const AdminMyReminders = ({ navigation }) => {
 
             {item.reminders?.map((reminder, rIndex) => {
               const { date, time } = formatDateTime(reminder.reminderDateTime);
+              
+              // Debug log for each reminder
+              console.log(`🔔 Reminder ${rIndex + 1}:`, {
+                title: reminder.title,
+                note: reminder.note,
+                dateTime: reminder.reminderDateTime,
+                status: reminder.status,
+                clientName: reminder.clientName
+              });
+              
               return (
                 <View key={rIndex} style={styles.reminderCard}>
-                  <View style={styles.reminderHeader}>
-                    <Text style={styles.reminderTitle}>{reminder.title}</Text>
-                    <Text style={styles.reminderTime}>{date} at {time}</Text>
+                  {/* Status Badge - Top Right */}
+                  <View style={[styles.statusBadge, {
+                    backgroundColor: reminder.status === 'completed' ? '#d1fae5' : 
+                                     reminder.status === 'dismissed' ? '#fee2e2' : '#fef3c7'
+                  }]}>
+                    <Text style={[styles.statusBadgeText, {
+                      color: reminder.status === 'completed' ? '#065f46' : 
+                             reminder.status === 'dismissed' ? '#991b1b' : '#92400e'
+                    }]}>
+                      {reminder.status === 'completed' ? '✓ Done' : 
+                       reminder.status === 'dismissed' ? '✕ Dismissed' : '⏰ Pending'}
+                    </Text>
                   </View>
-                  {reminder.comment && (
-                    <Text style={styles.reminderComment}>{reminder.comment}</Text>
+                  
+                  {/* Title */}
+                  <Text style={styles.reminderTitle}>
+                    {reminder.title || reminder.note || 'Follow up reminder'}
+                  </Text>
+                  
+                  {/* Date & Time */}
+                  <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 8}}>
+                    <Icon name="event" size={16} color="#6366f1" />
+                    <Text style={styles.reminderTime}> {date} at {time}</Text>
+                  </View>
+                  
+                  {/* Comment/Note Box */}
+                  {(reminder.comment || reminder.note) && (
+                    <View style={styles.reminderCommentBox}>
+                      <Icon name="chat-bubble-outline" size={14} color="#6366f1" />
+                      <Text style={styles.reminderComment}>{reminder.comment || reminder.note}</Text>
+                    </View>
                   )}
+                  
+                  {/* Client Information */}
                   {reminder.clientName && (
                     <View style={styles.clientInfo}>
                       <Icon name="person" size={14} color="#6b7280" />
                       <Text style={styles.clientInfoText}>
                         {reminder.clientName}
                         {reminder.phone && ` • ${reminder.phone}`}
-                        {reminder.location && ` • ${reminder.location}`}
                       </Text>
                     </View>
                   )}
+                  
+                  {/* Location */}
+                  {reminder.location && (
+                    <View style={styles.clientInfo}>
+                      <Icon name="location-on" size={14} color="#6b7280" />
+                      <Text style={styles.clientInfoText}>{reminder.location}</Text>
+                    </View>
+                  )}
+                  
+                  {/* Property Type */}
+                  {reminder.propertyType && (
+                    <View style={styles.clientInfo}>
+                      <Icon name="home" size={14} color="#6b7280" />
+                      <Text style={styles.clientInfoText}>{reminder.propertyType}</Text>
+                    </View>
+                  )}
+                  
+                  {/* Meta Information */}
+                  <View style={styles.reminderMeta}>
+                    <Text style={styles.reminderMetaText}>
+                      {reminder.assignmentType && `Type: ${reminder.assignmentType}`}
+                      {reminder.assignmentType && reminder.createdAt && ' • '}
+                      {reminder.createdAt && `Created: ${new Date(reminder.createdAt).toLocaleDateString('en-IN')}`}
+                    </Text>
+                    {reminder.createdBy && (
+                      <Text style={styles.reminderMetaText}>
+                        Set by: {reminder.createdBy.fullName || reminder.createdBy.name || 'Unknown'}
+                      </Text>
+                    )}
+                  </View>
                 </View>
               );
             })}
           </View>
-        ))
+        ))}
+        </>
       )}
     </View>
   );
@@ -1215,10 +1501,19 @@ const styles = StyleSheet.create({
     color: '#dc2626',
   },
   reminderCard: {
-    backgroundColor: '#f9fafb',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    marginTop: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#6366f1',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    position: 'relative',
   },
   reminderHeader: {
     flexDirection: 'row',
@@ -1226,31 +1521,74 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 8,
   },
+  statusBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    elevation: 1,
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
   reminderTitle: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
     color: '#1f2937',
-    flex: 1,
-    marginRight: 8,
+    marginBottom: 4,
+    paddingRight: 100, // Make space for status badge
+    lineHeight: 20,
   },
   reminderTime: {
-    fontSize: 11,
-    color: '#6b7280',
+    fontSize: 12,
+    color: '#6366f1',
+    fontWeight: '600',
+  },
+  reminderCommentBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#eff6ff',
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 10,
+    marginBottom: 8,
+    gap: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#6366f1',
   },
   reminderComment: {
     fontSize: 13,
-    color: '#374151',
-    marginBottom: 8,
-    lineHeight: 18,
+    color: '#1e40af',
+    lineHeight: 19,
+    flex: 1,
+    fontStyle: 'italic',
   },
   clientInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
+    marginTop: 6,
+    marginBottom: 4,
   },
   clientInfoText: {
     fontSize: 12,
-    color: '#6b7280',
+    color: '#4b5563',
+    fontWeight: '500',
+  },
+  reminderMeta: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+    gap: 4,
+  },
+  reminderMetaText: {
+    fontSize: 11,
+    color: '#9ca3af',
+    lineHeight: 16,
   },
   emptyState: {
     alignItems: 'center',
@@ -1374,6 +1712,35 @@ const styles = StyleSheet.create({
   modalReminderTime: {
     fontSize: 12,
     color: '#6b7280',
+  },
+  debugInfo: {
+    backgroundColor: '#f0f9ff',
+    borderLeftWidth: 4,
+    borderLeftColor: '#0ea5e9',
+    padding: 12,
+    marginBottom: 16,
+    borderRadius: 8,
+  },
+  debugText: {
+    fontSize: 12,
+    color: '#0369a1',
+    fontFamily: 'monospace',
+  },
+  refreshButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#6366f1',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginTop: 16,
+    gap: 8,
+  },
+  refreshButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 

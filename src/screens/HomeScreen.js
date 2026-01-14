@@ -17,6 +17,7 @@ import {
     StatusBar,
     KeyboardAvoidingView,
     Keyboard,
+    Vibration,
 } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import Icon from "react-native-vector-icons/Ionicons";
@@ -548,6 +549,111 @@ const Homescreen = ({ navigation }) => {
         }
     };
 
+    // Test reminder alert function
+    const testReminderAlert = async () => {
+        try {
+            const reminderManager = require('../crm/services/reminderManager').default;
+            
+            // Play immediate sound feedback
+            try {
+                const { Vibration, PermissionsAndroid, Platform } = require('react-native');
+                
+                if (Platform.OS === 'android') {
+                    // Check permission using promise
+                    PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.VIBRATE)
+                        .then((granted) => {
+                            if (granted) {
+                                Vibration.vibrate([0, 200, 100, 200]);
+                                console.log('🔊 Test reminder vibration played');
+                            } else {
+                                console.log('🔊 Vibration permission not granted');
+                            }
+                        })
+                        .catch((err) => {
+                            console.log('🔊 Permission check failed:', err.message);
+                        });
+                } else {
+                    Vibration.vibrate([0, 200, 100, 200]);
+                    console.log('🔊 Test reminder vibration played');
+                }
+            } catch (vibError) {
+                console.log('🔊 Vibration not available:', vibError.message);
+            }
+            
+            // Create immediate test reminder (30 seconds)
+            const testReminder = {
+                id: `quick_test_${Date.now()}`,
+                name: 'Quick Test Client',
+                phone: '+91 9876543210',
+                email: 'test@gharplot.com',
+                location: 'Test Location',
+                title: '🔔 Quick Reminder Test - 30 Seconds',
+                note: 'This is a quick test of reminder alert system with SOUND',
+                reminderDateTime: new Date(Date.now() + 30000).toISOString(), // 30 seconds
+                reminderTime: new Date(Date.now() + 30000).toISOString(),
+                status: 'pending',
+                triggered: false,
+                createdAt: new Date().toISOString()
+            };
+
+            await reminderManager.addReminder(testReminder);
+            
+            Alert.alert(
+                'Test Reminder Created! 🧪',
+                `Alert with SOUND will show in 30 seconds!\n\n⏰ Time: ${new Date(testReminder.reminderDateTime).toLocaleString()}\n\n🔊 You should hear vibration + sound when popup appears\n\nKeep app open and wait for popup...`,
+                [{ text: 'Got it! 🔊' }]
+            );
+            
+            console.log('🧪 Quick test reminder created via HomeScreen with sound');
+            
+        } catch (error) {
+            console.error('❌ Quick test failed:', error);
+            Alert.alert('Test Failed', error.message);
+        }
+    };
+
+    // Drawer menu function
+    const openDrawerMenu = () => {
+        Alert.alert(
+            '🍔 Main Menu',
+            'Choose an option:',
+            [
+                {
+                    text: '👤 Profile',
+                    onPress: () => navigation.navigate('ProfileScreen')
+                },
+                {
+                    text: '💾 Saved Properties',
+                    onPress: () => navigation.navigate('SavedScreen')
+                },
+                {
+                    text: '🔍 Search',
+                    onPress: () => navigation.navigate('SearchScreen')
+                },
+                {
+                    text: '📋 Services', 
+                    onPress: () => navigation.navigate('ServicesScreen')
+                },
+                {
+                    text: '⚙️ Settings',
+                    onPress: () => navigation.navigate('SettingsScreen')
+                },
+                {
+                    text: '🔔 Test Reminder',
+                    onPress: testReminderAlert
+                },
+                {
+                    text: '🏢 CRM Admin',
+                    onPress: () => navigation.navigate('AdminLogin')
+                },
+                {
+                    text: '❌ Cancel',
+                    style: 'cancel'
+                }
+            ]
+        );
+    };
+
     // Complete notification system test
     const handleAddTestNotifications = async () => {
         try {
@@ -575,6 +681,10 @@ const Homescreen = ({ navigation }) => {
                                     : `Error: ${result.error}`
                             );
                         }
+                    },
+                    {
+                        text: '🔔 Test Reminder Alert',
+                        onPress: testReminderAlert
                     },
                     {
                         text: 'FCM Full Diagnostics',
@@ -1005,7 +1115,6 @@ const Homescreen = ({ navigation }) => {
                                 source={{ uri: imageUri }}
                                 style={styles.nearbyImage}
                                 resizeMode="cover"
-                                defaultSource={require('../assets/icon-placeholder.js')}
                                 onError={() => {
                                     console.warn('Failed to load image:', imageUri);
                                 }}
@@ -1074,21 +1183,26 @@ const Homescreen = ({ navigation }) => {
 
                 {/* Header Row */}
                 <View style={styles.headerRow}>
-                    <TouchableOpacity 
-                        activeOpacity={0.85} 
-                        onPress={() => navigation.navigate('ProfileScreen')}
-                    >
-                        <Image 
-                            style={styles.logo} 
-                            source={require("../assets/Blue_logo.png")} 
-                        />
-                    </TouchableOpacity>
+                    <View style={styles.headerLeftContainer}>
+                        {/* Logo */}
+                        <TouchableOpacity 
+                            activeOpacity={0.85} 
+                            onPress={() => navigation.navigate('ProfileScreen')}
+                            style={styles.logoContainer}
+                        >
+                            <Image 
+                                style={styles.logo} 
+                                source={require("../assets/Blue_logo.png")} 
+                            />
+                        </TouchableOpacity>
+                    </View>
 
                     <View style={styles.headerRightContainer}>
                         {/* CRM Button */}
                         <TouchableOpacity
                             style={styles.crmIconContainer}
                             onPress={() => navigation.navigate('AdminLogin')}
+                            onLongPress={testReminderAlert}
                             activeOpacity={0.8}
                         >
                             <LinearGradient
@@ -1266,18 +1380,34 @@ const styles = StyleSheet.create({
         right: theme.SPACING.l,
         zIndex: 3,
     },
+    headerLeftContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    menuIconContainer: {
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        borderRadius: 20,
+        padding: 8,
+        marginRight: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    logoContainer: {
+        flex: 1,
+    },
     logo: {
         width: width * 0.35,
         height: height * 0.09,
         resizeMode: 'contain',
         maxWidth: width * 0.6,
         flexShrink: 1,
-        marginLeft: -2,
-        transform: [{ translateX: -10 }, { translateY: -20 }],
+        marginLeft: -8,
+        transform: [{ translateX: -15 }, { translateY: -20 }],
     },
     headerRightContainer: {
         flexDirection: 'row',
         alignItems: 'center',
+        marginRight: -50,
     },
     postPropertyButton: {
         flexDirection: "row",
@@ -1323,7 +1453,7 @@ const styles = StyleSheet.create({
         backgroundColor: 'transparent',
         marginLeft: theme.SPACING.s,
         overflow: 'visible',
-        transform: [{ translateX: 0 }, { translateY: -5 }],
+        transform: [{ translateX: -95 }, { translateY: -12 }],
     },
     notificationGradient: {
         width: '100%',
@@ -1357,7 +1487,7 @@ const styles = StyleSheet.create({
         backgroundColor: 'transparent',
         marginLeft: theme.SPACING.s,
         overflow: 'visible',
-        transform: [{ translateX: 0 }, { translateY: -5 }],
+        transform: [{ translateX: -95 }, { translateY: -12 }],
     },
     crmGradient: {
         width: '100%',

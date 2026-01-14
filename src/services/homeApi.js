@@ -1,6 +1,10 @@
 // This file handles backend API calls for property data.
 // Import BASE_URL to correctly construct image paths
 import { get as apiGet, BASE_URL } from './api.js'; 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Property API Base URL (different from CRM base URL)
+const PROPERTY_API_BASE_URL = 'https://abc.ridealmobility.com'; 
 
 // --- MOCK DATA FALLBACKS (Kept for Robustness) ---
 const generateMockProperty = (id, isNearby = false) => {
@@ -75,7 +79,11 @@ export const getFirstImageUrl = (photosAndVideo) => {
  * @returns {string} A displayable image URI.
  */
 export const formatImageUrl = (imageData) => {
+    // Log what we received for debugging
+    console.log('🖼️ formatImageUrl received:', imageData);
+    
     if (!imageData) {
+        console.log('⚠️ No image data provided - using placeholder');
         return 'https://placehold.co/600x400/CCCCCC/888888?text=No+Image';
     }
     
@@ -88,28 +96,38 @@ export const formatImageUrl = (imageData) => {
     // Normalize Windows backslashes to forward slashes
     imageData = imageData.replace(/\\+/g, '/');
     
-    // 1. If it's a server file path (like "uploads/123.jpeg" or "/uploads/123.jpeg"), prepend BASE_URL.
+    // 1. If it's already a complete HTTP/HTTPS URL, return as-is
+    if (imageData.startsWith('http://') || imageData.startsWith('https://')) {
+        console.log('✅ Complete URL:', imageData);
+        return imageData;
+    }
+    
+    // 2. If it's a server file path (like "uploads/123.jpeg" or "/uploads/123.jpeg"), prepend BASE_URL.
     if (/^\/?uploads\//.test(imageData)) {
         const baseUrlClean = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
         // remove leading slash from imageData so we don't double\/join
         const cleanPath = imageData.replace(/^\/+/, '');
-        return `${baseUrlClean}/${cleanPath}`;
+        const fullUrl = `${baseUrlClean}/${cleanPath}`;
+        console.log('✅ Converted server path to URL:', fullUrl);
+        return fullUrl;
     }
 
-    // 2. Check if it's a raw Base64 string (long, non-URL, no prefix)
-    if (!imageData.startsWith('http') && !imageData.startsWith('file:') && !imageData.includes('data:') && imageData.length > 500) { 
+    // 3. Check if it's a raw Base64 string (long, non-URL, no prefix)
+    if (!imageData.startsWith('file:') && !imageData.includes('data:') && imageData.length > 500) { 
           // Assuming JPEG format for common use case
+          console.log('✅ Converted Base64 to data URI');
           return `data:image/jpeg;base64,${imageData}`;
     }
 
-    // 3. Handle mock image URLs (for fallback testing)
+    // 4. Handle mock image URLs (for fallback testing)
     if (imageData.startsWith('photo_url_')) {
         const dimensions = imageData.includes('Nearby') ? '400x300' : '600x400';
         const color = imageData.includes('1') ? '4CAF50' : '1E90FF'; 
         return `https://placehold.co/${dimensions}/${color}/FFFFFF?text=Property`;
     }
 
-    // 4. Return the URL or pre-formatted data URI
+    // 5. Return the URL or pre-formatted data URI as-is
+    console.log('✅ Returning URL as-is:', imageData);
     return imageData; 
 };
 
@@ -132,17 +150,38 @@ export const formatPrice = (price) => {
 
 /**
  * Fetch recent properties from ALL users including current user's own properties
- * UPDATED: Now uses /api/properties/recent/all instead of /api/properties/recent
+ * UPDATED: Now uses https://abc.ridealmobility.com/api/properties/recent/all
  * This ensures user can see their own posted properties in recent listings
  */
-export async function getRecentProperties(limit = 5) {
+export async function getRecentProperties(limit = 50) {
     try {
-        // Use the NEW endpoint that shows ALL recent properties including user's own
-        const res = await apiGet('/api/properties/recent/all', { limit }); 
+        // Get user token for authorization
+        const token = await AsyncStorage.getItem('userToken');
+        
+        // Build URL with query parameter
+        const url = `${PROPERTY_API_BASE_URL}/api/properties/recent/all?limit=${limit}`;
+        
+        console.log('📡 Fetching recent properties from:', url);
+        console.log('🔑 Token available:', !!token);
+        
+        // Make fetch request with authorization header
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': token ? `Bearer ${token}` : '',
+            },
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const res = await response.json();
         
         // Backend returns { message: "...", properties: [...] }
         if (res && Array.isArray(res.properties)) {
-            console.log(`✅ Loaded ${res.properties.length} recent properties from /api/properties/recent/all`);
+            console.log(`✅ Loaded ${res.properties.length} recent properties from ${PROPERTY_API_BASE_URL}`);
             return res.properties;
         }
         
@@ -154,7 +193,8 @@ export async function getRecentProperties(limit = 5) {
         
         throw new Error('Unexpected API response structure for recent properties.');
     } catch (err) {
-        console.warn('getRecentProperties failed, falling back to mock:', err.message);
+        console.error('❌ getRecentProperties failed:', err.message);
+        console.warn('⚠️ Falling back to mock data');
         return fetchRecentProperties();
     }
 }
@@ -254,16 +294,23 @@ export async function getSavedPropertiesIds() {
     try {
         console.log('[HomeAPI] Fetching saved properties IDs...');
         
-        // Check if user has a token first
+        // Check if user has a token and userId first
         const AsyncStorage = require('@react-native-async-storage/async-storage').default;
         const token = await AsyncStorage.getItem('userToken');
+        const userId = await AsyncStorage.getItem('userId');
         
         if (!token) {
             console.log('[HomeAPI] No auth token found - user not logged in. Returning empty list.');
             return [];
         }
         
-        const res = await apiGet('/api/properties/saved/all');
+        if (!userId) {
+            console.log('[HomeAPI] No userId found - skipping saved properties. Returning empty list.');
+            return [];
+        }
+        
+        // Pass userId as query parameter
+        const res = await apiGet('/api/properties/saved/all', { userId });
         let arr = [];
         if (res && Array.isArray(res.savedProperties)) arr = res.savedProperties;
         else if (Array.isArray(res.data)) arr = res.data;
@@ -274,19 +321,9 @@ export async function getSavedPropertiesIds() {
         console.log(`[HomeAPI] Found ${ids.length} saved property IDs`);
         return ids;
     } catch (err) {
-        // Enhanced error logging with user-friendly message
-        console.warn('⚠️ getSavedPropertiesIds failed:', err.message || err);
-        
-        // Check specific error types
-        if (err.message && err.message.includes('403')) {
-            console.warn('⚠️ Authentication error (403) - Token invalid or expired. Returning empty list.');
-        } else if (err.message && err.message.includes('timeout')) {
-            console.warn('⚠️ Network timeout when fetching saved properties. Using empty list.');
-        } else if (err.message && err.message.includes('Network')) {
-            console.warn('⚠️ Network error when fetching saved properties. Using empty list.');
-        } else if (err.message && err.message.includes('401')) {
-            console.warn('⚠️ Unauthorized (401) - User needs to log in. Returning empty list.');
-        }
+        // Silently handle all errors - don't crash the app
+        console.log('ℹ️ getSavedPropertiesIds: Returning empty list due to:', err.message || 'Unknown error');
+        // Always return empty array - never throw
         
         // Return empty array as fallback to prevent app crash
         // This allows the app to continue functioning even if saved properties cannot be loaded
@@ -296,18 +333,28 @@ export async function getSavedPropertiesIds() {
 
 /**
  * Fetch ALL properties from the new API endpoint
- * Endpoint: GET https://abc.bhoomitechzone.us/api/properties/all
- * This replaces the recent properties API to show all available properties
+ * Endpoint: GET https://abc.ridealmobility.com/api/properties/recent/all
+ * This replaces the old endpoint to show all available properties
  */
 export async function getAllProperties(limit = null) {
     try {
-        console.log(`🏠 Fetching ALL properties from new API endpoint ${limit ? `(limit: ${limit})` : '(no limit)'}`);
+        console.log(`🏠 Fetching ALL properties from ${PROPERTY_API_BASE_URL} ${limit ? `(limit: ${limit})` : '(no limit)'}`);
         
-        // Use the new API endpoint directly
-        const response = await fetch('https://abc.bhoomitechzone.us/api/properties/all', {
+        // Get user token for authorization
+        const token = await AsyncStorage.getItem('userToken');
+        
+        // Build URL - same endpoint as featured but without limit to get all
+        const url = `${PROPERTY_API_BASE_URL}/api/properties/recent/all`;
+        
+        console.log('📡 Fetching all properties from:', url);
+        console.log('🔑 Token available:', !!token);
+        
+        // Use the new API endpoint directly with authorization
+        const response = await fetch(url, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
+                'Authorization': token ? `Bearer ${token}` : '',
             }
         });
         
@@ -333,19 +380,14 @@ export async function getAllProperties(limit = null) {
         // Apply limit only if specified
         const finalProperties = (limit && limit > 0) ? properties.slice(0, limit) : properties;
         
-        console.log(`✅ Loaded ${finalProperties.length} properties from ALL properties API ${limit ? `(limited to ${limit})` : '(all properties)'}`);
+        console.log(`✅ Loaded ${finalProperties.length} properties from ${PROPERTY_API_BASE_URL} ${limit ? `(limited to ${limit})` : '(all properties)'}`);
         return finalProperties;
     } catch (err) {
-        console.error('getAllProperties failed:', err.message);
-        console.warn('Falling back to recent properties API...');
+        console.error('❌ getAllProperties failed:', err.message);
+        console.warn('⚠️ Falling back to mock data...');
         
-        // Fallback to recent properties if new API fails
-        try {
-            return await getRecentProperties(limit);
-        } catch (fallbackErr) {
-            console.error('Fallback to recent properties also failed:', fallbackErr.message);
-            return [];
-        }
+        // Return empty array as fallback
+        return [];
     }
 }
 
@@ -362,14 +404,14 @@ export async function getServices() {
         // fallback empty
         return [];
     } catch (err) {
-        console.warn('getServices failed:', err && err.message ? err.message : err);
-        
         // If it's a 404 error, provide mock services data
         if (err && err.message && err.message.includes('404')) {
-            console.warn('🔄 Services backend not ready, using mock data');
+            console.log('ℹ️ Services endpoint not available (404). Using mock data.');
             return getMockServices();
         }
         
+        // Log other errors
+        console.warn('getServices failed:', err && err.message ? err.message : err);
         return [];
     }
 }

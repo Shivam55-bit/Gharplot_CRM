@@ -36,3 +36,55 @@
     public void makeShareableClone(...);
     public void scheduleOnUI(...);
 }
+
+# Firebase and FCM
+-keep class com.google.firebase.** { *; }
+-keep class com.google.android.gms.** { *; }
+-dontwarn com.google.firebase.**
+-dontwarn com.google.android.gms.**
+
+# React Native Firebase
+-keep class io.invertase.firebase.** { *; }
+-dontwarn io.invertase.firebase.**
+
+# Notifee
+-keep class app.notifee.** { *; }
+-dontwarn app.notifee.**
+
+# React Native
+-keep class com.facebook.react.** { *; }
+-keep class com.facebook.hermes.** { *; }
+-dontwarn com.facebook.react.**
+-dontwarn com.facebook.hermes.**
+
+# AsyncStorage
+-keep class com.reactnativecommunity.asyncstorage.** { *; }
+-dontwarn com.reactnativecommunity.asyncstorage.**
+
+# Vector Icons
+-keep class com.oblador.vectoricons.** { *; }
+-dontwarn com.oblador.vectoricons.**
+
+# Navigation
+-keep class com.reactnavigation.** { *; }
+-dontwarn com.reactnavigation.**
+
+# Picker
+-keep class com.reactnativecommunity.picker.** { *; }
+-dontwarn com.reactnativecommunity.picker.**
+
+# DateTimePicker
+-keep class com.reactnativecommunity.datetimepicker.** { *; }
+-dontwarn com.reactnativecommunity.datetimepicker.**
+
+# General React Native and JS engine rules
+-keep class * extends com.facebook.react.ReactPackage { *; }
+-keep class * extends com.facebook.react.bridge.ReactMethod { *; }
+-keep class * extends com.facebook.react.bridge.JavaScriptModule { *; }
+-keepclassmembers class * {
+    @com.facebook.react.bridge.ReactMethod *;
+}
+
+# Preserve line numbers for better crash reports
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile

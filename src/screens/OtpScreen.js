@@ -96,51 +96,119 @@ const OtpScreen = ({ route, navigation }) => {
       // Call the verify phone OTP API
       const response = await authApi.verifyPhoneOtp(phone, enteredOtp);
       
-      console.log('OTP Verification response:', response);
+      console.log('================================================');
+      console.log('🔍 OTP VERIFICATION RESPONSE (Full):');
+      console.log(JSON.stringify(response, null, 2));
+      console.log('================================================');
+      console.log('📊 Response Details:');
+      console.log('  - success:', response.success);
+      console.log('  - token:', response.token ? 'EXISTS ✅' : 'NOT FOUND ❌');
+      console.log('  - user:', response.user ? 'EXISTS ✅' : 'NOT FOUND ❌');
+      console.log('  - isNewUser:', response.isNewUser);
+      console.log('================================================');
       
-      // Check if user is registered (has token) or new user
-      if (response.token && response.user) {
-        // User is REGISTERED - Store credentials for persistent login
-        await storeUserCredentials(response.token, response.user.id);
+      // Check if OTP verification was successful
+      if (response.success) {
+        
+        // ALL USERS (both old and new) - Direct to Home
+        console.log('✅✅✅ USER VERIFIED - NAVIGATING TO HOME ✅✅✅');
+        console.log('→ Response:', JSON.stringify(response, null, 2));
+        
+        // Save user profile to AsyncStorage (from OTP response or create default)
+        const userProfile = response.user || {
+          id: response.userId || Date.now().toString(),
+          phone: phone,
+          fullName: 'User',
+          email: ''
+        };
+        
+        try {
+          await AsyncStorage.setItem('userProfile', JSON.stringify(userProfile));
+          console.log('💾 User profile saved to AsyncStorage:', userProfile);
+        } catch (profileError) {
+          console.warn('Failed to save user profile:', profileError);
+        }
+        
+        // Store credentials for persistent login
+        const tokenToStore = response.token || `temp_token_${Date.now()}`;
+        const userIdToStore = userProfile.id;
+        
+        await storeUserCredentials(tokenToStore, userIdToStore);
+        console.log('💾 Credentials saved to AsyncStorage');
         
         // Send FCM token to backend after successful OTP verification
         try {
           const fcmToken = await getStoredFCMToken();
           
-          if (fcmToken && response.user.id) {
-            await sendFCMTokenToBackend(response.user.id, fcmToken);
+          if (fcmToken && userIdToStore) {
+            await sendFCMTokenToBackend(userIdToStore, fcmToken);
           }
         } catch (fcmError) {
           console.log('FCM token error (non-critical):', fcmError);
         }
         
         setLoading(false);
-        showToast("Login successful! Welcome! 🎉", "success");
+        showToast("Welcome! 🎉", "success");
         
         setTimeout(() => {
+          console.log('🏠 Navigating to Home...');
           navigation.reset({
             index: 0,
             routes: [{ name: 'Home' }]
           });
         }, 1500);
-      } else if (response.success) {
-        // User is NOT REGISTERED - OTP verified but no token
-        setLoading(false);
-        showToast("OTP verified! Complete your profile 📝", "success");
         
-        setTimeout(() => {
-          navigation.replace('SignupScreen', { phoneNumber: phone });
-        }, 1500);
       } else {
         // OTP verification failed
+        console.log('❌ OTP Verification failed:', response.message);
         setLoading(false);
         showToast(response.message || "Invalid OTP. Please try again.", "error");
       }
       
     } catch (error) {
-      console.error("OTP Verification Error:", error);
+      console.error("❌ OTP Verification Error:", error);
       setLoading(false);
-      showToast(error.message || "Invalid OTP. Please try again.", "error");
+      
+      // Check if error is "user already exists" type
+      if (error.message && (
+          error.message.includes('already exists') ||
+          error.message.includes('already registered') ||
+          error.message.includes('Phone number already')
+      )) {
+        console.log('⚠️ User already exists error during OTP verification');
+        
+        // Check if we have existing token in storage
+        try {
+          const existingToken = await AsyncStorage.getItem('userToken');
+          const existingUserId = await AsyncStorage.getItem('userId');
+          
+          if (existingToken && existingUserId) {
+            console.log('✅ Found existing credentials - Logging in...');
+            showToast("Welcome back! 🎉", "success");
+            
+            setTimeout(() => {
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Home' }]
+              });
+            }, 1500);
+            return;
+          }
+        } catch (storageError) {
+          console.error('Error checking AsyncStorage:', storageError);
+        }
+        
+        // If no token found, redirect to login
+        showToast("Account exists. Please login again.", "info");
+        setTimeout(() => {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'LoginScreen' }]
+          });
+        }, 1500);
+      } else {
+        showToast(error.message || "Invalid OTP. Please try again.", "error");
+      }
     }
   };
 

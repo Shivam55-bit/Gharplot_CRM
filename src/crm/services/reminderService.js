@@ -85,10 +85,23 @@ export const createReminderDateTime = (date, hour, minute, period) => {
  * Extract client info from enquiry for reminder
  */
 export const extractClientInfo = (enquiry) => {
+  console.log('Extracting client info for enquiry:', enquiry);
+  
+  // Handle existing customers (client enquiries)
+  if (enquiry.source === 'client' || enquiry.enquiryType === 'Inquiry') {
+    return {
+      name: enquiry.clientName || enquiry.fullName || 'Unknown Client',
+      email: enquiry.email || '',
+      phone: enquiry.contactNumber || enquiry.phone || '',
+      location: enquiry.propertyLocation || enquiry.location || '',
+    };
+  }
+  
+  // Handle manual enquiries
   return {
     name: enquiry.clientName || 'Unknown Client',
     email: enquiry.email || '',
     phone: enquiry.contactNumber || '',
-    location: enquiry.propertyLocation || enquiry.location || '',
+    location: enquiry.propertyLocation || enquiry.location || enquiry.address || '',
   };
 };

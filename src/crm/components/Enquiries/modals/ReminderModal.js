@@ -1,8 +1,9 @@
 /**
  * Reminder Modal Component
- * Form for creating reminders for enquiries
+ * Simple form for creating reminders with native notifications
+ * Updated to use ReminderNotificationService for background notifications
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -13,43 +14,46 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-  Platform,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialIcons';
-import { createReminder, createReminderDateTime, extractClientInfo } from '../../../services/reminderService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createReminder, createReminderFromLead } from '../../../services/crmEnquiryApi';
+import { createReminderDateTime, extractClientInfo, convertTo24Hour } from '../../../services/reminderService';
+import ReminderNotificationService from '../../../../services/ReminderNotificationService';
 
 const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    date: new Date().toISOString().split('T')[0],
-    hour: '09',
+    name: '',
+    email: '',
+    phone: '',
+    location: '',
+    date: '',
+    hour: '1',
     minute: '00',
     period: 'AM',
     note: '',
   });
 
-  useEffect(() => {
+  // Populate form when enquiry changes
+  React.useEffect(() => {
     if (enquiry) {
-      // Play reminder sound when modal opens
-      playReminderSound();
+      const clientInfo = extractClientInfo(enquiry);
+      setFormData({
+        name: clientInfo.name,
+        email: clientInfo.email,
+        phone: clientInfo.phone,
+        location: clientInfo.location,
+        date: new Date().toISOString().split('T')[0],
+        hour: '1',
+        minute: '00',
+        period: 'AM',
+        note: '',
+      });
     }
   }, [enquiry]);
 
-  const playReminderSound = () => {
-    // In a real app, you would implement sound playing here
-    // For React Native, you could use react-native-sound or expo-av
-    console.log('🔔 Reminder sound played');
-  };
-
-  const hours = Array.from({ length: 12 }, (_, i) => {
-    const hour = (i + 1).toString().padStart(2, '0');
-    return hour;
-  });
-
-  const minutes = Array.from({ length: 12 }, (_, i) => {
-    const minute = (i * 5).toString().padStart(2, '0');
-    return minute;
-  });
+  const hours = Array.from({ length: 12 }, (_, i) => (i + 1).toString());
+  const minutes = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'));
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({
@@ -59,20 +63,25 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
   };
 
   const validateForm = () => {
+    if (!formData.name.trim()) {
+      Alert.alert('Validation Error', 'Please enter name');
+      return false;
+    }
+
+    if (!formData.phone.trim()) {
+      Alert.alert('Validation Error', 'Please enter phone number');
+      return false;
+    }
+
     if (!formData.date) {
       Alert.alert('Validation Error', 'Please select a date');
       return false;
     }
 
-    if (!formData.hour || !formData.minute) {
-      Alert.alert('Validation Error', 'Please select time');
-      return false;
-    }
-
-    // Check if date is not in the past
-    const selectedDateTime = new Date(`${formData.date}T${formData.hour}:${formData.minute}:00`);
-    if (selectedDateTime < new Date()) {
-      Alert.alert('Validation Error', 'Please select a future date and time');
+    // Validate date format
+    const selectedDate = new Date(formData.date);
+    if (isNaN(selectedDate.getTime())) {
+      Alert.alert('Validation Error', 'Please enter a valid date');
       return false;
     }
 
@@ -85,7 +94,7 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
     setLoading(true);
 
     try {
-      const clientInfo = extractClientInfo(enquiry);
+      // Create reminder date and time
       const reminderDateTime = createReminderDateTime(
         formData.date,
         formData.hour,
@@ -93,29 +102,87 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
         formData.period
       );
 
+      // Validate that the reminder is set for future
+      const reminderDate = new Date(reminderDateTime);
+      const now = new Date();
+      
+      if (reminderDate <= now) {
+        Alert.alert('Invalid Date', 'Please select a future date and time for the reminder');
+        return;
+      }
+
+      // Prepare data for notification service
       const reminderData = {
-        name: clientInfo.name,
-        email: clientInfo.email,
-        phone: clientInfo.phone,
-        location: clientInfo.location,
-        comment: formData.note || `Follow up with ${clientInfo.name}`,
-        reminderDateTime,
-        title: `Reminder for ${clientInfo.name}`,
-        status: 'pending',
+        id: `reminder_${enquiry._id}_${Date.now()}`,
+        clientName: formData.name,
+        message: formData.note || `Follow up with ${formData.name} regarding property inquiry`,
+        scheduledDate: reminderDate,
+        enquiryId: enquiry._id,
+        enquiry: enquiry,
+        // Enhanced navigation configuration for notification click
+        targetScreen: 'EnquiryDetails', // Navigate to specific enquiry details
+        navigationType: 'nested',
+        navigationData: {
+          enquiryId: enquiry._id,
+          clientName: formData.name,
+          clientPhone: formData.phone,
+          clientEmail: formData.email,
+          reminderType: 'follow_up',
+          enquiry: enquiry,
+          openReminderTab: true, // Open reminder tab in details
+        },
       };
 
-      const result = await createReminder(reminderData);
-
+      // 🔔 Schedule notification using ReminderNotificationService
+      const result = await ReminderNotificationService.scheduleReminder(reminderData);
+      
       if (result.success) {
-        Alert.alert('Success', result.message, [
-          { text: 'OK', onPress: handleClose }
-        ]);
+        // Also store legacy format for existing screens that might still check AsyncStorage
+        const localReminder = {
+          id: reminderData.id,
+          leadId: enquiry._id || null,
+          enquiryType: enquiry.enquiryType || 'ManualInquiry',
+          clientName: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          location: formData.location,
+          comment: formData.note || `Reminder for ${formData.name}`,
+          reminderDateTime: reminderDateTime,
+          title: `Reminder: ${formData.name}`,
+          status: 'pending',
+          priority: 'medium',
+          source: 'local',
+          triggered: false,
+          createdAt: new Date().toISOString(),
+          notificationId: reminderData.id, // Link to notification
+        };
+
+        // Store in AsyncStorage for backward compatibility
+        const existingReminders = await AsyncStorage.getItem('localReminders');
+        const reminderList = existingReminders ? JSON.parse(existingReminders) : [];
+        reminderList.push(localReminder);
+        await AsyncStorage.setItem('localReminders', JSON.stringify(reminderList));
+
+        Alert.alert(
+          '✅ Reminder Set Successfully!',
+          `🔔 Notification scheduled for: ${formData.name}\n📅 Date & Time: ${reminderDate.toLocaleString('en-IN')}\n\n⚠️ You will receive a notification even if the app is closed or in background!`,
+          [{ 
+            text: 'Perfect!', 
+            onPress: handleClose,
+            style: 'default'
+          }]
+        );
         onSuccess && onSuccess();
       } else {
-        Alert.alert('Error', result.message || 'Failed to create reminder');
+        Alert.alert(
+          'Failed to Set Reminder',
+          result.message || 'Failed to schedule notification. Please check your notification permissions and try again.',
+          [{ text: 'OK' }]
+        );
       }
     } catch (error) {
-      Alert.alert('Error', error.message || 'Failed to create reminder');
+      console.error('❌ Reminder creation error:', error);
+      Alert.alert('Error', 'Failed to create reminder. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -123,8 +190,12 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
 
   const handleClose = () => {
     setFormData({
-      date: new Date().toISOString().split('T')[0],
-      hour: '09',
+      name: '',
+      email: '',
+      phone: '',
+      location: '',
+      date: '',
+      hour: '1',
       minute: '00',
       period: 'AM',
       note: '',
@@ -133,8 +204,6 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
   };
 
   if (!enquiry) return null;
-
-  const clientInfo = extractClientInfo(enquiry);
 
   return (
     <Modal
@@ -147,130 +216,175 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
         <View style={styles.modalContent}>
           {/* Header */}
           <View style={styles.modalHeader}>
-            <View style={styles.headerLeft}>
-              <Icon name="notifications" size={24} color="#3b82f6" />
-              <Text style={styles.modalTitle}>Set Reminder</Text>
-            </View>
+            <Text style={styles.modalTitle}>Set Reminder</Text>
             <TouchableOpacity
               onPress={handleClose}
               style={styles.closeButton}
               disabled={loading}
             >
-              <Icon name="close" size={24} color="#6b7280" />
+              <Text style={styles.closeButtonText}>×</Text>
             </TouchableOpacity>
           </View>
 
           <ScrollView style={styles.formContainer} showsVerticalScrollIndicator={false}>
-            {/* Client Information (Read-only) */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Client Information</Text>
-              <View style={styles.infoContainer}>
-                <Text style={styles.infoText}>Name: {clientInfo.name}</Text>
-                <Text style={styles.infoText}>Phone: {clientInfo.phone}</Text>
-                <Text style={styles.infoText}>Email: {clientInfo.email}</Text>
-                <Text style={styles.infoText}>Location: {clientInfo.location}</Text>
-              </View>
-            </View>
-
-            {/* Reminder Date */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Reminder Date *</Text>
+            {/* Name */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Name</Text>
               <TextInput
                 style={styles.input}
-                placeholder="YYYY-MM-DD"
-                value={formData.date}
-                onChangeText={(value) => handleInputChange('date', value)}
+                value={formData.name}
+                onChangeText={(value) => handleInputChange('name', value)}
+                placeholder="Enter name"
               />
             </View>
 
-            {/* Reminder Time */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Reminder Time *</Text>
-              <View style={styles.timeContainer}>
+            {/* Email */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Email</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.email}
+                onChangeText={(value) => handleInputChange('email', value)}
+                placeholder="Enter email"
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
+
+            {/* Phone */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Phone</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.phone}
+                onChangeText={(value) => handleInputChange('phone', value)}
+                placeholder="Enter phone number"
+                keyboardType="phone-pad"
+              />
+            </View>
+
+            {/* Location */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Location</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.location}
+                onChangeText={(value) => handleInputChange('location', value)}
+                placeholder="Enter location"
+              />
+            </View>
+
+            {/* Date */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Date</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.date}
+                onChangeText={(value) => handleInputChange('date', value)}
+                placeholder="dd-mm-yyyy"
+              />
+            </View>
+
+            {/* Time */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Time</Text>
+              <View style={styles.timeRow}>
                 {/* Hour */}
-                <View style={styles.timePickerContainer}>
-                  <Text style={styles.timeLabel}>Hour</Text>
-                  <View style={styles.timePicker}>
+                <View style={styles.timeDropdown}>
+                  <ScrollView 
+                    style={styles.dropdown} 
+                    nestedScrollEnabled={true}
+                    showsVerticalScrollIndicator={false}
+                  >
                     {hours.map((hour) => (
                       <TouchableOpacity
                         key={hour}
                         style={[
-                          styles.timeOption,
-                          formData.hour === hour && styles.timeOptionActive,
+                          styles.dropdownItem,
+                          formData.hour === hour && styles.dropdownItemActive,
                         ]}
                         onPress={() => handleInputChange('hour', hour)}
                       >
                         <Text style={[
-                          styles.timeOptionText,
-                          formData.hour === hour && styles.timeOptionTextActive,
+                          styles.dropdownText,
+                          formData.hour === hour && styles.dropdownTextActive,
                         ]}>
                           {hour}
                         </Text>
                       </TouchableOpacity>
                     ))}
-                  </View>
+                  </ScrollView>
                 </View>
 
+                <Text style={styles.timeSeparator}>:</Text>
+
                 {/* Minute */}
-                <View style={styles.timePickerContainer}>
-                  <Text style={styles.timeLabel}>Minute</Text>
-                  <View style={styles.timePicker}>
+                <View style={styles.timeDropdown}>
+                  <ScrollView 
+                    style={styles.dropdown}
+                    nestedScrollEnabled={true}
+                    showsVerticalScrollIndicator={false}
+                  >
                     {minutes.map((minute) => (
                       <TouchableOpacity
                         key={minute}
                         style={[
-                          styles.timeOption,
-                          formData.minute === minute && styles.timeOptionActive,
+                          styles.dropdownItem,
+                          formData.minute === minute && styles.dropdownItemActive,
                         ]}
                         onPress={() => handleInputChange('minute', minute)}
                       >
                         <Text style={[
-                          styles.timeOptionText,
-                          formData.minute === minute && styles.timeOptionTextActive,
+                          styles.dropdownText,
+                          formData.minute === minute && styles.dropdownTextActive,
                         ]}>
                           {minute}
                         </Text>
                       </TouchableOpacity>
                     ))}
-                  </View>
+                  </ScrollView>
                 </View>
 
                 {/* Period */}
-                <View style={styles.timePickerContainer}>
-                  <Text style={styles.timeLabel}>Period</Text>
-                  <View style={styles.periodContainer}>
+                <View style={styles.timeDropdown}>
+                  <ScrollView 
+                    style={styles.dropdown}
+                    nestedScrollEnabled={true}
+                    showsVerticalScrollIndicator={false}
+                  >
                     {['AM', 'PM'].map((period) => (
                       <TouchableOpacity
                         key={period}
                         style={[
-                          styles.periodOption,
-                          formData.period === period && styles.periodOptionActive,
+                          styles.dropdownItem,
+                          formData.period === period && styles.dropdownItemActive,
                         ]}
                         onPress={() => handleInputChange('period', period)}
                       >
                         <Text style={[
-                          styles.periodOptionText,
-                          formData.period === period && styles.periodOptionTextActive,
+                          styles.dropdownText,
+                          formData.period === period && styles.dropdownTextActive,
                         ]}>
                           {period}
                         </Text>
                       </TouchableOpacity>
                     ))}
-                  </View>
+                  </ScrollView>
                 </View>
               </View>
             </View>
 
             {/* Note */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Note (Optional)</Text>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Note</Text>
               <TextInput
                 style={[styles.input, styles.textArea]}
-                placeholder="Enter reminder note..."
                 value={formData.note}
                 onChangeText={(value) => handleInputChange('note', value)}
+                placeholder="Enter note"
                 multiline
                 numberOfLines={3}
+                textAlignVertical="top"
               />
             </View>
           </ScrollView>
@@ -278,24 +392,21 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
           {/* Footer */}
           <View style={styles.modalFooter}>
             <TouchableOpacity
-              style={[styles.button, styles.cancelButton]}
+              style={styles.cancelButton}
               onPress={handleClose}
               disabled={loading}
             >
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.button, styles.submitButton, loading && styles.buttonDisabled]}
+              style={[styles.saveButton, loading && styles.buttonDisabled]}
               onPress={handleSubmit}
               disabled={loading}
             >
               {loading ? (
                 <ActivityIndicator size="small" color="#ffffff" />
               ) : (
-                <>
-                  <Icon name="notifications" size={18} color="#ffffff" />
-                  <Text style={styles.submitButtonText}>Set Reminder</Text>
-                </>
+                <Text style={styles.saveButtonText}>Save</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -309,27 +420,26 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    padding: 20,
   },
   modalContent: {
     backgroundColor: '#ffffff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderRadius: 12,
     maxHeight: '90%',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
   },
   modalTitle: {
     fontSize: 18,
@@ -339,37 +449,30 @@ const styles = StyleSheet.create({
   closeButton: {
     padding: 4,
   },
+  closeButtonText: {
+    fontSize: 24,
+    color: '#6b7280',
+  },
   formContainer: {
     padding: 20,
+    maxHeight: 400,
   },
-  section: {
-    marginBottom: 20,
+  inputGroup: {
+    marginBottom: 16,
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1f2937',
-    marginBottom: 8,
-  },
-  infoContainer: {
-    backgroundColor: '#f8fafc',
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  infoText: {
+  inputLabel: {
     fontSize: 14,
-    color: '#4b5563',
-    marginBottom: 4,
+    fontWeight: '500',
+    color: '#374151',
+    marginBottom: 6,
   },
   input: {
     borderWidth: 1,
     borderColor: '#d1d5db',
-    borderRadius: 8,
+    borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontSize: 16,
+    fontSize: 14,
     color: '#1f2937',
     backgroundColor: '#ffffff',
   },
@@ -377,99 +480,74 @@ const styles = StyleSheet.create({
     height: 80,
     textAlignVertical: 'top',
   },
-  timeContainer: {
+  timeRow: {
     flexDirection: 'row',
-    gap: 12,
+    alignItems: 'center',
+    gap: 8,
   },
-  timePickerContainer: {
+  timeDropdown: {
     flex: 1,
   },
-  timeLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#6b7280',
-    marginBottom: 8,
-  },
-  timePicker: {
-    maxHeight: 120,
+  dropdown: {
     borderWidth: 1,
     borderColor: '#d1d5db',
-    borderRadius: 8,
+    borderRadius: 6,
     backgroundColor: '#ffffff',
+    maxHeight: 100,
   },
-  timeOption: {
+  dropdownItem: {
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#f3f4f6',
   },
-  timeOptionActive: {
+  dropdownItemActive: {
     backgroundColor: '#3b82f6',
   },
-  timeOptionText: {
-    fontSize: 16,
-    color: '#1f2937',
+  dropdownText: {
+    fontSize: 14,
+    color: '#374151',
     textAlign: 'center',
   },
-  timeOptionTextActive: {
+  dropdownTextActive: {
     color: '#ffffff',
     fontWeight: '600',
   },
-  periodContainer: {
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  periodOption: {
-    flex: 1,
-    paddingVertical: 12,
-    backgroundColor: '#ffffff',
-  },
-  periodOptionActive: {
-    backgroundColor: '#3b82f6',
-  },
-  periodOptionText: {
-    fontSize: 16,
-    color: '#1f2937',
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  periodOptionTextActive: {
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-  modalFooter: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-    gap: 12,
-  },
-  button: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  cancelButton: {
-    backgroundColor: '#f3f4f6',
-  },
-  cancelButtonText: {
+  timeSeparator: {
     fontSize: 16,
     fontWeight: '600',
     color: '#6b7280',
   },
-  submitButton: {
-    backgroundColor: '#3b82f6',
+  modalFooter: {
+    flexDirection: 'row',
+    gap: 12,
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
   },
-  submitButtonText: {
-    fontSize: 16,
+  cancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 6,
+    backgroundColor: '#f3f4f6',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+  },
+  cancelButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  saveButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 6,
+    backgroundColor: '#3b82f6',
+    alignItems: 'center',
+  },
+  saveButtonText: {
+    fontSize: 14,
     fontWeight: '600',
     color: '#ffffff',
   },

@@ -48,10 +48,81 @@ const SplashScreen = ({ navigation }) => {
       }),
     ]).start();
 
-    // Check login status after animations complete
+    // 🎯 CRITICAL: Check for initial notification FIRST before auto-login
+    const handleInitialNavigation = async () => {
+      console.log('🚀 SplashScreen: Checking for initial notification...');
+      
+      let shouldDoAutoLogin = true; // Flag to control auto-login
+      
+      try {
+        // Check if app was opened from notification (killed state)
+        const messaging = require('@react-native-firebase/messaging').default;
+        const remoteMessage = await messaging().getInitialNotification();
+        
+        if (remoteMessage) {
+          console.log('📬 App opened from notification (killed state):', JSON.stringify(remoteMessage.data, null, 2));
+          
+          const notificationData = remoteMessage.data || {};
+          const notificationType = notificationData.type || notificationData.notificationType;
+          
+          console.log('🎯 Notification Type:', notificationType);
+          
+          // Check if user is logged in first
+          const adminToken = await AsyncStorage.getItem('admin_token');
+          const userToken = await AsyncStorage.getItem('userToken');
+          const crmToken = await AsyncStorage.getItem('crm_token');
+          
+          if (adminToken || userToken || crmToken) {
+            console.log('✅ User authenticated, processing notification');
+            
+            // 🔔 ALERT NOTIFICATION - Navigate to EditAlertScreen
+            if (notificationType === 'alert' || notificationType === 'system_alert') {
+              console.log('🎯🎯🎯 ALERT: Navigating to EditAlertScreen from killed state');
+              
+              const params = {
+                alertId: notificationData.alertId?.replace('alert_', '') || notificationData.id?.replace('alert_', '') || Date.now().toString(),
+                originalReason: notificationData.reason || notificationData.body || notificationData.message || '',
+                originalDate: notificationData.date,
+                originalTime: notificationData.time,
+                repeatDaily: notificationData.repeatDaily === 'true' || notificationData.repeatDaily === true,
+              };
+              
+              console.log('📤 Navigating to EditAlert with params:', params);
+              navigation.replace('EditAlert', params);
+              shouldDoAutoLogin = false; // 🛑 STOP auto-login
+            }
+            // REMINDER NOTIFICATION - Navigate to EditReminderScreen
+            else if (notificationType === 'reminder' || notificationType === 'enquiry_reminder') {
+              console.log('🎯 REMINDER: Navigating to EditReminderScreen from killed state');
+              navigation.replace('EditReminder', {
+                reminderId: notificationData.reminderId || notificationData.id,
+                clientName: notificationData.clientName || 'Client',
+                originalMessage: notificationData.message || notificationData.body || '',
+                enquiryId: notificationData.enquiryId,
+              });
+              shouldDoAutoLogin = false; // 🛑 STOP auto-login
+            }
+          } else {
+            console.log('⚠️ User not authenticated, proceeding to login');
+          }
+        } else {
+          console.log('ℹ️ No initial notification found');
+        }
+      } catch (error) {
+        console.error('❌ Error checking initial notification:', error);
+      }
+      
+      // Only do auto-login if no notification navigation happened
+      if (shouldDoAutoLogin) {
+        console.log('🚀 Proceeding with normal auto-login check...');
+        checkAutoLogin(navigation);
+      } else {
+        console.log('🛑 Skipping auto-login - Already navigated to notification screen');
+      }
+    };
+
     const timer = setTimeout(() => {
-      console.log('🚀 SplashScreen: Starting auto-login check...');
-      checkAutoLogin(navigation);
+      handleInitialNavigation();
     }, 3000); // Reduced to 3 seconds
 
     return () => clearTimeout(timer);

@@ -31,48 +31,13 @@ const COLORS = {
   shadow: "rgba(0, 0, 0, 0.1)",
 };
 
-// Sample data (fallback)
-const properties = [
-  {
-    id: "1",
-    name: "Luxury Beachfront Villa",
-    location: "Los Angeles, CA",
-    price: "$1.2 Cr",
-    beds: 5,
-    baths: 4,
-    sqft: 4500,
-    image:
-      "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&q=80&w=1080",
-  },
-  {
-    id: "2",
-    name: "Modern Downtown Apartment",
-    location: "New York, NY",
-    price: "$85 Lac",
-    beds: 2,
-    baths: 2,
-    sqft: 1200,
-    image:
-      "https://images.unsplash.com/photo-1572120360610-d971b9b639d7?auto=format&q=80&w=1080",
-  },
-  {
-    id: "3",
-    name: "Cozy Cottage Retreat",
-    location: "San Francisco, CA",
-    price: "$65 Lac",
-    beds: 3,
-    baths: 2,
-    sqft: 1800,
-    image:
-      "https://images.unsplash.com/photo-1568605114967-8130f3a36994?auto=format&q=80&w=1080",
-  },
-];
-
 const BuyScreen = ({ navigation }) => {
-  const [propertiesList, setPropertiesList] = useState(properties);
+  const [propertiesList, setPropertiesList] = useState([]);
+  const [filteredProperties, setFilteredProperties] = useState([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedType, setSelectedType] = useState("All"); // ✅ Added missing state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedType, setSelectedType] = useState("All");
   const [favorites, setFavorites] = useState([]);
 
   const propertyTypes = [
@@ -108,6 +73,7 @@ const BuyScreen = ({ navigation }) => {
             raw: p,
           }));
           setPropertiesList(mapped);
+          setFilteredProperties(mapped);
         }
       } catch (e) {
         console.warn("Failed to load buy properties:", e.message || e);
@@ -145,6 +111,35 @@ const BuyScreen = ({ navigation }) => {
     return () => sub.remove();
   }, []);
 
+  // Apply filters and search
+  const applyFilters = () => {
+    let filtered = propertiesList;
+
+    // Filter by type
+    if (selectedType !== "All") {
+      filtered = filtered.filter(
+        (item) => item.raw?.propertyType?.toLowerCase() === selectedType.toLowerCase()
+      );
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      filtered = filtered.filter(
+        (item) =>
+          item.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          item.location?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          item.raw?.propertyId?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+
+    setFilteredProperties(filtered);
+  };
+
+  // Apply filters when search or type changes
+  useEffect(() => {
+    applyFilters();
+  }, [searchQuery, selectedType, propertiesList]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     try {
@@ -163,6 +158,7 @@ const BuyScreen = ({ navigation }) => {
           raw: p,
         }));
         setPropertiesList(mapped);
+        setFilteredProperties(mapped);
       }
     } catch (e) {
       console.warn("Refresh failed:", e.message || e);
@@ -185,7 +181,7 @@ const BuyScreen = ({ navigation }) => {
       <TouchableOpacity
         style={styles.card}
         activeOpacity={0.8}
-        onPress={() => navigation.navigate("PropertyDetails", { property: item })}
+        onPress={() => navigation.navigate("PropertyDetailsScreen", { property: item.raw || item })}
       >
         <View style={styles.imageContainer}>
           <MediaCard
@@ -263,7 +259,10 @@ const BuyScreen = ({ navigation }) => {
             <Icon name="arrow-back" size={24} color={COLORS.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Buy Properties</Text>
-          <TouchableOpacity style={styles.postBtn}>
+          <TouchableOpacity 
+            style={styles.postBtn}
+            onPress={() => navigation.navigate('AddSell')}
+          >
             <Icon name="add-circle-outline" size={26} color={COLORS.primary} />
           </TouchableOpacity>
         </View>
@@ -276,7 +275,14 @@ const BuyScreen = ({ navigation }) => {
               placeholder="Search by city, project, or ID..."
               placeholderTextColor="#AAA"
               style={styles.searchInput}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
             />
+            {searchQuery ? (
+              <TouchableOpacity onPress={() => setSearchQuery("")}>
+                <Icon name="close-circle" size={20} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            ) : null}
           </View>
 
           {/* Filter Buttons */}
@@ -305,19 +311,21 @@ const BuyScreen = ({ navigation }) => {
           {/* Property List */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Featured Properties</Text>
-            <TouchableOpacity>
-              <Text style={styles.seeAll}>View All</Text>
-            </TouchableOpacity>
           </View>
 
           <FlatList
-            data={propertiesList}
+            data={filteredProperties}
             renderItem={renderProperty}
             keyExtractor={(item) => item.id}
             scrollEnabled={false}
             contentContainerStyle={styles.propertiesListContainer}
             refreshing={refreshing}
             onRefresh={onRefresh}
+            ListEmptyComponent={
+              <View style={{ padding: 20, alignItems: 'center' }}>
+                <Text style={{ color: COLORS.textSecondary, fontSize: 16 }}>No properties found</Text>
+              </View>
+            }
           />
           <View style={{ height: 50 }} />
         </ScrollView>

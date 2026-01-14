@@ -11,6 +11,10 @@ import {
   Modal,
   ActivityIndicator,
   RefreshControl,
+  ScrollView,
+  Switch,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { 
@@ -26,10 +30,68 @@ const RoleManagementScreen = ({ navigation }) => {
   const [roles, setRoles] = useState([]);
   const [searchText, setSearchText] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
+  const [createEditModalVisible, setCreateEditModalVisible] = useState(false);
   const [selectedRole, setSelectedRole] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [permissions, setPermissions] = useState({ modules: [], actions: [] });
+  
+  // Form data state for create/edit
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    permissions: []
+  });
+  const [formErrors, setFormErrors] = useState({});
+
+  // Helper function to toggle permission
+  const togglePermission = (moduleKey, action, checked) => {
+    const newPermissions = [...formData.permissions];
+    const existingIndex = newPermissions.findIndex(p => p.module === moduleKey);
+    
+    if (existingIndex >= 0) {
+      if (checked) {
+        if (!newPermissions[existingIndex].actions.includes(action)) {
+          newPermissions[existingIndex].actions.push(action);
+        }
+      } else {
+        newPermissions[existingIndex].actions = newPermissions[existingIndex].actions.filter(a => a !== action);
+        if (newPermissions[existingIndex].actions.length === 0) {
+          newPermissions.splice(existingIndex, 1);
+        }
+      }
+    } else if (checked) {
+      newPermissions.push({ module: moduleKey, actions: [action] });
+    }
+    
+    setFormData(prev => ({ ...prev, permissions: newPermissions }));
+  };
+
+  // Check if permission is selected
+  const isPermissionSelected = (moduleKey, action) => {
+    const modulePermission = formData.permissions.find(p => p.module === moduleKey);
+    return modulePermission ? modulePermission.actions.includes(action) : false;
+  };
+
+  // Validate form
+  const validateForm = () => {
+    const errors = {};
+    if (!formData.name.trim()) {
+      errors.name = 'Role name is required';
+    }
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // Show alert function
+  const showAlert = (type, message) => {
+    if (type === 'success') {
+      Alert.alert('Success', message);
+    } else {
+      Alert.alert('Error', message);
+    }
+  };
 
   // Helper function to get role colors
   const getRoleColor = (roleName) => {
@@ -61,6 +123,7 @@ const RoleManagementScreen = ({ navigation }) => {
           id: role._id,
           name: role.name,
           description: role.description,
+          originalPermissions: role.permissions || [], // Keep original format for editing
           permissions: role.permissions && Array.isArray(role.permissions) ? 
             role.permissions.map((p, index) => {
               if (typeof p === 'object' && p.module) {
@@ -91,7 +154,12 @@ const RoleManagementScreen = ({ navigation }) => {
             id: 'demo1',
             name: 'Admin',
             description: 'Full system access (Demo)',
-            permissions: ['Dashboard: Read, Write', 'Users: Read, Write, Delete', 'Settings: Read, Write'],
+            originalPermissions: [
+              { module: 'dashboard', actions: ['read', 'create', 'update'] },
+              { module: 'leads', actions: ['read', 'create', 'update', 'delete'] },
+              { module: 'employees', actions: ['read', 'create', 'update'] }
+            ],
+            permissions: ['Dashboard: Read, Create, Update', 'Leads: Read, Create, Update, Delete', 'Employees: Read, Create, Update'],
             userCount: 2,
             color: '#ef4444',
             isActive: true
@@ -100,7 +168,12 @@ const RoleManagementScreen = ({ navigation }) => {
             id: 'demo2', 
             name: 'Manager',
             description: 'Management access (Demo)',
-            permissions: ['Dashboard: Read', 'Users: Read', 'Reports: Read'],
+            originalPermissions: [
+              { module: 'dashboard', actions: ['read'] },
+              { module: 'leads', actions: ['read', 'create'] },
+              { module: 'reports', actions: ['read'] }
+            ],
+            permissions: ['Dashboard: Read', 'Leads: Read, Create', 'Reports: Read'],
             userCount: 5,
             color: '#3b82f6',
             isActive: true
@@ -109,14 +182,19 @@ const RoleManagementScreen = ({ navigation }) => {
       }
     } catch (error) {
       console.error('Error loading roles:', error);
-      Alert.alert('API Error', `Failed to connect to server. Using demo data.`);
+      showAlert('error', 'Error fetching roles');
       // Use fallback demo data if API fails
       setRoles([
         {
           id: 'demo1',
           name: 'Admin',
           description: 'Full system access (Demo)',
-          permissions: ['Dashboard: Read, Write', 'Users: Read, Write, Delete', 'Settings: Read, Write'],
+          originalPermissions: [
+            { module: 'dashboard', actions: ['read', 'create', 'update'] },
+            { module: 'leads', actions: ['read', 'create', 'update', 'delete'] },
+            { module: 'employees', actions: ['read', 'create', 'update'] }
+          ],
+          permissions: ['Dashboard: Read, Create, Update', 'Leads: Read, Create, Update, Delete', 'Employees: Read, Create, Update'],
           userCount: 2,
           color: '#ef4444',
           isActive: true
@@ -125,7 +203,12 @@ const RoleManagementScreen = ({ navigation }) => {
           id: 'demo2',
           name: 'Manager', 
           description: 'Management access (Demo)',
-          permissions: ['Dashboard: Read', 'Users: Read', 'Reports: Read'],
+          originalPermissions: [
+            { module: 'dashboard', actions: ['read'] },
+            { module: 'leads', actions: ['read', 'create'] },
+            { module: 'reports', actions: ['read'] }
+          ],
+          permissions: ['Dashboard: Read', 'Leads: Read, Create', 'Reports: Read'],
           userCount: 5,
           color: '#3b82f6',
           isActive: true
@@ -136,23 +219,65 @@ const RoleManagementScreen = ({ navigation }) => {
     }
   }, []);
 
-  // Load permissions/modules
+  // Load permissions/modules with fallback
   const loadPermissions = useCallback(async () => {
     try {
-      console.log('Loading permissions from:', `${CRM_BASE_URL}/api/roles/permissions`);
-      const response = await getAllPermissions();
+      console.log('Loading permissions...');
+      
+      let response;
+      try {
+        // Try admin endpoint first
+        response = await getAllPermissions();
+      } catch (adminError) {
+        console.log('Admin endpoint failed, trying public endpoint...');
+        // Fallback to public endpoint
+        const publicUrl = `${CRM_BASE_URL}/api/roles/permissions`;
+        const publicResponse = await fetch(publicUrl, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        response = await publicResponse.json();
+      }
+      
       console.log('Permissions response:', response);
       
       if (response && response.success && response.data) {
         setPermissions(response.data);
       } else {
-        console.log('No permissions found, using empty state');
-        setPermissions({ modules: [], actions: [] });
+        // Fallback permissions structure if API fails
+        console.log('Using fallback permissions');
+        setPermissions({
+          modules: [
+            { value: 'dashboard', label: 'Dashboard', description: 'Dashboard access and overview' },
+            { value: 'leads', label: 'Leads', description: 'Lead management' },
+            { value: 'properties', label: 'Properties', description: 'Property management' },
+            { value: 'employees', label: 'Employees', description: 'Employee management' },
+            { value: 'assignments', label: 'Assignments', description: 'Assignment management' },
+            { value: 'reports', label: 'Reports', description: 'Reports and analytics' },
+            { value: 'settings', label: 'Settings', description: 'System settings' }
+          ],
+          actions: [
+            { value: 'read', label: 'View' },
+            { value: 'create', label: 'Create' },
+            { value: 'update', label: 'Update' },
+            { value: 'delete', label: 'Delete' }
+          ]
+        });
       }
     } catch (error) {
       console.error('Error loading permissions:', error);
-      // Don't show alert for permissions error, just log it
-      setPermissions({ modules: [], actions: [] });
+      // Use minimal fallback if everything fails
+      setPermissions({
+        modules: [
+          { value: 'dashboard', label: 'Dashboard' },
+          { value: 'leads', label: 'Leads' },
+          { value: 'properties', label: 'Properties' }
+        ],
+        actions: [
+          { value: 'read', label: 'View' },
+          { value: 'create', label: 'Create' }
+        ]
+      });
     }
   }, []);
 
@@ -169,6 +294,73 @@ const RoleManagementScreen = ({ navigation }) => {
     loadPermissions();
   }, [loadRoles, loadPermissions]);
 
+  // Open create modal
+  const openCreateModal = () => {
+    setFormData({
+      name: '',
+      description: '',
+      permissions: []
+    });
+    setFormErrors({});
+    setSelectedRole(null);
+    setCreateEditModalVisible(true);
+  };
+
+  // Open edit modal
+  const openEditModal = (role) => {
+    setFormData({
+      name: role.name,
+      description: role.description,
+      permissions: role.originalPermissions || []
+    });
+    setFormErrors({});
+    setSelectedRole(role);
+    setCreateEditModalVisible(true);
+  };
+
+  // Handle form submission
+  const handleSubmit = async () => {
+    if (!validateForm()) {
+      showAlert('error', 'Role name is required');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      
+      if (selectedRole) {
+        // Update role
+        const response = await updateRole(selectedRole.id, formData);
+        if (response.success) {
+          showAlert('success', 'Role updated successfully!');
+          setTimeout(() => {
+            setCreateEditModalVisible(false);
+            loadRoles();
+          }, 1500);
+        } else {
+          showAlert('error', response.message || 'An error occurred while updating the role');
+        }
+      } else {
+        // Create role
+        const response = await createRole(formData);
+        if (response.success) {
+          showAlert('success', 'Role created successfully!');
+          setTimeout(() => {
+            setCreateEditModalVisible(false);
+            loadRoles();
+          }, 1500);
+        } else {
+          showAlert('error', response.message || 'An error occurred while creating the role');
+        }
+      }
+    } catch (error) {
+      console.error('Error submitting role:', error);
+      showAlert('error', error.message || 'An error occurred while saving the role');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const filteredRoles = roles.filter(role =>
     role.name.toLowerCase().includes(searchText.toLowerCase()) ||
     role.description.toLowerCase().includes(searchText.toLowerCase())
@@ -179,10 +371,12 @@ const RoleManagementScreen = ({ navigation }) => {
     setModalVisible(true);
   };
 
-  const handleDeleteRole = async (roleId) => {
+  const handleDeleteRole = async (role) => {
+    const roleName = role.name;
+    
     Alert.alert(
       'Delete Role',
-      'Are you sure you want to delete this role? This action cannot be undone.',
+      `Are you sure you want to delete "${roleName}"? Note: You cannot delete a role if employees are still assigned to it.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -191,17 +385,28 @@ const RoleManagementScreen = ({ navigation }) => {
           onPress: async () => {
             try {
               setLoading(true);
-              const response = await deleteRole(roleId);
+              const response = await deleteRole(role.id);
               
               if (response.success) {
-                Alert.alert('Success', 'Role deleted successfully');
+                showAlert('success', 'Role deleted successfully!');
                 await loadRoles(); // Refresh the list
               } else {
-                Alert.alert('Error', response.message || 'Failed to delete role');
+                // Handle backend constraint errors
+                const errorMessage = response.message || 'Failed to delete role';
+                if (response.status === 400 && errorMessage.includes('employee')) {
+                  showAlert('error', `Cannot delete "${roleName}": ${errorMessage} — Please reassign all employees from this role first, then try again.`);
+                } else {
+                  showAlert('error', errorMessage);
+                }
               }
             } catch (error) {
               console.error('Error deleting role:', error);
-              Alert.alert('Error', error.message || 'Failed to delete role');
+              const errorMessage = error.message || 'Failed to delete role';
+              if (errorMessage.includes('employee')) {
+                showAlert('error', `Cannot delete "${roleName}": ${errorMessage} — Please reassign all employees from this role first, then try again.`);
+              } else {
+                showAlert('error', errorMessage);
+              }
             } finally {
               setLoading(false);
             }
@@ -246,21 +451,13 @@ const RoleManagementScreen = ({ navigation }) => {
       <View style={styles.cardActions}>
         <TouchableOpacity 
           style={styles.actionButton}
-          onPress={() => {
-            // TODO: Implement EditRole screen
-            Alert.alert(
-              'Coming Soon',
-              'Edit Role feature is under development. Please use the API or admin panel to edit roles.',
-              [{ text: 'OK' }]
-            );
-            // navigation.navigate('EditRole', { role: item, onRoleUpdated: loadRoles });
-          }}
+          onPress={() => openEditModal(item)}
         >
           <Icon name="create" size={18} color="#3b82f6" />
         </TouchableOpacity>
         <TouchableOpacity 
           style={styles.actionButton}
-          onPress={() => handleDeleteRole(item.id)}
+          onPress={() => handleDeleteRole(item)}
         >
           <Icon name="trash" size={18} color="#ef4444" />
         </TouchableOpacity>
@@ -287,7 +484,7 @@ const RoleManagementScreen = ({ navigation }) => {
             </TouchableOpacity>
           </View>
           
-          <View style={styles.modalBody}>
+          <ScrollView style={styles.modalBody}>
             <Text style={styles.modalDescription}>{selectedRole?.description}</Text>
             
             <Text style={styles.sectionTitle}>All Permissions:</Text>
@@ -302,20 +499,21 @@ const RoleManagementScreen = ({ navigation }) => {
             
             <View style={styles.modalStats}>
               <Text style={styles.statsText}>Users with this role: {selectedRole?.userCount}</Text>
+              <Text style={styles.statsText}>Status: {selectedRole?.isActive ? 'Active' : 'Inactive'}</Text>
+              {selectedRole?.createdAt && (
+                <Text style={styles.statsText}>
+                  Created: {new Date(selectedRole.createdAt).toLocaleDateString()}
+                </Text>
+              )}
             </View>
-          </View>
+          </ScrollView>
           
           <View style={styles.modalActions}>
             <TouchableOpacity 
               style={styles.editRoleButton}
               onPress={() => {
                 setModalVisible(false);
-                Alert.alert(
-                  'Coming Soon',
-                  'Edit Role feature is under development. Please use the API or admin panel to edit roles.',
-                  [{ text: 'OK' }]
-                );
-                // navigation.navigate('EditRole', { role: selectedRole, onRoleUpdated: loadRoles });
+                openEditModal(selectedRole);
               }}
             >
               <Text style={styles.editRoleButtonText}>Edit Role</Text>
@@ -326,8 +524,137 @@ const RoleManagementScreen = ({ navigation }) => {
     </Modal>
   );
 
+  // Create/Edit Role Modal
+  const CreateEditRoleModal = () => (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={createEditModalVisible}
+      onRequestClose={() => setCreateEditModalVisible(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalContent, { height: '90%' }]}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>
+              {selectedRole ? 'Edit Role' : 'Create New Role'}
+            </Text>
+            <TouchableOpacity
+              onPress={() => setCreateEditModalVisible(false)}
+              style={styles.closeButton}
+            >
+              <Icon name="close" size={24} color="#6b7280" />
+            </TouchableOpacity>
+          </View>
+          
+          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            {/* Role Name */}
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Role Name *</Text>
+              <TextInput
+                style={[styles.formInput, formErrors.name && styles.formInputError]}
+                placeholder="Enter role name"
+                value={formData.name}
+                onChangeText={(text) => {
+                  setFormData(prev => ({ ...prev, name: text }));
+                  if (formErrors.name) setFormErrors(prev => ({ ...prev, name: null }));
+                }}
+                placeholderTextColor="#9ca3af"
+              />
+              {formErrors.name && (
+                <Text style={styles.errorText}>{formErrors.name}</Text>
+              )}
+            </View>
+
+            {/* Description */}
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Description</Text>
+              <TextInput
+                style={[styles.formInput, { height: 80 }]}
+                placeholder="Enter role description"
+                value={formData.description}
+                onChangeText={(text) => setFormData(prev => ({ ...prev, description: text }))}
+                multiline
+                textAlignVertical="top"
+                placeholderTextColor="#9ca3af"
+              />
+            </View>
+
+            {/* Permissions Matrix */}
+            <View style={styles.formGroup}>
+              <Text style={styles.formLabel}>Permissions</Text>
+              <Text style={styles.formSubLabel}>Select permissions for each module</Text>
+              
+              {permissions.modules.map((module) => (
+                <View key={module.value} style={styles.permissionModule}>
+                  <View style={styles.moduleHeader}>
+                    <Text style={styles.moduleName}>{module.label}</Text>
+                    {module.description && (
+                      <Text style={styles.moduleDescription}>{module.description}</Text>
+                    )}
+                  </View>
+                  
+                  <View style={styles.actionsContainer}>
+                    {permissions.actions.map((action) => (
+                      <TouchableOpacity
+                        key={`${module.value}-${action.value}`}
+                        style={styles.permissionCheckbox}
+                        onPress={() => {
+                          const isSelected = isPermissionSelected(module.value, action.value);
+                          togglePermission(module.value, action.value, !isSelected);
+                        }}
+                      >
+                        <Icon
+                          name={isPermissionSelected(module.value, action.value) ? "checkbox" : "square-outline"}
+                          size={20}
+                          color={isPermissionSelected(module.value, action.value) ? "#3b82f6" : "#9ca3af"}
+                        />
+                        <Text style={styles.permissionLabel}>{action.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+          
+          {/* Fixed Action Buttons */}
+          <View style={styles.modalActionButtons}>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setCreateEditModalVisible(false)}
+              disabled={submitting}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.submitButton,
+                (!formData.name.trim() || submitting) && styles.submitButtonDisabled
+              ]}
+              onPress={handleSubmit}
+              disabled={!formData.name.trim() || submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Text style={styles.submitButtonText}>
+                  {selectedRole ? 'Update Role' : 'Create Role'}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
+      <StatusBar 
+        barStyle="light-content" 
+        backgroundColor="#1e293b" 
+        translucent={false}
+      />
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
@@ -338,15 +665,7 @@ const RoleManagementScreen = ({ navigation }) => {
         <Text style={styles.headerTitle}>Role Management</Text>
         <TouchableOpacity 
           style={styles.addButton}
-          onPress={() => {
-            // TODO: Implement CreateRole screen
-            Alert.alert(
-              'Coming Soon',
-              'Create Role feature is under development. Please use the API or admin panel to create roles.',
-              [{ text: 'OK' }]
-            );
-            // navigation.navigate('CreateRole', { onRoleCreated: loadRoles });
-          }}
+          onPress={openCreateModal}
         >
           <Icon name="add" size={24} color="#ffffff" />
         </TouchableOpacity>
@@ -409,7 +728,8 @@ const RoleManagementScreen = ({ navigation }) => {
       </View>
       
       <RoleDetailModal />
-    </SafeAreaView>
+      <CreateEditRoleModal />
+    </View>
   );
 };
 
@@ -420,7 +740,8 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: '#1e293b',
-    paddingVertical: 16,
+    paddingTop: Platform.OS === 'ios' ? 50 : 16,
+    paddingBottom: 16,
     paddingHorizontal: 20,
     flexDirection: 'row',
     alignItems: 'center',
@@ -605,6 +926,7 @@ const styles = StyleSheet.create({
   },
   modalBody: {
     padding: 20,
+    flex: 1,
   },
   modalDescription: {
     fontSize: 16,
@@ -638,6 +960,7 @@ const styles = StyleSheet.create({
   statsText: {
     fontSize: 14,
     color: '#374151',
+    marginBottom: 4,
   },
   modalActions: {
     padding: 20,
@@ -682,6 +1005,117 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#9ca3af',
     marginTop: 4,
+  },
+  // Form styles
+  formGroup: {
+    marginBottom: 20,
+  },
+  formLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  formSubLabel: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 12,
+  },
+  formInput: {
+    backgroundColor: '#f9fafb',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#374151',
+  },
+  formInputError: {
+    borderColor: '#ef4444',
+    backgroundColor: '#fef2f2',
+  },
+  errorText: {
+    color: '#ef4444',
+    fontSize: 14,
+    marginTop: 4,
+  },
+  // Permission styles
+  permissionModule: {
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 8,
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  moduleHeader: {
+    backgroundColor: '#f8fafc',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  moduleName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1e293b',
+  },
+  moduleDescription: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginTop: 4,
+  },
+  actionsContainer: {
+    padding: 12,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  permissionCheckbox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 20,
+    marginBottom: 8,
+  },
+  permissionLabel: {
+    fontSize: 14,
+    color: '#374151',
+    marginLeft: 8,
+  },
+  // Modal action buttons (fixed at bottom)
+  modalActionButtons: {
+    flexDirection: 'row',
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+    backgroundColor: '#ffffff',
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  submitButton: {
+    flex: 2,
+    backgroundColor: '#3b82f6',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginLeft: 10,
+  },
+  submitButtonDisabled: {
+    backgroundColor: '#9ca3af',
+  },
+  submitButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
   },
 });
 

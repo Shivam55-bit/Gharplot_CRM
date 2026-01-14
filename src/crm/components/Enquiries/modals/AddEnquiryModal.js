@@ -14,9 +14,14 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  Vibration,
+  AppState,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import ReminderPopup from '../../Reminders/ReminderPopup';
+import ReminderNotificationService from '../../../../services/ReminderNotificationService';
 import { createManualEnquiry } from '../../../services/enquiryService';
 
 const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnquiries = 0 }) => {
@@ -24,6 +29,10 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
   const [nextSerialNumber, setNextSerialNumber] = useState(1);
   const [nextClientCode, setNextClientCode] = useState('CC001');
   const [nextProjectCode, setNextProjectCode] = useState('PC001');
+  
+  // Reminder popup state
+  const [showReminderPopup, setShowReminderPopup] = useState(false);
+  const [currentReminder, setCurrentReminder] = useState(null);
   
   // Date picker states
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -49,6 +58,108 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
     referenceBy: '',
   });
 
+  // 🚨 CRITICAL: Background reminder checker
+  useEffect(() => {
+    let reminderInterval;
+    
+    const startReminderChecker = () => {
+      reminderInterval = setInterval(async () => {
+        try {
+          await checkDueReminders();
+        } catch (error) {
+          console.log('Reminder check error:', error);
+        }
+      }, 5000); // Check every 5 seconds for better precision
+    };
+    
+    // Start immediately when component mounts
+    startReminderChecker();
+    
+    // ✅ FIXED: Properly handle AppState listener in newer React Native
+    const handleAppStateChange = (nextAppState) => {
+      if (nextAppState === 'active') {
+        checkDueReminders();
+      }
+    };
+    
+    const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
+    
+    return () => {
+      if (reminderInterval) {
+        clearInterval(reminderInterval);
+      }
+      // ✅ FIXED: Use subscription.remove() instead of removeEventListener
+      if (appStateSubscription) {
+        appStateSubscription.remove();
+      }
+    };
+  }, []);
+
+  // �️ Make debug functions available globally (for development)
+  useEffect(() => {
+    if (__DEV__) {
+      global.reminderDebug = {
+        checkReminders: checkDueReminders,
+        viewStorage: async () => {
+          const reminders = await AsyncStorage.getItem('localReminders');
+          const parsed = reminders ? JSON.parse(reminders) : [];
+          console.log('📋 Stored reminders:', parsed);
+          return parsed;
+        },
+        clearAll: async () => {
+          await AsyncStorage.removeItem('localReminders');
+          console.log('🧹 All reminders cleared');
+        }
+      };
+      
+      console.log(`
+🧪 DEBUG COMMANDS AVAILABLE:
+• reminderDebug.checkReminders() - Check for due reminders now
+• reminderDebug.createTest() - Create 10-second test reminder
+• reminderDebug.viewStorage() - View all stored reminders  
+• reminderDebug.clearAll() - Clear all reminders
+      `);
+    }
+  }, []);
+
+  // �🚨 CRITICAL: Check for due reminders and show alerts
+  const checkDueReminders = async () => {
+    try {
+      const reminders = await AsyncStorage.getItem('localReminders');
+      if (!reminders) return;
+      
+      const reminderList = JSON.parse(reminders);
+      const now = new Date();
+      
+      for (const reminder of reminderList) {
+        if (reminder.triggered) continue; // Skip already triggered
+        
+        const reminderTime = new Date(reminder.reminderDateTime || reminder.scheduledDate);
+        const timeDiff = now.getTime() - reminderTime.getTime();
+        
+        // Only trigger at or after the scheduled time (within 30 seconds after)
+        if (timeDiff >= 0 && timeDiff <= 30000) {
+          console.log('🔔 REMINDER ALERT TIME!', reminder.clientName);
+          
+          // Mark as triggered
+          reminder.triggered = true;
+          await AsyncStorage.setItem('localReminders', JSON.stringify(reminderList));
+          
+          // Show reminder popup with vibration and sound
+          Vibration.vibrate([500, 200, 500, 200, 500]);
+          
+          setCurrentReminder(reminder);
+          setShowReminderPopup(true);
+          
+          break; // Only show one reminder at a time
+        }
+      }
+    } catch (error) {
+      console.log('Error checking reminders:', error);
+    }
+  };
+
+  // 🧪 TEST FUNCTION: Create immediate test reminder (for debugging)
   // Product types matching website
   const productTypes = [
     'Residential',
@@ -79,17 +190,79 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
   useEffect(() => {
     if (visible) {
       generateNextCodes();
+      
+      // ✅ DEBUG: Add debugging capabilities for reminder testing
+      if (__DEV__) {
+        global.debugEnquiryReminders = {
+          // Create immediate test reminder (30 seconds)
+          testNow: () => {
+            const testTime = new Date(Date.now() + 30000); // 30 seconds from now
+            setWeekActionDate(testTime);
+            setWeekActionTime(testTime);
+            updateWeekActionDateTime(testTime, testTime);
+            console.log(`🧪 Test reminder set for: ${testTime.toLocaleString()}`);
+            return `Test reminder set for ${testTime.toLocaleString()}`;
+          },
+          
+          // Create test reminder for 2 minutes
+          test2Min: () => {
+            const testTime = new Date(Date.now() + 120000); // 2 minutes from now
+            setWeekActionDate(testTime);
+            setWeekActionTime(testTime);
+            updateWeekActionDateTime(testTime, testTime);
+            console.log(`⏰ 2-minute test reminder set for: ${testTime.toLocaleString()}`);
+            return `2-minute test reminder set for ${testTime.toLocaleString()}`;
+          },
+          
+          // Check current reminder settings
+          checkCurrent: () => {
+            console.log('📅 Current Week/Action settings:');
+            console.log('  Date:', weekActionDate.toLocaleString());
+            console.log('  Time:', weekActionTime.toLocaleString());
+            console.log('  Combined:', formData.weekOrActionTaken);
+            return {
+              date: weekActionDate.toLocaleString(),
+              time: weekActionTime.toLocaleString(),
+              combined: formData.weekOrActionTaken
+            };          },
+          
+          // ✅ NEW: Quick form fill for testing
+          quickFill: () => {
+            handleInputChange('clientName', 'Test Form Client');
+            handleInputChange('contactNumber', '8888888888');
+            handleInputChange('location', 'Test Form Location');
+            console.log('📋 Quick form filled for testing');
+            return 'Form filled with test data';
+          },
+          
+          // ✅ NEW: Set reminder for 1 minute from now
+          setIn1Min: () => {
+            const testTime = new Date(Date.now() + 60000); // 1 minute
+            setWeekActionDate(testTime);
+            setWeekActionTime(testTime);
+            updateWeekActionDateTime(testTime, testTime);
+            console.log(`⏰ Form reminder set for 1 minute: ${testTime.toLocaleString()}`);
+            return `Reminder set for: ${testTime.toLocaleString()}`;          }
+        };
+        
+        console.log('🛠️ Debug Commands Available (AddEnquiryModal):');
+        console.log('  • global.debugEnquiryReminders.testNow() - Set 30s reminder');
+        console.log('  • global.debugEnquiryReminders.test2Min() - Set 2min reminder');
+        console.log('  • global.debugEnquiryReminders.setIn1Min() - Set 1min reminder');
+        console.log('  • global.debugEnquiryReminders.quickFill() - Fill form with test data');
+        console.log('  • global.debugEnquiryReminders.checkCurrent() - Check settings');
+      }
     }
   }, [visible, totalEnquiries]);
 
   const generateNextCodes = async () => {
     try {
-      // IMPORTANT: Use enquiries.length exactly as web does
-      // If 5 enquiries exist, next will be 6
-      const nextNumber = totalEnquiries; // Web uses enquiries.length directly
+      // IMPORTANT: If no enquiries exist (totalEnquiries = 0), start from 1
+      // Otherwise use totalEnquiries + 1 for next number
+      const nextNumber = totalEnquiries === 0 ? 1 : totalEnquiries + 1;
       const serialNo = nextNumber;
-      const clientCode = `CC${String(nextNumber).padStart(3, '0')}`;
-      const projectCode = `PC${String(nextNumber).padStart(3, '0')}`;
+      const clientCode = `CC${String(nextNumber).padStart(2, '0')}`;
+      const projectCode = `PC${String(nextNumber).padStart(2, '0')}`;
       
       console.log('📊 Auto-generation based on total enquiries:', totalEnquiries);
       console.log('🔢 Next Serial:', serialNo);
@@ -120,8 +293,10 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
 
   // Handle date picker change
   const onDateChange = (event, selectedDate) => {
-    setShowDatePicker(Platform.OS === 'ios'); // Keep open on iOS
-    if (selectedDate) {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+    if (event.type === 'set' && selectedDate) {
       setWeekActionDate(selectedDate);
       updateWeekActionDateTime(selectedDate, weekActionTime);
     }
@@ -129,24 +304,27 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
 
   // Handle time picker change
   const onTimeChange = (event, selectedTime) => {
-    setShowTimePicker(Platform.OS === 'ios'); // Keep open on iOS
-    if (selectedTime) {
+    if (Platform.OS === 'android') {
+      setShowTimePicker(false);
+    }
+    if (event.type === 'set' && selectedTime) {
       setWeekActionTime(selectedTime);
       updateWeekActionDateTime(weekActionDate, selectedTime);
     }
   };
 
-  // Update the combined date-time string
+  // ✅ ENHANCED: Update the combined date-time string with better handling
   const updateWeekActionDateTime = (date, time) => {
     const combinedDateTime = new Date(
       date.getFullYear(),
       date.getMonth(),
       date.getDate(),
       time.getHours(),
-      time.getMinutes()
+      time.getMinutes(),
+      time.getSeconds() || 0
     );
     
-    // Format: "Dec 25, 2025, 10:30 AM"
+    // Format for display: "Dec 25, 2025, 10:30 AM"
     const formatted = combinedDateTime.toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
@@ -155,6 +333,12 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
       minute: '2-digit',
       hour12: true
     });
+    
+    console.log('📅 Date/Time Updated:');
+    console.log('  📆 Date:', date.toLocaleDateString());
+    console.log('  🕐 Time:', time.toLocaleTimeString());
+    console.log('  📋 Combined:', formatted);
+    console.log('  🌐 ISO String:', combinedDateTime.toISOString());
     
     handleInputChange('weekOrActionTaken', formatted);
   };
@@ -221,14 +405,27 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
       console.log('📡 API Response:', JSON.stringify(result, null, 2));
       
       if (result && result.success) {
-        // If Week/Action Date/Time is provided, create reminder
+        // ✅ ENHANCED: If Week/Action Date/Time is provided, create reminder with guaranteed alert
         if (formData.weekOrActionTaken && formData.weekOrActionTaken.trim()) {
+          console.log('🔔 Creating reminder with FORM date/time...');
+          console.log('📅 Form Week/Action value:', formData.weekOrActionTaken);
+          
           await createReminderFromEnquiry(result.data);
+          
+          // ✅ ENHANCED: Show detailed confirmation with exact time
+          const parsedTime = parseWeekActionDateTime(formData.weekOrActionTaken);
+          const alertTime = parsedTime ? new Date(parsedTime).toLocaleString() : formData.weekOrActionTaken;
+          
+          Alert.alert(
+            '✅ Enquiry & Reminder Created Successfully!',
+            `📋 Enquiry: ${formData.clientName}\n📞 Phone: ${formData.contactNumber}\n📍 Location: ${formData.location}\n\n🔔 REMINDER SET FOR:\n⏰ ${alertTime}\n\n📱 You will get:\n• Popup alert (when app is open)\n• Background notification (when app is closed/minimized)\n• Sound + Vibration\n\n⚠️ Notification will work even if app is killed!`,
+            [{ text: 'Perfect!', onPress: handleClose }]
+          );
+        } else {
+          Alert.alert('Success', result.message || 'Enquiry created successfully!', [
+            { text: 'OK', onPress: handleClose }
+          ]);
         }
-        
-        Alert.alert('Success', result.message || 'Enquiry created successfully!', [
-          { text: 'OK', onPress: handleClose }
-        ]);
         onSuccess && onSuccess();
       } else {
         // Provide more detailed error message
@@ -245,29 +442,41 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
     }
   };
 
-  // Create reminder from Week/Action field
+  // ✅ FIXED: Create reminder from Week/Action field using PROPER reminder manager
   const createReminderFromEnquiry = async (enquiryData) => {
     try {
-      console.log('📅 Creating reminder from Week/Action field...');
+      console.log('🔔 Creating reminder from FORM Week/Action field...');
+      console.log('📅 Form Week/Action value:', formData.weekOrActionTaken);
       
-      // Parse Week/Action date time (format: "Dec 25, 2025, 10:30 AM")
+      // Parse Week/Action date time 
       const reminderDateTime = parseWeekActionDateTime(formData.weekOrActionTaken);
       
       if (!reminderDateTime) {
         console.warn('⚠️ Could not parse Week/Action date time');
+        Alert.alert('Warning', 'Invalid reminder date/time format. Reminder was not created.');
         return;
       }
 
+      const reminderDateObj = new Date(reminderDateTime);
+      const now = new Date();
+      
+      console.log('🕐 Reminder Time Details:');
+      console.log('  📅 Original input:', formData.weekOrActionTaken);
+      console.log('  🕒 Parsed local time:', reminderDateObj.toLocaleString());
+      console.log('  🌐 ISO string:', reminderDateTime);
+      console.log('  ⏰ Will trigger at:', reminderDateObj.toLocaleString());
+
+      // Prepare comprehensive reminder data for ReminderManager
       const reminderData = {
         name: formData.clientName,
-        email: '',
+        email: formData.email || 'N/A',
         phone: formData.contactNumber,
         contactNumber: formData.contactNumber,
         location: formData.location,
         reminderTime: reminderDateTime,
         reminderDateTime: reminderDateTime,
-        note: `Week/Action reminder for ${formData.clientName}`,
-        title: `Enquiry Reminder: ${formData.clientName}`,
+        note: formData.actionPlan || `Week/Action reminder for ${formData.clientName}`,
+        title: `📋 Enquiry Reminder: ${formData.clientName}`,
         productType: formData.productType,
         caseStatus: formData.caseStatus,
         source: formData.source,
@@ -280,43 +489,131 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
         enquiryId: enquiryData._id,
         actionPlan: formData.actionPlan,
         status: 'pending',
+        assignmentType: 'enquiry',
+        isLocalReminder: true,
+        createdAt: new Date().toISOString()
       };
 
-      // Save to API
-      const { createReminderFromLead } = await import('../../../services/crmEnquiryApi');
-      const apiResult = await createReminderFromLead(reminderData);
+      console.log('📤 Adding reminder to ReminderManager...');
       
-      if (apiResult.success) {
-        console.log('✅ Reminder created in API successfully');
-      } else {
-        console.warn('⚠️ API Reminder creation failed:', apiResult.message);
+      // ✅ CRITICAL FIX: Use the SAME reminder manager that handles popups
+      const reminderManager = (await import('../../../services/reminderManager')).default;
+      const addedReminder = await reminderManager.addReminder(reminderData);
+      
+      console.log('✅ Reminder added to ReminderManager successfully:', addedReminder.id);
+
+      // 🔔 ENHANCED: Schedule background notification using ReminderNotificationService
+      try {
+        const notificationData = {
+          id: `notification_${enquiryData._id}_${Date.now()}`,
+          clientName: formData.clientName,
+          message: formData.actionPlan || `Follow up reminder for ${formData.clientName}`,
+          scheduledDate: reminderDateObj,
+          enquiryId: enquiryData._id,
+          enquiry: enquiryData,
+          targetScreen: 'EnquiriesScreen', // Navigate to EnquiriesScreen
+          navigationType: 'nested',
+          navigationData: {
+            enquiryId: enquiryData._id,
+            clientName: formData.clientName,
+            clientPhone: formData.contactNumber,
+            isReminderNotification: true,
+            fromNotification: true,
+            reminderType: 'enquiry_follow_up'
+          }
+        };
+
+        const notificationResult = await ReminderNotificationService.scheduleReminder(notificationData);
+        
+        if (notificationResult.success) {
+          console.log('✅ Background notification scheduled successfully');
+        } else {
+          console.warn('⚠️ Background notification scheduling failed:', notificationResult.message);
+        }
+      } catch (notificationError) {
+        console.error('❌ Notification scheduling error:', notificationError);
       }
 
-      // IMPORTANT: Also save to local storage for popup
-      const reminderManager = (await import('../../../services/reminderManager')).default;
-      await reminderManager.addReminder({
-        ...reminderData,
-        id: apiResult.data?._id || `reminder_${Date.now()}`,
-      });
-      
-      console.log('✅ Reminder saved to local storage for popup');
+      // Force immediate check to ensure service is running
+      setTimeout(() => {
+        console.log('🔄 Forcing immediate reminder check after form creation...');
+        reminderManager.forceCheck();
+      }, 1000);
+
+      // Also try API creation (but local is guaranteed)
+      try {
+        const { createReminderFromLead } = await import('../../../services/crmEnquiryApi');
+        const apiResult = await createReminderFromLead(reminderData);
+        
+        if (apiResult.success) {
+          console.log('✅ API reminder also created successfully');
+        } else {
+          console.warn('⚠️ API Reminder creation failed:', apiResult.message);
+        }
+      } catch (apiError) {
+        console.error('❌ API reminder creation error (continuing with local):', apiError);
+      }
+
+      console.log('🎉 Reminder creation completed successfully!');
+      console.log(`⏰ Reminder will trigger at: ${reminderDateObj.toLocaleString()}`);
+
     } catch (error) {
-      console.error('❌ Error creating reminder:', error);
-      // Don't fail the enquiry creation if reminder fails
+      console.error('❌ Complete reminder creation failed:', error);
+      Alert.alert('Error', `Failed to create reminder: ${error.message}`);
     }
   };
 
-  // Parse Week/Action date time string
+  // ✅ ENHANCED Parse Week/Action date time string with multiple format support
   const parseWeekActionDateTime = (dateTimeStr) => {
+    if (!dateTimeStr || typeof dateTimeStr !== 'string') {
+      console.warn('⚠️ Invalid date/time string provided:', dateTimeStr);
+      return null;
+    }
+
     try {
-      // Try to parse various date formats
-      const date = new Date(dateTimeStr);
+      console.log('🔍 Parsing date string:', dateTimeStr);
+      
+      // Method 1: Direct Date parsing
+      let date = new Date(dateTimeStr);
       if (!isNaN(date.getTime())) {
+        console.log('✅ Direct parsing successful:', date.toISOString());
         return date.toISOString();
       }
+
+      // Method 2: Handle formatted display string ("Dec 25, 2025, 10:30 AM")
+      if (dateTimeStr.includes(',')) {
+        const parts = dateTimeStr.split(',').map(p => p.trim());
+        if (parts.length >= 3) {
+          const reconstructed = `${parts[0]}, ${parts[1]} ${parts[2]}`;
+          date = new Date(reconstructed);
+          if (!isNaN(date.getTime())) {
+            console.log('✅ Formatted parsing successful:', date.toISOString());
+            return date.toISOString();
+          }
+        }
+      }
+
+      // Method 3: Try combining weekActionDate and weekActionTime states if available
+      if (weekActionDate && weekActionTime) {
+        const combinedDate = new Date(
+          weekActionDate.getFullYear(),
+          weekActionDate.getMonth(),
+          weekActionDate.getDate(),
+          weekActionTime.getHours(),
+          weekActionTime.getMinutes(),
+          0 // seconds
+        );
+        if (!isNaN(combinedDate.getTime())) {
+          console.log('✅ Combined date/time parsing successful:', combinedDate.toISOString());
+          console.log('✅ Local time will be:', combinedDate.toLocaleString());
+          return combinedDate.toISOString();
+        }
+      }
+
+      console.warn('❌ All parsing methods failed for:', dateTimeStr);
       return null;
     } catch (error) {
-      console.error('Error parsing date:', error);
+      console.error('❌ Error parsing date:', error);
       return null;
     }
   };
@@ -405,7 +702,7 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
               style={styles.closeButton}
               disabled={loading}
             >
-              <Icon name="close" size={24} color="#6b7280" />
+              <Text style={{ fontSize: 24, color: '#6b7280' }}>×</Text>
             </TouchableOpacity>
           </View>
 
@@ -445,7 +742,26 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
             {renderSelect('Property Type', 'productType', productTypes, true)}
             
             {renderInput('Location', 'location', 'Enter location', { required: true })}
-            {renderInput('Date', 'date', 'YYYY-MM-DD')}
+            
+            {/* Enhanced Date Input with Picker */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Date <Text style={styles.required}>*</Text></Text>
+              
+              <View style={styles.dateInputContainer}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  placeholder="Select date..."
+                  value={formData.date}
+                  editable={false}
+                />
+                <TouchableOpacity
+                  style={styles.datePickerButton}
+                  onPress={() => setShowDatePicker(true)}
+                >
+                  <Icon name="date-range" size={20} color="#3b82f6" />
+                </TouchableOpacity>
+              </View>
+            </View>
             
             {renderSelect('Source', 'source', sources, true)}
             
@@ -466,10 +782,10 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
               {/* Display selected date time */}
               {formData.weekOrActionTaken ? (
                 <View style={styles.dateTimeDisplay}>
-                  <Icon name="event" size={20} color="#3b82f6" />
+                  <Text style={{ fontSize: 20, color: '#3b82f6' }}>📅</Text>
                   <Text style={styles.dateTimeText}>{formData.weekOrActionTaken}</Text>
                   <TouchableOpacity onPress={clearDateTime} style={styles.clearButton}>
-                    <Icon name="close" size={18} color="#ef4444" />
+                    <Text style={{ fontSize: 18, color: '#ef4444' }}>×</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
@@ -482,7 +798,7 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
                   style={styles.pickerButton}
                   onPress={() => setShowDatePicker(true)}
                 >
-                  <Icon name="calendar-today" size={18} color="#ffffff" />
+                  <Text style={{ fontSize: 18, color: '#ffffff' }}>📅</Text>
                   <Text style={styles.pickerButtonText}>Select Date</Text>
                 </TouchableOpacity>
                 
@@ -490,7 +806,7 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
                   style={styles.pickerButton}
                   onPress={() => setShowTimePicker(true)}
                 >
-                  <Icon name="access-time" size={18} color="#ffffff" />
+                  <Text style={{ fontSize: 18, color: '#ffffff' }}>⏰</Text>
                   <Text style={styles.pickerButtonText}>Select Time</Text>
                 </TouchableOpacity>
               </View>
@@ -544,6 +860,18 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
           </View>
         </View>
       </View>
+
+      {/* Reminder Popup */}
+      {showReminderPopup && currentReminder && (
+        <ReminderPopup
+          visible={showReminderPopup}
+          reminder={currentReminder}
+          onClose={() => {
+            setShowReminderPopup(false);
+            setCurrentReminder(null);
+          }}
+        />
+      )}
     </Modal>
   );
 };
@@ -707,6 +1035,18 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  dateInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  datePickerButton: {
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 6,
+    backgroundColor: '#f8fafc',
   },
 });
 

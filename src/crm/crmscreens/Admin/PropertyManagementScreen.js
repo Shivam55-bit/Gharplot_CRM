@@ -15,6 +15,7 @@ import {
   RefreshControl,
   Alert,
   Modal,
+  Platform,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -335,7 +336,6 @@ const PropertyManagementScreen = ({ navigation }) => {
             console.log('Image loaded successfully:', imageUrl);
           }}
           resizeMode="cover"
-          defaultSource={require('../../../assets/icon-placeholder.js') || undefined}
         />
 
       {/* Delete button for admin */}
@@ -577,8 +577,12 @@ const PropertyManagementScreen = ({ navigation }) => {
 
   if (loading && !refreshing) {
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#4F46E5" />
+      <View style={styles.container}>
+        <StatusBar 
+          barStyle="dark-content" 
+          backgroundColor="#ffffff" 
+          translucent={false}
+        />
         <LinearGradient colors={['#fff', '#fff']} style={styles.header}>
           <TouchableOpacity style={styles.addBtn}>
             <Icon name="add" size={18} color="#000" />
@@ -595,12 +599,16 @@ const PropertyManagementScreen = ({ navigation }) => {
           <ActivityIndicator size="large" color="#4F46E5" />
           <Text style={styles.loadingText}>Loading properties...</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#4F46E5" />
+    <View style={styles.container}>
+      <StatusBar 
+        barStyle="dark-content" 
+        backgroundColor="#ffffff" 
+        translucent={false}
+      />
 
       {/* HEADER */}
       <LinearGradient colors={['#fff', '#fff']} style={styles.header}>
@@ -634,10 +642,11 @@ const PropertyManagementScreen = ({ navigation }) => {
             <MaterialIcons name="list" size={16} color="#4F46E5" />
             <Text style={styles.actionText}>View All</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton} onPress={navigateToAnalytics}>
+          {/* Analytics option temporarily hidden */}
+          {/* <TouchableOpacity style={styles.actionButton} onPress={navigateToAnalytics}>
             <MaterialIcons name="analytics" size={16} color="#4F46E5" />
             <Text style={styles.actionText}>Analytics</Text>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
       </LinearGradient>
 
@@ -968,7 +977,7 @@ const PropertyManagementScreen = ({ navigation }) => {
         </View>
       </Modal>
 
-      </SafeAreaView>
+      </View>
     );
   };
   
@@ -979,7 +988,9 @@ const PropertyManagementScreen = ({ navigation }) => {
     },
 
   header: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 60 : (StatusBar.currentHeight || 0) + 16,
+    paddingBottom: 16,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
   },

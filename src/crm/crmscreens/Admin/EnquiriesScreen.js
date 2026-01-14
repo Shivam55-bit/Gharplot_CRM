@@ -2,6 +2,7 @@
  * EnquiriesScreen.js
  * Comprehensive CRM Admin screen for managing customer enquiries
  * Refactored with modular components and full CRM features
+ * Updated with ReminderNotificationService for background notifications
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
@@ -17,9 +18,13 @@ import {
   ActivityIndicator,
   ToastAndroid,
   Platform,
+  Vibration,
+  AppState,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+// import Icon from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import ReminderPopup from '../../components/Reminders/ReminderPopup';
+import ReminderNotificationService from '../../../services/ReminderNotificationService';
 
 // Import services
 import { 
@@ -30,7 +35,9 @@ import {
   unassignEnquiry,
   createReminder,
   createFollowUp,
-  addManualEnquiry
+  addManualEnquiry,
+  getEnquiryDetails,
+  getEnquiryReminders
 } from '../../services/crmEnquiryApi';
 
 // Import components
@@ -44,7 +51,12 @@ import FollowUpModal from '../../components/Enquiries/modals/FollowUpModal';
 // Import styles
 import styles from './EnquiriesScreenStyles';
 
-const EnquiriesScreen = ({ navigation }) => {
+// Import debug helper in development mode
+if (__DEV__) {
+  import('./enquiriesDebug');
+}
+
+const EnquiriesScreen = ({ navigation, route }) => {
   // Data states
   const [enquiries, setEnquiries] = useState([]);
   const [filteredEnquiries, setFilteredEnquiries] = useState([]);
@@ -64,9 +76,9 @@ const EnquiriesScreen = ({ navigation }) => {
   const [selectedEnquiry, setSelectedEnquiry] = useState(null);
   const [detailsModalVisible, setDetailsModalVisible] = useState(false);
 
-  // Pagination states (10 items per page matching web)
+  // Pagination states (increased to show more items per page)
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const itemsPerPage = 50; // Increased from 10 to 50 to show more enquiries per page
 
   // Selection states
   const [selectedEnquiries, setSelectedEnquiries] = useState([]);
@@ -82,6 +94,116 @@ const EnquiriesScreen = ({ navigation }) => {
   // Permission states
   const [userRole, setUserRole] = useState('admin');
 
+  // Reminder popup state
+  const [showReminderPopup, setShowReminderPopup] = useState(false);
+  const [currentReminder, setCurrentReminder] = useState(null);
+
+  // 🔔 NOTIFICATION NAVIGATION: Handle navigation from notifications
+  useEffect(() => {
+    if (route?.params) {
+      const { 
+        fromNotification, 
+        enquiryId, 
+        scrollToEnquiry, 
+        showDetails, 
+        clientName,
+        isReminderNotification,
+        highlightEnquiry,
+        reminderData
+      } = route.params;
+      
+      if (fromNotification && (enquiryId || scrollToEnquiry || highlightEnquiry)) {
+        console.log('🔔 Processing notification navigation:', {
+          enquiryId,
+          scrollToEnquiry,
+          showDetails,
+          clientName,
+          isReminderNotification,
+          highlightEnquiry
+        });
+        
+        // Wait for enquiries to load, then highlight and show details
+        const handleNotificationNavigation = setTimeout(async () => {
+          try {
+            // Find the specific enquiry using any available ID
+            const targetId = enquiryId || scrollToEnquiry || highlightEnquiry;
+            const targetEnquiry = enquiries.find(
+              enquiry => enquiry._id === targetId || enquiry.id === targetId
+            );
+            
+            if (targetEnquiry) {
+              console.log('✅ Found target enquiry from notification:', targetEnquiry.clientName);
+              
+              // Set the enquiry as selected and show details
+              setSelectedEnquiry(targetEnquiry);
+              
+              if (showDetails) {
+                setDetailsModalVisible(true);
+              }
+              
+              // Special handling for reminder notifications
+              if (isReminderNotification) {
+                // Vibrate to indicate reminder notification
+                Vibration.vibrate([100, 50, 100]);
+                showInfoToast(`⏰ Reminder: ${clientName || targetEnquiry.clientName}`);
+                
+                // Auto-open details for reminder notifications
+                setTimeout(() => {
+                  setDetailsModalVisible(true);
+                }, 500);
+              } else {
+                // Show success toast for regular notifications
+                showInfoToast(`📱 Opened enquiry for ${clientName || targetEnquiry.clientName}`);
+              }
+              
+              // Clear the notification params to prevent re-trigger
+              navigation.setParams({
+                fromNotification: false,
+                enquiryId: null,
+                scrollToEnquiry: null,
+                showDetails: false,
+                isReminderNotification: false,
+                highlightEnquiry: null
+              });
+              
+            } else {
+              console.warn('⚠️ Target enquiry not found:', targetId);
+              const toastMessage = isReminderNotification 
+                ? `Reminder enquiry not found for ${clientName || 'client'}` 
+                : `Enquiry not found for ${clientName || 'client'}`;
+              showWarningToast(toastMessage);
+            }
+          } catch (error) {
+            console.error('❌ Error processing notification navigation:', error);
+            showErrorToast('Could not open enquiry details');
+          }
+        }, 1000); // Wait 1 second for enquiries to load
+        
+        return () => clearTimeout(handleNotificationNavigation);
+      }
+    }
+  }, [route?.params, enquiries, navigation]);
+
+  // 🔔 NOTIFICATION SERVICE: Initialize notification service on mount
+  useEffect(() => {
+    const initializeNotifications = async () => {
+      try {
+        const initialized = await ReminderNotificationService.initialize();
+        if (initialized) {
+          console.log('✅ Notification service ready for background reminders');
+          // Clean up expired reminders
+          await ReminderNotificationService.cleanupExpiredReminders();
+        } else {
+          console.warn('⚠️ Failed to initialize notification service');
+        }
+      } catch (error) {
+        console.error('❌ Notification service initialization error:', error);
+      }
+    };
+
+    initializeNotifications();
+  }, []);
+
   // Check user permissions
   useEffect(() => {
     checkUserPermissions();
@@ -91,6 +213,12 @@ const EnquiriesScreen = ({ navigation }) => {
     try {
       const adminToken = await AsyncStorage.getItem('adminToken');
       const employeeToken = await AsyncStorage.getItem('employeeToken');
+      console.log('🔐 Token check:', {
+        hasAdminToken: !!adminToken,
+        hasEmployeeToken: !!employeeToken,
+        adminTokenLength: adminToken?.length || 0,
+        employeeTokenLength: employeeToken?.length || 0
+      });
       
       if (adminToken) {
         setUserRole('admin');
@@ -98,6 +226,7 @@ const EnquiriesScreen = ({ navigation }) => {
         setUserRole('employee');
       } else {
         setUserRole('user');
+        console.warn('⚠️ No authentication token found - may not be able to fetch data');
       }
     } catch (error) {
       console.error('Error checking permissions:', error);
@@ -109,20 +238,26 @@ const EnquiriesScreen = ({ navigation }) => {
   const fetchEnquiries = async () => {
     try {
       setLoading(true);
+      console.log('🔄 Fetching enquiries...');
       const response = await getAllEnquiriesMerged();
+      console.log('📝 API Response:', response);
       
       if (response.success) {
+        console.log('✅ Enquiries fetched successfully:', {
+          total: response.data?.length || 0,
+          stats: response.stats
+        });
         setEnquiries(response.data || []);
         setFilteredEnquiries(response.data || []);
         setStats(response.stats || { total: 0, client: 0, manual: 0 });
       } else {
-        console.warn('Failed to fetch enquiries:', response.message);
+        console.warn('❌ Failed to fetch enquiries:', response.message);
         showErrorToast('Failed to fetch enquiries');
         setEnquiries([]);
         setFilteredEnquiries([]);
       }
     } catch (error) {
-      console.error('Error fetching enquiries:', error);
+      console.error('❌ Error fetching enquiries:', error);
       showErrorToast('Failed to fetch enquiries. Please try again.');
       setEnquiries([]);
       setFilteredEnquiries([]);
@@ -194,6 +329,12 @@ const EnquiriesScreen = ({ navigation }) => {
 
   // Filter enquiries based on search and source
   useEffect(() => {
+    console.log('🔍 Filtering enquiries:', {
+      totalEnquiries: enquiries.length,
+      searchText,
+      filterSource
+    });
+    
     let filtered = enquiries;
 
     // Filter by source
@@ -222,6 +363,7 @@ const EnquiriesScreen = ({ navigation }) => {
       });
     }
 
+    console.log('✅ Filtered result:', filtered.length, 'enquiries');
     setFilteredEnquiries(filtered);
     // Reset to first page when filters change
     setCurrentPage(1);
@@ -232,6 +374,16 @@ const EnquiriesScreen = ({ navigation }) => {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const paginatedEnquiries = filteredEnquiries.slice(startIndex, endIndex);
+
+  console.log('📊 Pagination Debug:', {
+    totalEnquiries: enquiries.length,
+    filteredEnquiries: filteredEnquiries.length,
+    currentPage,
+    totalPages,
+    paginatedCount: paginatedEnquiries.length,
+    startIndex,
+    endIndex
+  });
 
   // Pagination handlers
   const goToPage = (page) => {
@@ -381,9 +533,22 @@ const EnquiriesScreen = ({ navigation }) => {
     showSuccessToast('Auto assignment completed!');
   };
 
-  const handleReminderSuccess = () => {
+  const handleReminderSuccess = (enquiry) => {
     setReminderModalVisible(false);
-    showSuccessToast('Reminder created successfully!');
+    fetchEnquiries(); // Refresh enquiries to get updated reminder count
+    const isExistingCustomer = enquiry?.source === 'client' || enquiry?.enquiryType === 'Inquiry';
+    const message = isExistingCustomer 
+      ? '✅ Reminder set successfully for existing customer!' 
+      : '✅ Reminder created successfully!';
+    showSuccessToast(message);
+    
+    // If details modal is open, refresh it too
+    if (detailsModalVisible && selectedEnquiry) {
+      console.log('🔄 Refreshing enquiry details after reminder set...');
+      setTimeout(() => {
+        showEnquiryDetails(selectedEnquiry);
+      }, 500); // Small delay to ensure reminder is saved in backend
+    }
   };
 
   const handleFollowUpSuccess = () => {
@@ -402,10 +567,160 @@ const EnquiriesScreen = ({ navigation }) => {
     setFollowUpModalVisible(true);
   };
 
-  const showEnquiryDetails = (enquiry) => {
+  const showEnquiryDetails = async (enquiry) => {
     if (!selectionMode) {
+      // Show modal first with basic data
       setSelectedEnquiry(enquiry);
       setDetailsModalVisible(true);
+      
+      // Then fetch full details with reminders and followUps
+      try {
+        console.log('📋 ===== FETCHING ENQUIRY DETAILS =====');
+        console.log('📋 Enquiry ID:', enquiry._id);
+        console.log('📋 Client Name:', enquiry.clientName);
+        console.log('📋 Contact:', enquiry.contactNumber);
+        console.log('📋 Source:', enquiry.source);
+        
+        const result = await getEnquiryDetails(enquiry._id, enquiry.source);
+        
+        if (result.success && result.data) {
+          console.log('✅ Got full enquiry details');
+          console.log('📊 Reminders in response:', result.data.reminders?.length || 0);
+          
+          if (result.data.reminders && result.data.reminders.length > 0) {
+            console.log('📋 Reminders found in main response:');
+            result.data.reminders.forEach((r, i) => {
+              console.log(`  ${i + 1}. Date: ${r.reminderDateTime}, Note: ${r.note || r.comment || 'No note'}`);
+            });
+          }
+          
+          // If reminders not populated, fetch them separately
+          if (!result.data.reminders || result.data.reminders.length === 0) {
+            console.log('📋 Reminders not populated, fetching separately...');
+            console.log('🔍 Searching with client:', result.data.clientName, 'phone:', result.data.contactNumber);
+            
+            // First try to get local reminders from AsyncStorage
+            try {
+              const localRemindersJson = await AsyncStorage.getItem('localReminders');
+              if (localRemindersJson) {
+                const allLocalReminders = JSON.parse(localRemindersJson);
+                console.log('📱 Total local reminders:', allLocalReminders.length);
+                
+                // Filter by enquiryId
+                const localEnquiryReminders = allLocalReminders.filter(r => 
+                  r.enquiryId === enquiry._id || 
+                  r.clientName === result.data.clientName ||
+                  r.phone === result.data.contactNumber
+                );
+                
+                if (localEnquiryReminders.length > 0) {
+                  console.log('✅ Found', localEnquiryReminders.length, 'LOCAL reminders for this enquiry:');
+                  localEnquiryReminders.forEach((r, i) => {
+                    console.log(`  ${i + 1}. Date: ${r.scheduledDate || r.reminderDateTime}`);
+                    console.log(`     Note: ${r.note || r.message || 'No note'}`);
+                    console.log(`     Status: ${r.status || 'pending'}`);
+                  });
+                  
+                  // Convert to standard format and assign
+                  result.data.reminders = localEnquiryReminders.map(r => ({
+                    _id: r.id || r._id,
+                    clientName: r.clientName,
+                    phone: r.phone,
+                    note: r.note || r.message,
+                    reminderDateTime: r.scheduledDate || r.reminderDateTime,
+                    status: r.status || 'pending',
+                    comment: r.comment || '',
+                    source: 'local'
+                  }));
+                }
+              }
+            } catch (localError) {
+              console.warn('⚠️ Error fetching local reminders:', localError);
+            }
+            
+            // If no local reminders found, try backend API
+            if (!result.data.reminders || result.data.reminders.length === 0) {
+              const remindersResult = await getEnquiryReminders(result.data);
+              
+              if (remindersResult.success && remindersResult.data && remindersResult.data.length > 0) {
+                console.log('✅ Fetched', remindersResult.data.length, 'reminders from backend:');
+                remindersResult.data.forEach((r, i) => {
+                  console.log(`  ${i + 1}. Date: ${r.reminderDateTime}`);
+                  console.log(`     Note: ${r.note || 'No note'}`);
+                  console.log(`     Comment: ${r.comment || 'No comment'}`);
+                  console.log(`     Status: ${r.status || 'pending'}`);
+                });
+                result.data.reminders = remindersResult.data;
+              } else {
+                console.log('⚠️ No reminders found in backend or local storage');
+              }
+            }
+          }
+          
+          console.log('📋 Final enquiry data has', result.data.reminders?.length || 0, 'reminders');
+          setSelectedEnquiry(result.data);
+        } else {
+          console.warn('⚠️ Could not fetch full details:', result.message);
+          
+          // Try to get local reminders first from AsyncStorage
+          console.log('📋 Trying to fetch LOCAL reminders for:', enquiry.clientName, enquiry.contactNumber);
+          try {
+            const localRemindersJson = await AsyncStorage.getItem('localReminders');
+            if (localRemindersJson) {
+              const allLocalReminders = JSON.parse(localRemindersJson);
+              console.log('📱 Total local reminders:', allLocalReminders.length);
+              
+              // Filter by enquiryId
+              const localEnquiryReminders = allLocalReminders.filter(r => 
+                r.enquiryId === enquiry._id || 
+                r.clientName === enquiry.clientName ||
+                r.phone === enquiry.contactNumber
+              );
+              
+              if (localEnquiryReminders.length > 0) {
+                console.log('✅ Found', localEnquiryReminders.length, 'LOCAL reminders:');
+                localEnquiryReminders.forEach((r, i) => {
+                  console.log(`  ${i + 1}. Note: ${r.note || r.message || 'No note'}`);
+                });
+                
+                enquiry.reminders = localEnquiryReminders.map(r => ({
+                  _id: r.id || r._id,
+                  clientName: r.clientName,
+                  phone: r.phone,
+                  note: r.note || r.message,
+                  reminderDateTime: r.scheduledDate || r.reminderDateTime,
+                  status: r.status || 'pending',
+                  comment: r.comment || '',
+                  source: 'local'
+                }));
+                setSelectedEnquiry({...enquiry});
+              }
+            }
+          } catch (localError) {
+            console.warn('⚠️ Error fetching local reminders:', localError);
+          }
+          
+          // If no local reminders, try backend API
+          if (!enquiry.reminders || enquiry.reminders.length === 0) {
+            console.log('📋 Trying to fetch reminders from backend...');
+            const remindersResult = await getEnquiryReminders(enquiry);
+            
+            if (remindersResult.success && remindersResult.data && remindersResult.data.length > 0) {
+              console.log('✅ Found', remindersResult.data.length, 'reminders from backend:');
+              remindersResult.data.forEach((r, i) => {
+                console.log(`  ${i + 1}. Note: ${r.note || r.comment || 'No note'}`);
+              });
+              enquiry.reminders = remindersResult.data;
+              setSelectedEnquiry({...enquiry});
+            } else {
+              console.log('⚠️ No reminders found in local or backend');
+            }
+          }
+        }
+        console.log('📋 ===== END FETCHING DETAILS =====');
+      } catch (error) {
+        console.error('❌ Error fetching enquiry details:', error);
+      }
     }
   };
 
@@ -461,7 +776,7 @@ const EnquiriesScreen = ({ navigation }) => {
   // Empty state
   const EmptyState = () => (
     <View style={styles.emptyContainer}>
-      <Icon name="contact-mail" size={64} color="#d1d5db" />
+      <Text style={{ fontSize: 64, color: '#d1d5db' }}>📧</Text>
       <Text style={styles.emptyTitle}>No Enquiries Found</Text>
       <Text style={styles.emptyMessage}>
         {searchText ? 'No enquiries match your search.' : 'No enquiries available.'}
@@ -471,77 +786,25 @@ const EnquiriesScreen = ({ navigation }) => {
           style={styles.addButton}
           onPress={() => setAddModalVisible(true)}
         >
-          <Icon name="add" size={24} color="#ffffff" />
+          <Text style={{ fontSize: 24, color: '#ffffff' }}>+</Text>
           <Text style={styles.addButtonText}>Add First Enquiry</Text>
         </TouchableOpacity>
       )}
     </View>
   );
 
-  const unassignedCount = filteredEnquiries.filter(e => !e.assignment).length;
-  const canShowAssignButtons = userRole === 'admin' && selectedEnquiries.length > 0;
+  // Calculate unassigned count for select all button
+  const unassignedCount = filteredEnquiries.filter(enquiry => !enquiry.assignment).length;
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Icon name="arrow-back" size={24} color="#1f2937" />
-        </TouchableOpacity>
-        
-        <View style={styles.headerContent}>
-          <Text style={styles.title}>Property Enquiries</Text>
-          <Text style={styles.subtitle}>
-            {filteredEnquiries.length} of {enquiries.length} enquiries
-          </Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.refreshButton}
-          onPress={onRefresh}
-          disabled={refreshing}
-        >
-          <Icon name="refresh" size={24} color="#3b82f6" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Statistics Badges - Matching Web Design */}
-      <View style={styles.statsContainer}>
-        <View style={[styles.statBadge, styles.statBadgeTotal]}>
-          <Icon name="list-alt" size={20} color="#3b82f6" />
-          <View style={styles.statTextContainer}>
-            <Text style={styles.statValue}>{stats.total}</Text>
-            <Text style={styles.statLabel}>Total</Text>
-          </View>
-        </View>
-        
-        <View style={[styles.statBadge, styles.statBadgeClient]}>
-          <Icon name="people" size={20} color="#10b981" />
-          <View style={styles.statTextContainer}>
-            <Text style={styles.statValue}>{stats.client}</Text>
-            <Text style={styles.statLabel}>Client</Text>
-          </View>
-        </View>
-        
-        <View style={[styles.statBadge, styles.statBadgeManual]}>
-          <Icon name="person-add" size={20} color="#f59e0b" />
-          <View style={styles.statTextContainer}>
-            <Text style={styles.statValue}>{stats.manual}</Text>
-            <Text style={styles.statLabel}>Manual</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Action Bar - Always show for debugging */}
+      {/* Action Bar */}
       <View style={styles.actionBar}>
         <TouchableOpacity
           style={styles.addEnquiryButton}
           onPress={() => setAddModalVisible(true)}
         >
-          <Icon name="add" size={20} color="#ffffff" />
+          <Text style={{ fontSize: 20, color: '#ffffff' }}>+</Text>
           <Text style={styles.addEnquiryText}>Add Enquiry</Text>
         </TouchableOpacity>
 
@@ -549,7 +812,7 @@ const EnquiriesScreen = ({ navigation }) => {
           style={[styles.selectionButton, selectionMode && styles.selectionButtonActive]}
           onPress={toggleSelectionMode}
         >
-          <Icon name={selectionMode ? "close" : "checklist"} size={20} color="#ffffff" />
+          <Text style={{ fontSize: 20, color: '#ffffff' }}>{selectionMode ? "×" : "✓"}</Text>
           <Text style={styles.selectionButtonText}>
             {selectionMode ? 'Cancel' : 'Select'}
           </Text>
@@ -563,7 +826,7 @@ const EnquiriesScreen = ({ navigation }) => {
             style={styles.assignButton}
             onPress={() => setAssignModalVisible(true)}
           >
-            <Icon name="person-add" size={18} color="#ffffff" />
+            <Text style={{ fontSize: 18, color: '#ffffff' }}>👤</Text>
             <Text style={styles.assignButtonText}>Assign ({selectedEnquiries.length})</Text>
           </TouchableOpacity>
 
@@ -571,7 +834,7 @@ const EnquiriesScreen = ({ navigation }) => {
             style={styles.autoAssignButton}
             onPress={() => setAutoAssignModalVisible(true)}
           >
-            <Icon name="auto-awesome" size={18} color="#ffffff" />
+            <Text style={{ fontSize: 18, color: '#ffffff' }}>⚡</Text>
             <Text style={styles.autoAssignButtonText}>Auto Assign ({selectedEnquiries.length})</Text>
           </TouchableOpacity>
 
@@ -588,7 +851,7 @@ const EnquiriesScreen = ({ navigation }) => {
 
       {/* Search Bar */}
       <View style={styles.searchContainer}>
-        <Icon name="search" size={20} color="#6b7280" />
+        <Text style={{ fontSize: 20, color: '#6b7280' }}>🔍</Text>
         <TextInput
           style={styles.searchInput}
           placeholder="Search by name, email, phone, property..."
@@ -597,7 +860,7 @@ const EnquiriesScreen = ({ navigation }) => {
         />
         {searchText.length > 0 && (
           <TouchableOpacity onPress={() => setSearchText('')}>
-            <Icon name="clear" size={20} color="#6b7280" />
+            <Text style={{ fontSize: 20, color: '#6b7280' }}>×</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -614,7 +877,7 @@ const EnquiriesScreen = ({ navigation }) => {
       ) : (
         <>
           <FlatList
-            data={paginatedEnquiries}
+            data={filteredEnquiries} // Show all filtered enquiries instead of paginated
             keyExtractor={(item) => item._id}
             renderItem={renderEnquiryItem}
             contentContainerStyle={styles.listContainer}
@@ -628,69 +891,6 @@ const EnquiriesScreen = ({ navigation }) => {
             ListEmptyComponent={EmptyState}
             showsVerticalScrollIndicator={false}
           />
-          
-          {/* Pagination Controls - Matching Web Design */}
-          {filteredEnquiries.length > 0 && (
-            <View style={styles.paginationContainer}>
-              <Text style={styles.paginationInfo}>
-                Showing {startIndex + 1}-{Math.min(endIndex, filteredEnquiries.length)} of {filteredEnquiries.length} enquiries
-              </Text>
-              
-              <View style={styles.paginationControls}>
-                <TouchableOpacity
-                  style={[styles.paginationButton, currentPage === 1 && styles.paginationButtonDisabled]}
-                  onPress={goToPrevPage}
-                  disabled={currentPage === 1}
-                >
-                  <Icon name="chevron-left" size={20} color={currentPage === 1 ? '#9ca3af' : '#374151'} />
-                  <Text style={[styles.paginationButtonText, currentPage === 1 && styles.paginationButtonTextDisabled]}>Prev</Text>
-                </TouchableOpacity>
-                
-                {/* Page Numbers */}
-                <View style={styles.pageNumbers}>
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    let pageNumber;
-                    if (totalPages <= 5) {
-                      pageNumber = i + 1;
-                    } else if (currentPage <= 3) {
-                      pageNumber = i + 1;
-                    } else if (currentPage >= totalPages - 2) {
-                      pageNumber = totalPages - 4 + i;
-                    } else {
-                      pageNumber = currentPage - 2 + i;
-                    }
-                    
-                    return (
-                      <TouchableOpacity
-                        key={pageNumber}
-                        style={[
-                          styles.pageNumberButton,
-                          currentPage === pageNumber && styles.pageNumberButtonActive
-                        ]}
-                        onPress={() => goToPage(pageNumber)}
-                      >
-                        <Text style={[
-                          styles.pageNumberText,
-                          currentPage === pageNumber && styles.pageNumberTextActive
-                        ]}>
-                          {pageNumber}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                
-                <TouchableOpacity
-                  style={[styles.paginationButton, currentPage === totalPages && styles.paginationButtonDisabled]}
-                  onPress={goToNextPage}
-                  disabled={currentPage === totalPages}
-                >
-                  <Text style={[styles.paginationButtonText, currentPage === totalPages && styles.paginationButtonTextDisabled]}>Next</Text>
-                  <Icon name="chevron-right" size={20} color={currentPage === totalPages ? '#9ca3af' : '#374151'} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
         </>
       )}
 
@@ -709,7 +909,7 @@ const EnquiriesScreen = ({ navigation }) => {
                 onPress={() => setDetailsModalVisible(false)}
                 style={styles.modalCloseButton}
               >
-                <Icon name="close" size={24} color="#6b7280" />
+                <Text style={{ fontSize: 24, color: '#6b7280' }}>×</Text>
               </TouchableOpacity>
             </View>
 
@@ -719,15 +919,21 @@ const EnquiriesScreen = ({ navigation }) => {
                   <View style={styles.modalSection}>
                     <Text style={styles.modalSectionTitle}>Client Information</Text>
                     <Text style={styles.modalText}>Name: {selectedEnquiry.clientName}</Text>
-                    <Text style={styles.modalText}>Email: {selectedEnquiry.email}</Text>
+                    <Text style={styles.modalText}>Email: {selectedEnquiry.email || 'N/A'}</Text>
                     <Text style={styles.modalText}>Phone: {selectedEnquiry.contactNumber}</Text>
+                    {selectedEnquiry.referenceBy && (
+                      <Text style={styles.modalText}>Reference By: {selectedEnquiry.referenceBy}</Text>
+                    )}
                   </View>
 
                   <View style={styles.modalSection}>
                     <Text style={styles.modalSectionTitle}>Property Information</Text>
                     <Text style={styles.modalText}>Property ID: {typeof selectedEnquiry.propertyId === 'object' ? selectedEnquiry.propertyId?._id || 'N/A' : selectedEnquiry.propertyId || 'N/A'}</Text>
-                    <Text style={styles.modalText}>Type: {selectedEnquiry.propertyType}</Text>
-                    <Text style={styles.modalText}>Location: {selectedEnquiry.propertyLocation}</Text>
+                    <Text style={styles.modalText}>Type: {selectedEnquiry.propertyType || selectedEnquiry.productType || 'N/A'}</Text>
+                    <Text style={styles.modalText}>Location: {selectedEnquiry.propertyLocation || selectedEnquiry.location}</Text>
+                    {selectedEnquiry.address && (
+                      <Text style={styles.modalText}>Address: {selectedEnquiry.address}</Text>
+                    )}
                     {selectedEnquiry.price !== 'N/A' && (
                       <Text style={styles.modalText}>Price: ₹{typeof selectedEnquiry.price === 'object' ? 'N/A' : selectedEnquiry.price}</Text>
                     )}
@@ -736,14 +942,145 @@ const EnquiriesScreen = ({ navigation }) => {
                   <View style={styles.modalSection}>
                     <Text style={styles.modalSectionTitle}>Additional Details</Text>
                     <Text style={styles.modalText}>Source: {selectedEnquiry.source}</Text>
-                    <Text style={styles.modalText}>Status: {selectedEnquiry.status}</Text>
+                    <Text style={styles.modalText}>Status: {selectedEnquiry.status || selectedEnquiry.caseStatus}</Text>
                     <Text style={styles.modalText}>Created: {new Date(selectedEnquiry.createdAt).toLocaleString()}</Text>
                     {selectedEnquiry.assignment && (
                       <Text style={styles.modalText}>
                         Assigned to: {selectedEnquiry.assignment.employeeId?.fullName || 'Unknown Employee'}
                       </Text>
                     )}
+                    {selectedEnquiry.actionPlan && (
+                      <>
+                        <Text style={[styles.modalText, { fontWeight: '600', marginTop: 8, color: '#374151' }]}>Action Plan:</Text>
+                        <Text style={[styles.modalText, { color: '#6b7280', fontStyle: 'italic' }]}>{selectedEnquiry.actionPlan}</Text>
+                      </>
+                    )}
+                    {selectedEnquiry.weekOrActionTaken && (
+                      <>
+                        <Text style={[styles.modalText, { fontWeight: '600', marginTop: 8, color: '#374151' }]}>Week/Action Taken:</Text>
+                        <Text style={[styles.modalText, { color: '#6b7280', fontStyle: 'italic' }]}>{selectedEnquiry.weekOrActionTaken}</Text>
+                      </>
+                    )}
                   </View>
+
+                  {/* Comments Section */}
+                  {selectedEnquiry.majorComments && (
+                    <View style={styles.modalSection}>
+                      <Text style={styles.modalSectionTitle}>Comments</Text>
+                      <View style={{
+                        backgroundColor: '#eff6ff',
+                        padding: 12,
+                        borderRadius: 8,
+                        borderLeftWidth: 3,
+                        borderLeftColor: '#3b82f6'
+                      }}>
+                        <Text style={{ fontSize: 12, color: '#374151', lineHeight: 18 }}>
+                          {selectedEnquiry.majorComments}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Reminder Details Section */}
+                  <View style={styles.modalSection}>
+                    <Text style={styles.modalSectionTitle}>Reminder Details</Text>
+                    
+                    {/* Show Reminders with Notes */}
+                    {selectedEnquiry.reminders && selectedEnquiry.reminders.length > 0 ? (
+                      <>
+                        {selectedEnquiry.reminders.map((reminder, index) => (
+                          <View key={reminder._id || index} style={{
+                            backgroundColor: '#f9fafb',
+                            padding: 12,
+                            borderRadius: 8,
+                            marginBottom: 10,
+                            borderLeftWidth: 3,
+                            borderLeftColor: reminder.status === 'completed' ? '#10b981' : '#f59e0b'
+                          }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                              <Text style={{ fontSize: 13, color: '#374151', fontWeight: '700', flex: 1 }}>
+                                📅 {new Date(reminder.reminderDateTime).toLocaleString('en-IN', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </Text>
+                              <View style={{ 
+                                paddingHorizontal: 8, 
+                                paddingVertical: 2, 
+                                borderRadius: 4,
+                                backgroundColor: reminder.status === 'completed' ? '#d1fae5' : '#fef3c7'
+                              }}>
+                                <Text style={{ 
+                                  fontSize: 10, 
+                                  color: reminder.status === 'completed' ? '#10b981' : '#f59e0b', 
+                                  fontWeight: '600' 
+                                }}>
+                                  {reminder.status?.toUpperCase() || 'PENDING'}
+                                </Text>
+                              </View>
+                            </View>
+                            
+                            {/* Reminder Note/Comment - Main highlight */}
+                            {(reminder.note || reminder.comment) && (
+                              <View style={{
+                                backgroundColor: '#ffffff',
+                                padding: 10,
+                                borderRadius: 6,
+                                marginBottom: 8,
+                                borderWidth: 1,
+                                borderColor: '#e5e7eb'
+                              }}>
+                                <Text style={{ fontSize: 11, color: '#6b7280', fontWeight: '600', marginBottom: 4 }}>
+                                  Set Reminder Note:
+                                </Text>
+                                <Text style={{ fontSize: 12, color: '#374151', lineHeight: 18 }}>
+                                  💬 {reminder.note || reminder.comment}
+                                </Text>
+                              </View>
+                            )}
+                            
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <Text style={{ fontSize: 10, color: '#9ca3af' }}>
+                                By: {reminder.createdBy?.fullName || 'Unknown'}
+                              </Text>
+                              <Text style={{ fontSize: 10, color: '#9ca3af' }}>
+                                {new Date(reminder.createdAt).toLocaleDateString('en-IN')}
+                              </Text>
+                            </View>
+                          </View>
+                        ))}
+                      </>
+                    ) : (
+                      <Text style={styles.modalText}>No reminders set for this enquiry</Text>
+                    )}
+                  </View>
+
+                  {/* Comments/Follow-ups Section */}
+                  {selectedEnquiry.followUps && selectedEnquiry.followUps.length > 0 && (
+                    <View style={styles.modalSection}>
+                      <Text style={styles.modalSectionTitle}>Comments & Follow-ups</Text>
+                      {selectedEnquiry.followUps.map((followUp, index) => (
+                        <View key={followUp._id || index} style={{
+                          backgroundColor: '#eff6ff',
+                          padding: 12,
+                          borderRadius: 8,
+                          marginBottom: 8,
+                          borderLeftWidth: 3,
+                          borderLeftColor: '#3b82f6'
+                        }}>
+                          <Text style={{ fontSize: 12, color: '#1e40af', marginBottom: 4 }}>
+                            {followUp.comment || followUp.note}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: '#6b7280' }}>
+                            By: {followUp.createdBy?.fullName || 'Unknown'} • {new Date(followUp.createdAt).toLocaleDateString('en-IN')}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
                 </>
               )}
             </ScrollView>
@@ -784,7 +1121,7 @@ const EnquiriesScreen = ({ navigation }) => {
         onClose={() => setReminderModalVisible(false)}
         enquiry={selectedEnquiry}
         createReminderAPI={createReminder}
-        onSuccess={handleReminderSuccess}
+        onSuccess={() => handleReminderSuccess(selectedEnquiry)}
       />
 
       <FollowUpModal
@@ -794,6 +1131,18 @@ const EnquiriesScreen = ({ navigation }) => {
         createFollowUpAPI={createFollowUp}
         onSuccess={handleFollowUpSuccess}
       />
+
+      {/* Reminder Popup */}
+      {showReminderPopup && currentReminder && (
+        <ReminderPopup
+          visible={showReminderPopup}
+          reminder={currentReminder}
+          onClose={() => {
+            setShowReminderPopup(false);
+            setCurrentReminder(null);
+          }}
+        />
+      )}
     </View>
   );
 };

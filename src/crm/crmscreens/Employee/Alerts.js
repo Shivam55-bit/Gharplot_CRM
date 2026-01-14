@@ -20,6 +20,7 @@ const EmployeeAlertsScreen = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [filteredAlerts, setFilteredAlerts] = useState([]);
 
   useEffect(() => {
@@ -71,8 +72,17 @@ const EmployeeAlertsScreen = ({ navigation }) => {
   const applyFilter = () => {
     let filtered = alerts;
 
+    // Apply search filter by title
+    if (searchQuery.trim()) {
+      filtered = filtered.filter(alert => 
+        alert.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        alert.reason?.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+
+    // Apply date range filter
     if (startDate && endDate) {
-      filtered = alerts.filter(alert => alert.date >= startDate && alert.date <= endDate);
+      filtered = filtered.filter(alert => alert.date >= startDate && alert.date <= endDate);
     }
 
     setFilteredAlerts(filtered);
@@ -81,7 +91,36 @@ const EmployeeAlertsScreen = ({ navigation }) => {
   const clearFilter = () => {
     setStartDate('');
     setEndDate('');
+    setSearchQuery('');
     setFilteredAlerts(alerts);
+  };
+
+  const deleteAlert = async (alertId) => {
+    try {
+      const token = await AsyncStorage.getItem('crm_token') ||
+                    await AsyncStorage.getItem('employee_token') ||
+                    await AsyncStorage.getItem('authToken');
+      
+      const response = await fetch(`${API_BASE_URL}/api/alerts/${alertId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        Alert.alert('Success', 'Alert deleted successfully');
+        fetchAlerts(); // Refresh list
+      } else {
+        Alert.alert('Error', result.message || 'Failed to delete alert');
+      }
+    } catch (error) {
+      console.error('❌ Delete alert error:', error);
+      Alert.alert('Error', 'Failed to delete alert');
+    }
   };
 
   const createAlert = () => {
@@ -96,27 +135,59 @@ const EmployeeAlertsScreen = ({ navigation }) => {
         <Text style={styles.timeText}>{item.time}</Text>
       </View>
 
-      <Text style={styles.reasonText}>{item.reason}</Text>
+      <Text style={styles.reasonText}>{item.title || item.reason}</Text>
+      {item.title && <Text style={styles.descriptionText}>{item.reason}</Text>}
 
       <View style={styles.rowBetween}>
-        <Text style={styles.repeatText}>Repeat Daily: {item.repeatDaily}</Text>
+        <Text style={styles.repeatText}>
+          Repeat: {item.repeatDaily ? 'Daily' : 'Once'}
+        </Text>
 
         <Text
           style={[
             styles.statusBadge,
-            item.status === 'Active' ? styles.activeBadge : styles.pendingBadge,
+            item.isActive ? styles.activeBadge : styles.pendingBadge,
           ]}
         >
-          {item.status}
+          {item.isActive ? 'Active' : 'Inactive'}
         </Text>
       </View>
 
       <View style={styles.actionsRow}>
-        <TouchableOpacity style={styles.iconBtn}>
+        <TouchableOpacity 
+          style={styles.iconBtn}
+          onPress={() => {
+            console.log('📝 Editing alert:', item._id);
+            navigation.navigate('EditAlert', {
+              alertId: item._id,
+              originalTitle: item.title,
+              originalReason: item.reason,
+              originalDate: item.date,
+              originalTime: item.time,
+              repeatDaily: item.repeatDaily
+            });
+          }}
+        >
           <Icon name="create-outline" size={18} color="#3b82f6" />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.iconBtn}>
+        <TouchableOpacity 
+          style={styles.iconBtn}
+          onPress={() => {
+            Alert.alert(
+              'Delete Alert',
+              'Are you sure you want to delete this alert?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { 
+                  text: 'Delete', 
+                  style: 'destructive',
+                  onPress: () => deleteAlert(item._id)
+                }
+              ]
+            );
+          }}
+        >
           <Icon name="trash-outline" size={18} color="#ef4444" />
         </TouchableOpacity>
       </View>
@@ -136,9 +207,43 @@ const EmployeeAlertsScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
+      {/* Search Box */}
+      <View style={styles.searchBox}>
+        <Icon name="search-outline" size={20} color="#6b7280" style={styles.searchIcon} />
+        <TextInput
+          placeholder="Search by title or reason..."
+          style={styles.searchInput}
+          value={searchQuery}
+          onChangeText={(text) => {
+            setSearchQuery(text);
+            // Real-time search
+            let filtered = alerts;
+            if (text.trim()) {
+              filtered = filtered.filter(alert => 
+                alert.title?.toLowerCase().includes(text.toLowerCase()) ||
+                alert.reason?.toLowerCase().includes(text.toLowerCase())
+              );
+            }
+            // Apply date filter if exists
+            if (startDate && endDate) {
+              filtered = filtered.filter(alert => alert.date >= startDate && alert.date <= endDate);
+            }
+            setFilteredAlerts(filtered);
+          }}
+        />
+        {searchQuery ? (
+          <TouchableOpacity onPress={() => {
+            setSearchQuery('');
+            setFilteredAlerts(alerts);
+          }}>
+            <Icon name="close-circle" size={20} color="#9ca3af" />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
       {/* Filters Box */}
       <View style={styles.filterBox}>
-        <Text style={styles.filterTitle}>Filter Alerts</Text>
+        <Text style={styles.filterTitle}>Filter by Date</Text>
 
         <View style={styles.dateRow}>
           <View style={styles.inputBox}>
@@ -216,6 +321,34 @@ const styles = StyleSheet.create({
 
   createButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
 
+  searchBox: {
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+
+  searchIcon: {
+    marginRight: 10,
+  },
+
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#1f2937',
+    padding: 0,
+  },
+
   filterBox: {
     backgroundColor: '#fff',
     margin: 16,
@@ -285,6 +418,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#374151',
     fontWeight: '500',
+  },
+
+  descriptionText: {
+    marginTop: -5,
+    marginBottom: 10,
+    fontSize: 14,
+    color: '#6b7280',
+    fontStyle: 'italic',
   },
 
   repeatText: { color: '#6b7280', fontSize: 13 },

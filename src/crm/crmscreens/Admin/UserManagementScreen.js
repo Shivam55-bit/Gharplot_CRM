@@ -1,481 +1,1089 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  Dimensions,
-  ActivityIndicator,
   Alert,
+  ActivityIndicator,
+  ScrollView,
+  TextInput,
+  Modal,
+  RefreshControl,
+  Dimensions,
+  Animated,
+  Switch,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import { Picker } from '@react-native-picker/picker';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import { getAllUsers, activateUser, deactivateUser } from '../../services/crmUserManagementApi';
+import { 
+  getUsersWithPagination, 
+  deleteUser,
+  searchUsers,
+  bulkDeleteUsers,
+} from '../../services/crmUserManagementApi';
+import { getAllEmployees } from '../../services/crmEmployeeManagementApi';
 
-const { width } = Dimensions.get('window');
+const { width: screenWidth } = Dimensions.get('window');
 
-/* ===================== SCREEN ===================== */
 const UserManagementScreen = ({ navigation }) => {
   const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [allUsers, setAllUsers] = useState([]); // Store all users for selection
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  
+  // Search & Filter
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  
+  // Selection & Bulk Operations
+  const [selectedUsers, setSelectedUsers] = useState(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  
+  // Modals
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [showAutoAssignModal, setShowAutoAssignModal] = useState(false);
+  const [showActivityChart, setShowActivityChart] = useState(false);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  
+  // Assignment
+  const [employees, setEmployees] = useState([]);
+  const [selectedEmployee, setSelectedEmployee] = useState('');
+  const [assignmentLoading, setAssignmentLoading] = useState(false);
+  
+  // Auto Assignment
+  const [autoAssignEnabled, setAutoAssignEnabled] = useState(false);
+  const [autoAssignEmployee, setAutoAssignEmployee] = useState('');
+  
+  // Activity Data
+  const [activityData, setActivityData] = useState(null);
+  const [activityLoading, setActivityLoading] = useState(false);
+  
+  // Animation values
+  const slideAnim = useRef(new Animated.Value(screenWidth)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // Format date from ISO to DD/MM/YYYY
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
+  // Format dates
+  const formatDate = (date) => {
+    if (!date) return 'N/A';
     try {
-      const date = new Date(dateString);
-      const day = String(date.getDate()).padStart(2, '0');
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const year = date.getFullYear();
+      const d = new Date(date);
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
       return `${day}/${month}/${year}`;
-    } catch (error) {
+    } catch {
+      return 'Invalid Date';
+    }
+  };
+
+  // Format last seen
+  const formatLastSeen = (lastSeen) => {
+    if (!lastSeen) return 'N/A';
+    try {
+      const now = new Date();
+      const past = new Date(lastSeen);
+      const diffMs = now - past;
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      
+      if (diffDays === 0) return 'Today';
+      if (diffDays === 1) return 'Yesterday';
+      if (diffDays < 30) return `${diffDays} days ago`;
+      if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`;
+      return `${Math.floor(diffDays / 365)} years ago`;
+    } catch {
       return 'N/A';
     }
   };
 
-  // Fetch users from API
+  // Initialize screen
+  useEffect(() => {
+    loadInitialData();
+  }, []);
+
+  // Load page when current page changes
+  useEffect(() => {
+    if (currentPage > 1) {
+      fetchUsers();
+    }
+  }, [currentPage]);
+
+  // Search debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchQuery.trim()) {
+        performSearch();
+      } else {
+        setIsSearching(false);
+        setSearchResults([]);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Load initial data
+  const loadInitialData = async () => {
+    await fetchUsers();
+    await loadEmployees();
+    // Auto assignment disabled
+  };
+
+  // Fetch users
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      console.log('🔄 Fetching users - Page:', currentPage);
       
-      const response = await getAllUsers({
+      const response = await getUsersWithPagination({
         page: currentPage,
-        limit: 5,
+        limit: 10,
       });
 
-      console.log('✅ API Response:', JSON.stringify(response, null, 2));
+      console.log('🔍 Full API Response:', JSON.stringify(response, null, 2));
 
-      // Backend returns { success: true, totalUsers: count, users: [...] }
-      if (response && response.users && Array.isArray(response.users)) {
-        // Map API response to UI format
-        const mappedUsers = response.users.map(user => ({
-          id: user._id,
-          name: user.fullName || user.name || 'N/A',
-          email: user.email || 'N/A',
-          phone: user.phone || 'N/A',
-          location: 'N/A, N/A',
-          signupDate: formatDate(user.createdAt),
-          lastSeen: formatDate(user.lastLogin),
-          accountStatus: user.isPhoneVerified ? 'ACTIVE' : 'INACTIVE',
-        }));
+      // Handle different response structures
+      let users = [];
+      if (response && response.users) {
+        users = response.users;
+      } else if (response && Array.isArray(response)) {
+        users = response;
+      } else if (response && response.data && Array.isArray(response.data)) {
+        users = response.data;
+      }
 
-        console.log('📋 Mapped Users:', mappedUsers.length, 'users');
-        console.log('📊 Total Users from backend:', response.totalUsers);
-        setUsers(mappedUsers);
-        
-        // Calculate total pages based on totalUsers
-        if (response.totalUsers) {
-          const calculatedPages = Math.ceil(response.totalUsers / 5);
-          setTotalPages(calculatedPages);
-          console.log('📄 Total Pages:', calculatedPages);
-        }
-      } else if (response && response.success === false) {
-        console.log('⚠️ Backend returned no users');
-        setUsers([]);
-        setTotalPages(1);
+      console.log('📊 Users found:', users.length);
+      if (users.length > 0) {
+        console.log('👤 Sample user:', JSON.stringify(users[0], null, 2));
+      }
+
+      // Normalize user data to ensure proper field names
+      const normalizedUsers = users.map(user => ({
+        id: user.id || user._id || user.user_id,
+        name: user.name || user.fullName || user.full_name || 
+              `${user.firstName || user.first_name || ''} ${user.lastName || user.last_name || ''}`.trim() ||
+              user.username || 'Unknown User',
+        email: user.email || user.emailAddress || 'No email',
+        phone: user.phone || user.phoneNumber || user.mobile || 'No phone',
+        location: user.location || user.address || user.city || 'Not specified',
+        status: user.status || user.accountStatus || user.isActive === false ? 'inactive' : 'active',
+        createdAt: user.createdAt || user.created_at || user.signupDate || user.joinedDate,
+        lastSeenAt: user.lastSeenAt || user.last_seen || user.lastLogin || user.updatedAt,
+        ...user // Keep all original fields as well
+      }));
+
+      console.log('✅ Normalized users:', normalizedUsers.length);
+      if (normalizedUsers.length > 0) {
+        console.log('👤 Sample normalized user:', JSON.stringify(normalizedUsers[0], null, 2));
+      }
+
+      setUsers(normalizedUsers);
+      setTotalPages(response.totalPages || response.total_pages || Math.ceil((response.totalUsers || response.total || normalizedUsers.length) / 10) || 1);
+      setTotalUsers(response.totalUsers || response.total || normalizedUsers.length || 0);
+      
+      // Store all users for selection
+      if (currentPage === 1) {
+        setAllUsers(normalizedUsers);
       } else {
-        console.log('⚠️ Unexpected response format:', response);
-        setUsers([]);
-        setTotalPages(1);
+        setAllUsers(prev => [...prev, ...normalizedUsers]);
       }
     } catch (error) {
-      console.error('❌ Error fetching users:', error);
-      console.error('Error details:', error.message);
-      
-      // Check for session expiry
-      if (error.message.includes('Session expired') || 
-          error.message.includes('Please login again') ||
-          error.message.includes('Invalid token')) {
-        Alert.alert(
-          'Session Expired',
-          'Your session has expired. Please login again.',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                // Navigate to AdminLogin screen
-                navigation.reset({
-                  index: 0,
-                  routes: [{ name: 'AdminLogin' }],
-                });
-              },
-            },
-          ],
-          { cancelable: false }
-        );
-        return;
-      }
-      
-      // Check if it's a 404 error (API not implemented)
-      if (error.message.includes('404') || 
-          error.message.includes('not found') ||
-          error.message.includes('Backend may not be ready')) {
-        console.log('⚠️ User Management API not yet implemented on backend');
-        console.log('📋 Backend APIs are pending - showing empty state');
-        
-        Alert.alert(
-          'API Not Available',
-          'User Management API is not yet implemented on the backend. Please check with the backend team.',
-          [{ text: 'OK' }]
-        );
-        
-        // Just show empty state, don't block the user
-        setUsers([]);
-        setTotalPages(1);
-      } else {
-        // For other real errors, show alert
-        let errorMessage = 'Failed to load users. ';
-        if (error.message.includes('Network') || error.message.includes('connection')) {
-          errorMessage += 'Please check your internet connection.';
-        } else {
-          errorMessage += error.message;
-        }
-        
-        Alert.alert(
-          'Error',
-          errorMessage,
-          [
-            {
-              text: 'OK',
-            },
-          ]
-        );
-      }
+      console.error('Error fetching users:', error);
+      handleError(error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  // Fetch users on mount and when page changes
-  useEffect(() => {
-    fetchUsers();
-  }, [currentPage]);
-
-  // Handle activate/deactivate user
-  const handleDeactivate = async (item) => {
+  // Load employees
+  const loadEmployees = async () => {
     try {
-      const isActive = item.accountStatus === 'ACTIVE';
-      const action = isActive ? 'deactivate' : 'activate';
-      
+      const response = await getAllEmployees();
+      if (response && response.employees) {
+        setEmployees(response.employees);
+      }
+    } catch (error) {
+      console.error('Error loading employees:', error);
+    }
+  };
+
+  // Perform search
+  const performSearch = async () => {
+    if (!searchQuery.trim()) return;
+    
+    try {
+      setIsSearching(true);
+      const response = await searchUsers(searchQuery);
+      if (response && response.users) {
+        setSearchResults(response.users);
+      }
+    } catch (error) {
+      console.error('Error searching users:', error);
+      Alert.alert('Error', 'Failed to search users');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Handle error
+  const handleError = (error) => {
+    if (error.message.includes('Session expired') || 
+        error.message.includes('Please login again') ||
+        error.message.includes('Invalid token')) {
       Alert.alert(
-        `${isActive ? 'Deactivate' : 'Activate'} User`,
-        `Are you sure you want to ${action} ${item.name}?`,
+        'Session Expired',
+        'Your session has expired. Please login again.',
         [
           {
-            text: 'Cancel',
-            style: 'cancel',
-          },
-          {
-            text: 'Confirm',
-            onPress: async () => {
-              try {
-                if (isActive) {
-                  await deactivateUser(item.id);
-                } else {
-                  await activateUser(item.id);
-                }
-                
-                Alert.alert('Success', `User ${action}d successfully`);
-                fetchUsers(); // Refresh the list
-              } catch (error) {
-                console.error(`Error ${action}ing user:`, error);
-                
-                // Check for session expiry
-                if (error.message.includes('Session expired') || 
-                    error.message.includes('Please login again') ||
-                    error.message.includes('Invalid token')) {
-                  Alert.alert(
-                    'Session Expired',
-                    'Your session has expired. Please login again.',
-                    [
-                      {
-                        text: 'OK',
-                        onPress: () => {
-                          navigation.reset({
-                            index: 0,
-                            routes: [{ name: 'AdminLogin' }],
-                          });
-                        },
-                      },
-                    ],
-                    { cancelable: false }
-                  );
-                } else {
-                  Alert.alert('Error', error.message || `Failed to ${action} user. Please try again.`);
-                }
-              }
+            text: 'OK',
+            onPress: () => {
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'AdminLogin' }],
+              });
             },
           },
-        ]
+        ],
+        { cancelable: false }
       );
-    } catch (error) {
-      console.error('Error in handleDeactivate:', error);
+      return;
     }
+    
+    if (error.message.includes('404') || 
+        error.message.includes('not found') ||
+        error.message.includes('Backend may not be ready')) {
+      Alert.alert(
+        'API Not Available',
+        'User Management API is not yet implemented on the backend. Please check with the backend team.',
+        [{ text: 'OK' }]
+      );
+      setUsers([]);
+      setTotalPages(1);
+      return;
+    }
+    
+    Alert.alert('Error', error.message || 'An error occurred');
   };
 
-  const renderUser = ({ item }) => (
-    <View style={styles.card}>
-      {/* TOP */}
-      <View style={styles.cardTop}>
-        <View style={styles.avatar}>
-          <MaterialCommunityIcons name="account" size={22} color="#fff" />
+  // Toggle user selection
+  const toggleUserSelection = (userId) => {
+    const newSelection = new Set(selectedUsers);
+    if (newSelection.has(userId)) {
+      newSelection.delete(userId);
+    } else {
+      newSelection.add(userId);
+    }
+    setSelectedUsers(newSelection);
+  };
+
+  // Select all users
+  const selectAllUsers = () => {
+    const allUserIds = new Set(users.map(user => user.id));
+    setSelectedUsers(allUserIds);
+  };
+
+  // Clear selection
+  const clearSelection = () => {
+    setSelectedUsers(new Set());
+    setIsSelectionMode(false);
+  };
+
+  // Enter selection mode
+  const enterSelectionMode = () => {
+    setIsSelectionMode(true);
+    setSelectedUsers(new Set());
+  };
+
+  // Handle user assignment
+  const handleAssignUsers = async () => {
+    if (selectedUsers.size === 0) {
+      Alert.alert('Error', 'Please select at least one user');
+      return;
+    }
+    
+    if (!selectedEmployee) {
+      Alert.alert('Error', 'Please select an employee');
+      return;
+    }
+    
+    // For now, just show success message since backend might not be ready
+    Alert.alert(
+      'Assignment Simulated',
+      `Selected ${selectedUsers.size} user(s) would be assigned to the selected employee.\n\nNote: This will work when the backend API is implemented.`,
+      [
+        {
+          text: 'OK',
+          onPress: () => {
+            setShowAssignModal(false);
+            clearSelection();
+          }
+        }
+      ]
+    );
+  };
+
+  // Handle auto assignment toggle - DISABLED FOR NOW
+  const handleAutoAssignmentToggle = async (enabled) => {
+    Alert.alert('Feature Coming Soon', 'Auto assignment feature will be available when the backend API is ready.');
+    return;
+  };
+
+  // Load user activity - DISABLED FOR NOW
+  const loadUserActivity = async () => {
+    Alert.alert('Feature Coming Soon', 'User activity chart feature will be available when the backend API is ready.');
+    return;
+  };
+
+  // Handle delete users
+  const handleDeleteUsers = async () => {
+    if (selectedUsers.size === 0) {
+      Alert.alert('Error', 'Please select at least one user');
+      return;
+    }
+    
+    Alert.alert(
+      'Confirm Delete',
+      `Are you sure you want to delete ${selectedUsers.size} user(s)? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const userIds = Array.from(selectedUsers);
+              await bulkDeleteUsers({ userIds });
+              
+              Alert.alert('Success', `${userIds.length} users deleted successfully`);
+              setShowBulkDeleteModal(false);
+              clearSelection();
+              fetchUsers();
+            } catch (error) {
+              console.error('Error deleting users:', error);
+              Alert.alert('Error', error.message || 'Failed to delete users');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Handle single user delete
+  const handleDeleteSingleUser = (userId, userName) => {
+    Alert.alert(
+      'Confirm Delete',
+      `Are you sure you want to delete ${userName}? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteUser(userId);
+              Alert.alert('Success', 'User deleted successfully');
+              fetchUsers();
+            } catch (error) {
+              console.error('Error deleting user:', error);
+              Alert.alert('Error', error.message || 'Failed to delete user');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Refresh data
+  const onRefresh = () => {
+    setRefreshing(true);
+    setCurrentPage(1);
+    fetchUsers();
+  };
+
+  // Render user card
+  const renderUser = ({ item }) => {
+    const isSelected = selectedUsers.has(item.id);
+    
+    return (
+      <TouchableOpacity
+        style={[styles.userCard, isSelected && styles.selectedCard]}
+        onPress={() => {
+          if (isSelectionMode) {
+            toggleUserSelection(item.id);
+          }
+        }}
+        onLongPress={() => {
+          if (!isSelectionMode) {
+            enterSelectionMode();
+            toggleUserSelection(item.id);
+          }
+        }}
+      >
+        {isSelectionMode && (
+          <View style={styles.selectionIndicator}>
+            <MaterialCommunityIcons 
+              name={isSelected ? "checkbox-marked-circle" : "checkbox-blank-circle-outline"} 
+              size={24} 
+              color={isSelected ? "#10B981" : "#94A3B8"} 
+            />
+          </View>
+        )}
+        
+        <View style={styles.userInfo}>
+          <View style={styles.userHeader}>
+            <View style={styles.avatar}>
+              <MaterialCommunityIcons name="account" size={22} color="#fff" />
+            </View>
+            <View style={styles.userDetails}>
+              <Text style={styles.userName}>
+                {item.name || item.fullName || item.full_name || 
+                 `${item.firstName || item.first_name || ''} ${item.lastName || item.last_name || ''}`.trim() ||
+                 item.username || 'Unknown User'}
+              </Text>
+              <Text style={styles.userEmail}>
+                {item.email || item.emailAddress || 'No email provided'}
+              </Text>
+              <Text style={styles.userPhone}>
+                📞 {item.phone || item.phoneNumber || item.mobile || 'No phone'}
+              </Text>
+            </View>
+            <View style={[styles.statusBadge, item.status === 'active' ? styles.activeStatus : styles.inactiveStatus]}>
+              <Text style={styles.statusText}>{item.status?.toUpperCase() || 'UNKNOWN'}</Text>
+            </View>
+          </View>
+          
+          <View style={styles.userMeta}>
+            <Text style={styles.metaText}>📍 {item.location || 'Not specified'}</Text>
+            <Text style={styles.metaText}>📅 Joined: {formatDate(item.createdAt)}</Text>
+            <Text style={styles.metaText}>👀 Last seen: {formatLastSeen(item.lastSeenAt)}</Text>
+          </View>
+          
+          {!isSelectionMode && (
+            <View style={styles.userActions}>
+              <TouchableOpacity 
+                style={styles.assignButton}
+                onPress={() => {
+                  setSelectedUsers(new Set([item.id]));
+                  setShowAssignModal(true);
+                }}
+              >
+                <MaterialCommunityIcons name="account-plus" size={18} color="#fff" />
+                <Text style={styles.actionButtonText}>ASSIGN</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.deleteButton}
+                onPress={() => handleDeleteSingleUser(item.id, item.name)}
+              >
+                <MaterialCommunityIcons name="delete" size={18} color="#fff" />
+                <Text style={styles.actionButtonText}>DELETE</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
+      </TouchableOpacity>
+    );
+  };
 
-        <View style={{ flex: 1 }}>
-          <Text style={styles.name}>{item.name}</Text>
-          <Text style={styles.email}>{item.email}</Text>
+  // Render activity chart
+  const ActivityChart = () => {
+    if (!activityData) return null;
+    
+    const maxValue = Math.max(...activityData.map(item => item.count));
+    
+    return (
+      <ScrollView style={styles.chartContainer}>
+        <Text style={styles.chartTitle}>User Activity (Last 7 Days)</Text>
+        <View style={styles.chart}>
+          {activityData.map((item, index) => (
+            <View key={index} style={styles.chartBar}>
+              <View 
+                style={[
+                  styles.bar, 
+                  { height: (item.count / maxValue) * 100 }
+                ]} 
+              />
+              <Text style={styles.barLabel}>{item.day}</Text>
+              <Text style={styles.barValue}>{item.count}</Text>
+            </View>
+          ))}
         </View>
-
-        <View
-          style={[
-            styles.statusPill,
-            item.accountStatus === 'ACTIVE'
-              ? styles.active
-              : styles.inactive,
-          ]}
-        >
-          <Text style={styles.statusText}>{item.accountStatus}</Text>
-        </View>
-      </View>
-
-      {/* INFO */}
-      <View style={styles.infoRow}>
-        <Text style={styles.info}>📞 {item.phone}</Text>
-        <Text style={styles.info}>📍 {item.location}</Text>
-      </View>
-
-      <View style={styles.infoRow}>
-        <Text style={styles.meta}>Signup: {item.signupDate}</Text>
-        <Text style={styles.meta}>Last: {item.lastSeen}</Text>
-      </View>
-
-      {/* ACTIONS */}
-      <View style={styles.actions}>
-        <TouchableOpacity 
-          style={styles.assignBtn}
-          onPress={() => navigation.navigate('UserAssignments', { userId: item.id, userName: item.name })}
-        >
-          <Text style={styles.assignText}>ASSIGN</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.deactivateBtn,
-            item.accountStatus === 'INACTIVE' && styles.activateBtn,
-          ]}
-          onPress={() => handleDeactivate(item)}
-        >
-          <Text style={styles.deactivateText}>
-            {item.accountStatus === 'ACTIVE' ? 'DEACTIVATE' : 'ACTIVATE'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+      </ScrollView>
+    );
+  };
 
   return (
     <View style={styles.container}>
-      {/* HEADER */}
+      {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation?.goBack()}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={24} color="#fff" />
         </TouchableOpacity>
-
+        
         <Text style={styles.headerTitle}>User Management</Text>
-
-        <View style={styles.placeholder} />
+        
+        <View style={styles.headerActions}>
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={() => {
+              Alert.alert('Feature Coming Soon', 'Activity chart feature will be available soon.');
+              // setShowActivityChart(true);
+              // loadUserActivity();
+            }}
+          >
+            <MaterialCommunityIcons name="chart-line" size={20} color="#fff" />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.headerButton}
+            onPress={() => {
+              Alert.alert('Feature Coming Soon', 'Auto assignment feature will be available soon.');
+              // setShowAutoAssignModal(true);
+            }}
+          >
+            <MaterialCommunityIcons name="auto-fix" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* LIST */}
-      {loading ? (
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchBox}>
+          <MaterialCommunityIcons name="magnify" size={20} color="#64748B" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search users by name, email, or phone..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholderTextColor="#94A3B8"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <MaterialCommunityIcons name="close-circle" size={20} color="#64748B" />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {/* Stats Bar */}
+      <View style={styles.statsBar}>
+        <View style={styles.statItem}>
+          <Text style={styles.statNumber}>{totalUsers}</Text>
+          <Text style={styles.statLabel}>Total Users</Text>
+        </View>
+        <View style={styles.statItem}>
+          <Text style={styles.statNumber}>{selectedUsers.size}</Text>
+          <Text style={styles.statLabel}>Selected</Text>
+        </View>
+        <View style={styles.statItem}>
+          <Text style={styles.statNumber}>{users.length}</Text>
+          <Text style={styles.statLabel}>Current Page</Text>
+        </View>
+      </View>
+
+      {/* Selection Mode Actions */}
+      {isSelectionMode && (
+        <View style={styles.selectionActions}>
+          <TouchableOpacity 
+            style={styles.selectionButton}
+            onPress={selectAllUsers}
+          >
+            <MaterialCommunityIcons name="checkbox-multiple-marked" size={20} color="#2563EB" />
+            <Text style={styles.selectionButtonText}>Select All</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.selectionButton}
+            onPress={() => setShowAssignModal(true)}
+            disabled={selectedUsers.size === 0}
+          >
+            <MaterialCommunityIcons name="account-plus" size={20} color="#10B981" />
+            <Text style={styles.selectionButtonText}>Assign</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.selectionButton}
+            onPress={handleDeleteUsers}
+            disabled={selectedUsers.size === 0}
+          >
+            <MaterialCommunityIcons name="delete" size={20} color="#EF4444" />
+            <Text style={styles.selectionButtonText}>Delete</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.selectionButton}
+            onPress={clearSelection}
+          >
+            <MaterialCommunityIcons name="close" size={20} color="#64748B" />
+            <Text style={styles.selectionButtonText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Users List */}
+      {loading && currentPage === 1 ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#2563EB" />
           <Text style={styles.loadingText}>Loading users...</Text>
         </View>
       ) : (
         <FlatList
-          data={users}
+          data={isSearching ? [] : (searchQuery ? searchResults : users)}
           keyExtractor={(item) => item.id}
           renderItem={renderUser}
-          contentContainerStyle={styles.list}
-          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContainer}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#2563EB']}
+            />
+          }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No users found</Text>
+              {isSearching ? (
+                <>
+                  <ActivityIndicator size="large" color="#2563EB" />
+                  <Text style={styles.emptyText}>Searching...</Text>
+                </>
+              ) : (
+                <>
+                  <MaterialCommunityIcons name="account-search" size={64} color="#CBD5E1" />
+                  <Text style={styles.emptyText}>
+                    {searchQuery ? 'No users found for your search' : 'No users available'}
+                  </Text>
+                </>
+              )}
             </View>
           }
+          onEndReached={() => {
+            if (!loading && currentPage < totalPages) {
+              setCurrentPage(prev => prev + 1);
+            }
+          }}
+          onEndReachedThreshold={0.5}
         />
       )}
 
-      {/* PAGINATION */}
-      <View style={styles.pagination}>
-        <TouchableOpacity
-          disabled={currentPage === 1}
-          style={[
-            styles.pageBtn,
-            currentPage === 1 && styles.pageDisabled,
-          ]}
-          onPress={() => setCurrentPage((p) => p - 1)}
-        >
-          <Text style={styles.pageText}>PREV</Text>
-        </TouchableOpacity>
+      {/* Pagination */}
+      {!searchQuery && totalPages > 1 && (
+        <View style={styles.pagination}>
+          <TouchableOpacity
+            disabled={currentPage === 1}
+            style={[styles.pageButton, currentPage === 1 && styles.disabledButton]}
+            onPress={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+          >
+            <Text style={styles.pageButtonText}>PREV</Text>
+          </TouchableOpacity>
+          
+          <Text style={styles.pageInfo}>
+            {currentPage} of {totalPages}
+          </Text>
+          
+          <TouchableOpacity
+            disabled={currentPage === totalPages}
+            style={[styles.pageButton, currentPage === totalPages && styles.disabledButton]}
+            onPress={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+          >
+            <Text style={styles.pageButtonText}>NEXT</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
-        <Text style={styles.pageCount}>
-          {currentPage} / {totalPages}
-        </Text>
+      {/* Assign Modal */}
+      <Modal visible={showAssignModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView 
+            style={styles.modalContainer}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>
+                  Assign {selectedUsers.size} User(s) to Employee
+                </Text>
+                <TouchableOpacity onPress={() => setShowAssignModal(false)}>
+                  <MaterialCommunityIcons name="close" size={24} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.modalBody}>
+                <Text style={styles.inputLabel}>Select Employee:</Text>
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={selectedEmployee}
+                    onValueChange={setSelectedEmployee}
+                    style={styles.picker}
+                  >
+                    <Picker.Item label="Choose an employee..." value="" />
+                    {employees.map((employee) => (
+                      <Picker.Item
+                        key={employee.id}
+                        label={`${employee.name} (${employee.email})`}
+                        value={employee.id}
+                      />
+                    ))}
+                  </Picker>
+                </View>
+              </View>
+              
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={styles.cancelButton}
+                  onPress={() => setShowAssignModal(false)}
+                >
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[styles.confirmButton, assignmentLoading && styles.disabledButton]}
+                  onPress={handleAssignUsers}
+                  disabled={assignmentLoading}
+                >
+                  {assignmentLoading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.confirmButtonText}>Assign Users</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
 
-        <TouchableOpacity
-          disabled={currentPage === totalPages}
-          style={[
-            styles.pageBtn,
-            currentPage === totalPages && styles.pageDisabled,
-          ]}
-          onPress={() => setCurrentPage((p) => p + 1)}
-        >
-          <Text style={styles.pageText}>NEXT</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Auto Assignment Modal */}
+      <Modal visible={showAutoAssignModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Auto Assignment Settings</Text>
+                <TouchableOpacity onPress={() => setShowAutoAssignModal(false)}>
+                  <MaterialCommunityIcons name="close" size={24} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.modalBody}>
+                <View style={styles.switchContainer}>
+                  <Text style={styles.switchLabel}>Enable Auto Assignment</Text>
+                  <Switch
+                    value={autoAssignEnabled}
+                    onValueChange={handleAutoAssignmentToggle}
+                    trackColor={{ false: '#CBD5E1', true: '#10B981' }}
+                    thumbColor="#fff"
+                  />
+                </View>
+                
+                {autoAssignEnabled && (
+                  <>
+                    <Text style={styles.inputLabel}>Auto Assign to Employee:</Text>
+                    <View style={styles.pickerContainer}>
+                      <Picker
+                        selectedValue={autoAssignEmployee}
+                        onValueChange={setAutoAssignEmployee}
+                        style={styles.picker}
+                      >
+                        <Picker.Item label="Choose an employee..." value="" />
+                        {employees.map((employee) => (
+                          <Picker.Item
+                            key={employee.id}
+                            label={`${employee.name} (${employee.email})`}
+                            value={employee.id}
+                          />
+                        ))}
+                      </Picker>
+                    </View>
+                  </>
+                )}
+                
+                <Text style={styles.helpText}>
+                  When enabled, new users will be automatically assigned to the selected employee.
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Activity Chart Modal */}
+      <Modal visible={showActivityChart} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>User Activity Chart</Text>
+                <TouchableOpacity onPress={() => setShowActivityChart(false)}>
+                  <MaterialCommunityIcons name="close" size={24} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.modalBody}>
+                {activityLoading ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color="#2563EB" />
+                    <Text style={styles.loadingText}>Loading activity data...</Text>
+                  </View>
+                ) : (
+                  <ActivityChart />
+                )}
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
 
 export default UserManagementScreen;
 
-/* ===================== STYLES ===================== */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#F8FAFC',
   },
-
+  
+  // Header
   header: {
-    backgroundColor: '#0F172A',
-    padding: 16,
+    backgroundColor: '#1E293B',
+    paddingTop: Platform.OS === 'ios' ? 60 : (20 + (Platform.OS === 'android' ? 24 : 0)),
+    paddingHorizontal: 16,
+    paddingBottom: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   headerTitle: {
     color: '#fff',
     fontSize: 18,
     fontWeight: '700',
+    flex: 1,
+    textAlign: 'center',
   },
-  placeholder: {
-    width: 36,
-  },
-
-  list: {
-    padding: 16,
-  },
-
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    elevation: 3,
-  },
-
-  cardTop: {
+  headerActions: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
-
-  avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#2563EB',
+  headerButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.1)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  name: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
+  
+  // Search
+  searchContainer: {
+    padding: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
   },
-  email: {
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#1E293B',
+    paddingVertical: 4,
+  },
+  
+  // Stats
+  statsBar: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+    flexDirection: 'column',
+  },
+  statNumber: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  statLabel: {
     fontSize: 12,
     color: '#64748B',
     marginTop: 2,
   },
-
-  statusPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
+  
+  // Selection Actions
+  selectionActions: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    gap: 12,
   },
-  active: {
+  selectionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+  },
+  selectionButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  
+  // List
+  listContainer: {
+    padding: 16,
+  },
+  userCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginBottom: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    overflow: 'hidden',
+  },
+  selectedCard: {
+    borderWidth: 2,
+    borderColor: '#10B981',
+  },
+  selectionIndicator: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    zIndex: 1,
+  },
+  userInfo: {
+    padding: 16,
+  },
+  userHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  userDetails: {
+    flex: 1,
+  },
+  userName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 2,
+  },
+  userEmail: {
+    fontSize: 14,
+    color: '#64748B',
+    marginBottom: 2,
+  },
+  userPhone: {
+    fontSize: 14,
+    color: '#64748B',
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  activeStatus: {
     backgroundColor: '#DCFCE7',
   },
-  inactive: {
+  inactiveStatus: {
     backgroundColor: '#FEE2E2',
   },
   statusText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
     color: '#166534',
   },
-
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 10,
+  userMeta: {
+    marginBottom: 16,
   },
-  info: {
+  metaText: {
     fontSize: 13,
-    color: '#334155',
-  },
-  meta: {
-    fontSize: 12,
     color: '#64748B',
+    marginBottom: 4,
   },
-
-  actions: {
+  userActions: {
     flexDirection: 'row',
-    marginTop: 16,
+    gap: 8,
   },
-  assignBtn: {
+  assignButton: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#2563EB',
     paddingVertical: 10,
-    borderRadius: 10,
-    marginRight: 8,
-    alignItems: 'center',
+    borderRadius: 8,
+    gap: 4,
   },
-  assignText: {
-    color: '#fff',
-    fontWeight: '700',
-  },
-  deactivateBtn: {
+  deleteButton: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#EF4444',
     paddingVertical: 10,
-    borderRadius: 10,
-    marginLeft: 8,
-    alignItems: 'center',
+    borderRadius: 8,
+    gap: 4,
   },
-  deactivateText: {
+  actionButtonText: {
     color: '#fff',
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '600',
   },
-  activateBtn: {
-    backgroundColor: '#10B981',
-  },
-
+  
+  // Loading & Empty States
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: 40,
   },
   loadingText: {
-    marginTop: 10,
+    marginTop: 12,
     fontSize: 14,
     color: '#64748B',
   },
@@ -486,35 +1094,175 @@ const styles = StyleSheet.create({
     padding: 40,
   },
   emptyText: {
+    marginTop: 16,
     fontSize: 16,
     color: '#64748B',
+    textAlign: 'center',
   },
-
+  
+  // Pagination
   pagination: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 14,
     backgroundColor: '#fff',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
     borderTopWidth: 1,
-    borderColor: '#E5E7EB',
+    borderTopColor: '#E2E8F0',
   },
-  pageBtn: {
+  pageButton: {
     backgroundColor: '#2563EB',
     paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingVertical: 10,
+    borderRadius: 8,
   },
-  pageDisabled: {
+  disabledButton: {
     backgroundColor: '#CBD5E1',
   },
-  pageText: {
+  pageButtonText: {
     color: '#fff',
-    fontWeight: '700',
-  },
-  pageCount: {
     fontSize: 14,
+    fontWeight: '600',
+  },
+  pageInfo: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E293B',
+  },
+  
+  // Modals
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    width: screenWidth - 32,
+    maxHeight: '80%',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  modalTitle: {
+    fontSize: 18,
     fontWeight: '700',
-    color: '#0F172A',
+    color: '#1E293B',
+    flex: 1,
+  },
+  modalBody: {
+    padding: 20,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  pickerContainer: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  picker: {
+    height: 50,
+  },
+  switchContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  switchLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  helpText: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontStyle: 'italic',
+    marginTop: 8,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    padding: 20,
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  confirmButton: {
+    flex: 1,
+    backgroundColor: '#2563EB',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  confirmButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  
+  // Activity Chart
+  chartContainer: {
+    maxHeight: 300,
+  },
+  chartTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E293B',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  chart: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'flex-end',
+    height: 200,
+    paddingHorizontal: 10,
+  },
+  chartBar: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  bar: {
+    width: 20,
+    backgroundColor: '#2563EB',
+    marginBottom: 8,
+    borderRadius: 2,
+    minHeight: 4,
+  },
+  barLabel: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  barValue: {
+    fontSize: 10,
+    color: '#94A3B8',
+    marginTop: 2,
   },
 });

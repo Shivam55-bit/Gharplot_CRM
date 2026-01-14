@@ -25,6 +25,8 @@ const USPEmployeesScreen = ({ navigation }) => {
   const [employees, setEmployees] = useState([]);
   const [categories, setCategories] = useState([]);
   const [systemEmployees, setSystemEmployees] = useState([]);
+  const [enquiries, setEnquiries] = useState([]); // All enquiries from enquiry screen
+  const [allUsers, setAllUsers] = useState([]); // All registered users
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -51,6 +53,16 @@ const USPEmployeesScreen = ({ navigation }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Search States for Users/Clients
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+
+  // Category creation states
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+
   // Statistics
   const [statistics, setStatistics] = useState({
     total: 0,
@@ -75,6 +87,8 @@ const USPEmployeesScreen = ({ navigation }) => {
         fetchCategories(),
         fetchEmployees(),
         fetchSystemEmployees(),
+        fetchEnquiries(), // Fetch all enquiries
+        fetchAllUsers(), // Fetch all registered users
       ]);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -118,6 +132,39 @@ const USPEmployeesScreen = ({ navigation }) => {
     }
   };
 
+  // Create New Category
+  const handleCreateCategory = async () => {
+    if (!newCategoryName.trim()) {
+      Alert.alert('Error', 'Please enter a category name');
+      return;
+    }
+
+    setIsCreatingCategory(true);
+    try {
+      const headers = await getAuthHeaders();
+      const response = await axios.post(
+        `${API_BASE_URL}/api/usp-categories`,
+        { name: newCategoryName.trim() },
+        { headers }
+      );
+      
+      if (response.data.success) {
+        Alert.alert('Success', 'Category created successfully!');
+        setNewCategoryName('');
+        // Refresh categories and auto-select the new one
+        await fetchCategories();
+        if (response.data.data && response.data.data._id) {
+          handleInputChange('categoryId', response.data.data._id);
+        }
+      }
+    } catch (error) {
+      console.error('Error creating category:', error);
+      Alert.alert('Error', error.response?.data?.message || 'Failed to create category');
+    } finally {
+      setIsCreatingCategory(false);
+    }
+  };
+
   // Fetch USP Employees
   const fetchEmployees = async () => {
     try {
@@ -156,6 +203,157 @@ const USPEmployeesScreen = ({ navigation }) => {
       console.error('Error fetching system employees:', error);
     }
   };
+
+  // Fetch All Enquiries
+  const fetchEnquiries = async () => {
+    try {
+      const headers = await getAuthHeaders();
+      
+      // Fetch manual enquiries
+      const manualResponse = await axios.get(
+        `${API_BASE_URL}/api/inquiry/all`,
+        { headers }
+      );
+      
+      // Fetch client enquiries
+      const clientResponse = await axios.get(
+        `${API_BASE_URL}/api/inquiry/get-enquiries`,
+        { headers }
+      );
+      
+      const manualEnquiries = manualResponse.data?.data || manualResponse.data || [];
+      const clientEnquiries = clientResponse.data?.data || clientResponse.data || [];
+      
+      // Merge all enquiries and remove duplicates
+      const allEnquiries = [...manualEnquiries, ...clientEnquiries];
+      const uniqueEnquiries = allEnquiries.reduce((acc, curr) => {
+        const key = curr.contactNumber || curr.phone || curr.clientName;
+        if (key && !acc.find(e => (e.contactNumber || e.phone) === key)) {
+          acc.push(curr);
+        }
+        return acc;
+      }, []);
+      
+      setEnquiries(uniqueEnquiries);
+      console.log('✅ Loaded', uniqueEnquiries.length, 'enquiries for USP search');
+    } catch (error) {
+      console.error('Error fetching enquiries:', error);
+      // Don't show alert, just log
+    }
+  };
+
+  // Fetch All Users
+  const fetchAllUsers = async () => {
+    try {
+      const headers = await getAuthHeaders();
+      
+      // Fetch all users from the backend
+      const response = await axios.get(
+        `${API_BASE_URL}/api/users`,
+        { headers }
+      );
+      
+      const users = response.data?.data || response.data?.users || response.data || [];
+      
+      // Format users for search
+      const formattedUsers = users.map(user => ({
+        _id: user._id || user.id,
+        fullName: user.fullName || user.name || user.username,
+        name: user.fullName || user.name || user.username,
+        phone: user.phone || user.mobile || user.contactNumber,
+        mobile: user.phone || user.mobile || user.contactNumber,
+        contactNumber: user.phone || user.mobile || user.contactNumber,
+        email: user.email,
+        type: 'user',
+        source: 'users-api'
+      })).filter(user => user.phone); // Only include users with phone numbers
+      
+      setAllUsers(formattedUsers);
+      console.log('✅ Loaded', formattedUsers.length, 'users for USP search');
+    } catch (error) {
+      console.error('Error fetching all users:', error);
+      // Don't show alert, just log
+    }
+  };
+
+  // Search Users/Clients (All Users/Buyers/Sellers/Enquiries)
+  const searchUsers = async (query) => {
+    if (!query || query.trim().length < 2) {
+      setSearchResults([]);
+      setShowSearchDropdown(false);
+      return;
+    }
+
+    setSearchLoading(true);
+    try {
+      const lowerQuery = query.toLowerCase().trim();
+      
+      // Search in all users
+      const userMatches = allUsers.filter(user => {
+        const name = (user.fullName || user.name || '').toLowerCase();
+        const phone = (user.phone || user.mobile || '').toString();
+        return name.includes(lowerQuery) || phone.includes(lowerQuery);
+      });
+      
+      // Search in local enquiries
+      const enquiryMatches = enquiries.filter(enquiry => {
+        const name = (enquiry.clientName || enquiry.name || '').toLowerCase();
+        const phone = (enquiry.contactNumber || enquiry.phone || '').toString();
+        return name.includes(lowerQuery) || phone.includes(lowerQuery);
+      }).map(enquiry => ({
+        _id: enquiry._id || enquiry.id,
+        fullName: enquiry.clientName || enquiry.name,
+        name: enquiry.clientName || enquiry.name,
+        phone: enquiry.contactNumber || enquiry.phone,
+        mobile: enquiry.contactNumber || enquiry.phone,
+        contactNumber: enquiry.contactNumber || enquiry.phone,
+        type: 'enquiry',
+        source: 'enquiries'
+      }));
+      
+      // Merge results and remove duplicates by phone
+      const combinedResults = [...userMatches, ...enquiryMatches];
+      const uniqueResults = combinedResults.reduce((acc, curr) => {
+        const phone = curr.phone || curr.mobile || curr.contactNumber;
+        if (phone && !acc.find(r => (r.phone || r.mobile || r.contactNumber) === phone)) {
+          acc.push(curr);
+        }
+        return acc;
+      }, []);
+      
+      setSearchResults(uniqueResults);
+      setShowSearchDropdown(uniqueResults.length > 0);
+    } catch (error) {
+      console.error('Error searching users:', error);
+      setSearchResults([]);
+      setShowSearchDropdown(false);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  // Handle user selection from search
+  const handleUserSelect = (user) => {
+    setFormData(prev => ({
+      ...prev,
+      name: user.fullName || user.name || '',
+      phone: user.phone || user.mobile || user.contactNumber || '',
+    }));
+    setSearchQuery(user.fullName || user.name || user.phone || '');
+    setShowSearchDropdown(false);
+    setSearchResults([]);
+  };
+
+  // Debounce search
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (searchQuery && modalType === 'manual' && showModal) {
+        searchUsers(searchQuery);
+      }
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery, modalType, showModal]);
 
   // Calculate Statistics
   const calculateStatistics = () => {
@@ -205,6 +403,11 @@ const USPEmployeesScreen = ({ navigation }) => {
       });
     }
     
+    // Reset search state
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowSearchDropdown(false);
+    
     setShowModal(true);
     setError('');
     setSuccess('');
@@ -217,6 +420,11 @@ const USPEmployeesScreen = ({ navigation }) => {
     setModalType('system');
     setError('');
     setSuccess('');
+    
+    // Reset search state
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowSearchDropdown(false);
   };
 
   // Handle Input Change
@@ -229,6 +437,7 @@ const USPEmployeesScreen = ({ navigation }) => {
 
   // Validate Form
   const validateForm = () => {
+    // Category is required for both system and manual
     if (!formData.categoryId) {
       setError('Please select a category');
       return false;
@@ -463,7 +672,7 @@ const USPEmployeesScreen = ({ navigation }) => {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#10b981" />
-        <Text style={styles.loadingText}>Loading USP Employees...</Text>
+        <Text style={styles.loadingText}>Loading Team's USP...</Text>
       </View>
     );
   }
@@ -482,7 +691,7 @@ const USPEmployeesScreen = ({ navigation }) => {
           <Icon name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>USP Employees</Text>
+          <Text style={styles.headerTitle}>Team's USP</Text>
           <Text style={styles.headerSubtitle}>
             Manage employees featured in USP categories
           </Text>
@@ -498,25 +707,11 @@ const USPEmployeesScreen = ({ navigation }) => {
         {/* Statistics Cards */}
         <View style={styles.statsContainer}>
           {renderStatisticsCard('Total Employees', statistics.total, 'people', '#10b981')}
-          {renderStatisticsCard('System', statistics.systemEmployees, 'account-circle', '#3b82f6')}
           {renderStatisticsCard('Manual', statistics.manualEmployees, 'person-add', '#f59e0b')}
         </View>
 
         {/* Action Buttons */}
         <View style={styles.actionButtonsContainer}>
-          <TouchableOpacity
-            style={styles.addSystemButton}
-            onPress={() => handleShowModal('system')}
-          >
-            <LinearGradient
-              colors={['#3b82f6', '#2563eb']}
-              style={styles.gradientButton}
-            >
-              <Icon name="group-add" size={20} color="#fff" />
-              <Text style={styles.addButtonText}>Add from System</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-
           <TouchableOpacity
             style={styles.addManualButton}
             onPress={() => handleShowModal('manual')}
@@ -602,7 +797,7 @@ const USPEmployeesScreen = ({ navigation }) => {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
-                {editingEmployee ? 'Edit USP Employee' : 
+                {editingEmployee ? 'Edit Team\'s USP' : 
                   modalType === 'system' ? 'Add from System' : 'Add Manually'}
               </Text>
               <TouchableOpacity onPress={handleCloseModal}>
@@ -629,27 +824,53 @@ const USPEmployeesScreen = ({ navigation }) => {
               {/* Category Dropdown */}
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Category *</Text>
+                
+                {/* Add New Category */}
+                <View style={styles.addCategoryContainer}>
+                  <TextInput
+                    style={styles.addCategoryInput}
+                    placeholder="Add new category"
+                    value={newCategoryName}
+                    onChangeText={setNewCategoryName}
+                  />
+                  <TouchableOpacity
+                    style={styles.addCategoryButton}
+                    onPress={handleCreateCategory}
+                    disabled={isCreatingCategory}
+                  >
+                    <Icon name="add" size={18} color="#fff" />
+                    <Text style={styles.addCategoryButtonText}>
+                      {isCreatingCategory ? 'Adding...' : 'Add'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Existing Categories */}
                 <View style={styles.pickerContainer}>
                   <Icon name="category" size={20} color="#10b981" />
-                  <View style={styles.picker}>
-                    {categories.map(category => (
-                      <TouchableOpacity
-                        key={category._id}
-                        style={[
-                          styles.pickerItem,
-                          formData.categoryId === category._id && styles.pickerItemSelected
-                        ]}
-                        onPress={() => handleInputChange('categoryId', category._id)}
-                      >
-                        <Text style={[
-                          styles.pickerItemText,
-                          formData.categoryId === category._id && styles.pickerItemTextSelected
-                        ]}>
-                          {category.name}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                  <ScrollView style={styles.picker} nestedScrollEnabled>
+                    {categories.length === 0 ? (
+                      <Text style={styles.pickerItemText}>No categories available</Text>
+                    ) : (
+                      categories.map(category => (
+                        <TouchableOpacity
+                          key={category._id}
+                          style={[
+                            styles.pickerItem,
+                            formData.categoryId === category._id && styles.pickerItemSelected
+                          ]}
+                          onPress={() => handleInputChange('categoryId', category._id)}
+                        >
+                          <Text style={[
+                            styles.pickerItemText,
+                            formData.categoryId === category._id && styles.pickerItemTextSelected
+                          ]}>
+                            {category.name}
+                          </Text>
+                        </TouchableOpacity>
+                      ))
+                    )}
+                  </ScrollView>
                 </View>
               </View>
 
@@ -685,6 +906,92 @@ const USPEmployeesScreen = ({ navigation }) => {
               {/* Manual Employee Fields */}
               {(modalType === 'manual' || (editingEmployee && editingEmployee.employeeType === 'manual')) && (
                 <>
+                  {/* Search User/Client */}
+                  <View style={styles.formGroup}>
+                    <Text style={styles.label}>
+                      Search User/Client 🔍
+                    </Text>
+                    <Text style={styles.helperText}>
+                      Search by name or phone - includes all registered users and enquiries
+                    </Text>
+                    <View style={styles.inputContainer}>
+                      <Icon name="search" size={20} color="#10b981" />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Type name or phone number..."
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        onFocus={() => {
+                          if (searchResults.length > 0) {
+                            setShowSearchDropdown(true);
+                          }
+                        }}
+                      />
+                      {searchLoading && (
+                        <ActivityIndicator size="small" color="#10b981" style={styles.searchLoader} />
+                      )}
+                    </View>
+
+                    {/* Search Results Dropdown */}
+                    {showSearchDropdown && searchResults.length > 0 && (
+                      <View style={styles.searchDropdown}>
+                        <ScrollView style={styles.searchResultsList} nestedScrollEnabled>
+                          {searchResults.map((user, index) => (
+                            <TouchableOpacity
+                              key={user._id || index}
+                              style={styles.searchResultItem}
+                              onPress={() => handleUserSelect(user)}
+                            >
+                              <View style={styles.searchResultContent}>
+                                <View style={styles.searchResultIcon}>
+                                  <Icon 
+                                    name={
+                                      user.type === 'user' || user.source === 'users-api'
+                                        ? "person" 
+                                        : user.type === 'enquiry' || user.source === 'enquiries' 
+                                          ? "person-outline" 
+                                          : user.type === 'buyer' || user.isBuyer 
+                                            ? "shopping-cart" 
+                                            : "store"
+                                    } 
+                                    size={20} 
+                                    color="#10b981" 
+                                  />
+                                </View>
+                                <View style={styles.searchResultInfo}>
+                                  <Text style={styles.searchResultName}>
+                                    {user.fullName || user.name || 'Unknown'}
+                                  </Text>
+                                  <Text style={styles.searchResultPhone}>
+                                    📞 {user.phone || user.mobile || user.contactNumber || 'No phone'}
+                                  </Text>
+                                  <Text style={styles.searchResultType}>
+                                    {user.type === 'user' || user.source === 'users-api'
+                                      ? '👤 User' 
+                                      : user.type === 'enquiry' || user.source === 'enquiries' 
+                                        ? '📋 Enquiry' 
+                                        : user.type === 'buyer' || user.isBuyer 
+                                          ? '🛒 Buyer' 
+                                          : '🏪 Seller'}
+                                  </Text>
+                                </View>
+                              </View>
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      </View>
+                    )}
+                    
+                    {showSearchDropdown && searchResults.length === 0 && !searchLoading && searchQuery.length >= 2 && (
+                      <View style={styles.searchDropdown}>
+                        <View style={styles.noResultsContainer}>
+                          <Icon name="person-off" size={32} color="#9ca3af" />
+                          <Text style={styles.noResultsText}>No users found</Text>
+                        </View>
+                      </View>
+                    )}
+                  </View>
+
                   <View style={styles.formGroup}>
                     <Text style={styles.label}>Name *</Text>
                     <View style={styles.inputContainer}>
@@ -1206,6 +1513,38 @@ const styles = StyleSheet.create({
     minHeight: 80,
     textAlignVertical: 'top',
   },
+  addCategoryContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+    alignItems: 'center',
+  },
+  addCategoryInput: {
+    flex: 1,
+    backgroundColor: '#f9fafb',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#1f2937',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  addCategoryButton: {
+    backgroundColor: '#10b981',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  addCategoryButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   pickerContainer: {
     flexDirection: 'row',
     backgroundColor: '#f9fafb',
@@ -1217,6 +1556,7 @@ const styles = StyleSheet.create({
   },
   picker: {
     flex: 1,
+    maxHeight: 200,
   },
   pickerItem: {
     paddingVertical: 8,
@@ -1267,6 +1607,78 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#fff',
+  },
+  helperText: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 8,
+    fontStyle: 'italic',
+  },
+  searchLoader: {
+    marginLeft: 8,
+  },
+  searchDropdown: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    maxHeight: 200,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  searchResultsList: {
+    maxHeight: 200,
+  },
+  searchResultItem: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  searchResultContent: {
+    flexDirection: 'row',
+    padding: 12,
+    alignItems: 'center',
+    gap: 12,
+  },
+  searchResultIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f0fdf4',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  searchResultInfo: {
+    flex: 1,
+  },
+  searchResultName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 2,
+  },
+  searchResultPhone: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginBottom: 2,
+  },
+  searchResultType: {
+    fontSize: 12,
+    color: '#10b981',
+    fontWeight: '500',
+  },
+  noResultsContainer: {
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noResultsText: {
+    fontSize: 14,
+    color: '#9ca3af',
+    marginTop: 8,
   },
 });
 

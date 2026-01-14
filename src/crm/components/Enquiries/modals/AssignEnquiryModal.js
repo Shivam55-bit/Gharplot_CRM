@@ -14,7 +14,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+// import Icon from 'react-native-vector-icons/MaterialIcons';
 import { getAvailableEmployees, assignEnquiriesToEmployee } from '../../../services/assignmentService';
 
 const AssignEnquiryModal = ({ visible, onClose, selectedEnquiries, onSuccess }) => {
@@ -101,7 +101,7 @@ const AssignEnquiryModal = ({ visible, onClose, selectedEnquiries, onSuccess }) 
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Assign Enquiries</Text>
             <TouchableOpacity onPress={handleClose} disabled={loading}>
-              <Icon name="close" size={24} color="#6b7280" />
+              <Text style={{ fontSize: 24, color: '#6b7280' }}>×</Text>
             </TouchableOpacity>
           </View>
 
@@ -127,7 +127,7 @@ const AssignEnquiryModal = ({ visible, onClose, selectedEnquiries, onSuccess }) 
                     <Text style={styles.employeeRole}>{employee.role?.name}</Text>
                   </View>
                   {selectedEmployee === employee._id && (
-                    <Icon name="check" size={20} color="#3b82f6" />
+                    <Text style={{ fontSize: 20, color: '#3b82f6' }}>✓</Text>
                   )}
                 </TouchableOpacity>
               ))}

@@ -91,10 +91,84 @@ export const deleteUSP = async (uspId) => {
   }
 };
 
+/**
+ * Get all USP categories
+ */
+export const getAllCategories = async () => {
+  try {
+    const response = await fetch(`${CRM_BASE_URL}/api/usp-categories`, {
+      method: 'GET',
+      headers: await getCRMAuthHeaders(),
+    });
+    
+    return await handleCRMResponse(response);
+  } catch (error) {
+    console.error('Error fetching USP categories:', error);
+    throw error;
+  }
+};
+
+/**
+ * Add employee to USP by employee ID
+ */
+export const addEmployeeById = async (data) => {
+  try {
+    const response = await fetch(`${CRM_BASE_URL}/api/usp-employees/add-by-id`, {
+      method: 'POST',
+      headers: await getCRMAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    
+    return await handleCRMResponse(response);
+  } catch (error) {
+    console.error('Error adding employee to USP:', error);
+    throw error;
+  }
+};
+
+/**
+ * Add employee manually to USP
+ */
+export const addEmployeeManually = async (data) => {
+  try {
+    const response = await fetch(`${CRM_BASE_URL}/api/usp-employees/add-manually`, {
+      method: 'POST',
+      headers: await getCRMAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    
+    return await handleCRMResponse(response);
+  } catch (error) {
+    console.error('Error adding manual employee to USP:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get all USP employees
+ */
+export const getAllUspEmployees = async () => {
+  try {
+    const response = await fetch(`${CRM_BASE_URL}/api/usp-employees`, {
+      method: 'GET',
+      headers: await getCRMAuthHeaders(),
+    });
+    
+    return await handleCRMResponse(response);
+  } catch (error) {
+    console.error('Error fetching USP employees:', error);
+    throw error;
+  }
+};
+
 export default {
   getAllUSPs,
   getUSPById,
   createUSP,
   updateUSP,
   deleteUSP,
+  getAllCategories,
+  addEmployeeById,
+  addEmployeeManually,
+  getAllUspEmployees,
 };

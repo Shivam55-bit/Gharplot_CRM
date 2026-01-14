@@ -10,22 +10,37 @@ import {
   SafeAreaView,
   StatusBar,
   Platform,
+  Modal,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getCRMAuthHeaders } from '../../services/crmAPI';
+import { createAlert, updateAlert, BASE_URL } from '../../../services/api';
 import DateTimePicker from '@react-native-community/datetimepicker';
-
-const API_BASE_URL = 'https://abc.bhoomitechzone.us';
+import AlertNotificationService from '../../../services/AlertNotificationService';
+import { getFCMToken } from '../../../utils/fcmService';
 
 const CreateAlertScreen = ({ navigation, route }) => {
+  // Get alert to edit from route params
+  const alertToEdit = route?.params?.alertToEdit;
+  const isEditMode = !!alertToEdit;
+  
   const [formData, setFormData] = useState({
-    date: new Date(),
-    time: new Date(),
-    reason: '',
-    repeatDaily: false,
+    title: alertToEdit?.title || '',
+    date: alertToEdit ? new Date(alertToEdit.date) : new Date(),
+    time: alertToEdit ? (() => {
+      const [hours, minutes] = (alertToEdit.time || '00:00').split(':');
+      const timeDate = new Date();
+      timeDate.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+      return timeDate;
+    })() : new Date(),
+    reason: alertToEdit?.reason || '',
+    repeatFrequency: alertToEdit?.repeatFrequency || 'none', // none, daily, weekly, monthly, yearly, custom
+    repeatDaily: alertToEdit?.repeatDaily || false, // Keep for backward compatibility
   });
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [showRepeatModal, setShowRepeatModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleInputChange = (field, value) => {
@@ -66,6 +81,10 @@ const CreateAlertScreen = ({ navigation, route }) => {
 
   const handleSubmit = async () => {
     // Validate required fields
+    if (!formData.title.trim()) {
+      Alert.alert('Error', 'Please enter a title for the alert');
+      return;
+    }
     if (!formData.reason.trim()) {
       Alert.alert('Error', 'Please enter a reason for the alert');
       return;
@@ -73,54 +92,229 @@ const CreateAlertScreen = ({ navigation, route }) => {
 
     setIsSubmitting(true);
     try {
-      const token = await AsyncStorage.getItem('employee_token');
-      
-      // Format date and time for backend
-      const dateStr = formData.date.toISOString().split('T')[0]; // YYYY-MM-DD
+      // Format time for backend
       const timeStr = formatTime(formData.time); // HH:MM
       
-      console.log('📤 Creating alert:', { dateStr, timeStr, reason: formData.reason, repeatDaily: formData.repeatDaily });
+      // Prepare date and metadata based on repeat frequency
+      let dateStr;
+      let repeatMetadata = {};
       
-      const response = await fetch(`${API_BASE_URL}/api/alerts/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
-        },
-        body: JSON.stringify({
-          date: dateStr,
-          time: timeStr,
-          reason: formData.reason,
-          repeatDaily: formData.repeatDaily,
-        }),
+      if (formData.repeatFrequency === 'none') {
+        // One-time alert: use exact selected date
+        dateStr = formData.date.toISOString().split('T')[0]; // YYYY-MM-DD
+        console.log('📅 One-time alert - using selected date:', dateStr);
+      } else if (formData.repeatFrequency === 'daily') {
+        // Daily: ignore date, use current date, only time matters
+        dateStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        console.log('🔄 Daily alert - using current date, time matters:', timeStr);
+      } else if (formData.repeatFrequency === 'weekly') {
+        // Weekly: store day of week (0=Sunday, 1=Monday, etc)
+        const dayOfWeek = formData.date.getDay();
+        dateStr = new Date().toISOString().split('T')[0]; // Use current date
+        repeatMetadata.dayOfWeek = dayOfWeek;
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        console.log(`🔄 Weekly alert - every ${dayNames[dayOfWeek]} at ${timeStr}`);
+      } else if (formData.repeatFrequency === 'monthly') {
+        // Monthly: store day of month (1-31)
+        const dayOfMonth = formData.date.getDate();
+        dateStr = new Date().toISOString().split('T')[0]; // Use current date
+        repeatMetadata.dayOfMonth = dayOfMonth;
+        console.log(`🔄 Monthly alert - every ${dayOfMonth} of month at ${timeStr}`);
+      } else if (formData.repeatFrequency === 'yearly') {
+        // Yearly: store month and day
+        const month = formData.date.getMonth() + 1; // 1-12
+        const day = formData.date.getDate(); // 1-31
+        dateStr = new Date().toISOString().split('T')[0]; // Use current date
+        repeatMetadata.month = month;
+        repeatMetadata.dayOfMonth = day;
+        console.log(`🔄 Yearly alert - every ${day}/${month} at ${timeStr}`);
+      }
+
+      console.log(`📤 ${isEditMode ? 'Updating' : 'Creating'} alert:`, { 
+        dateStr, 
+        timeStr, 
+        reason: formData.reason, 
+        repeatFrequency: formData.repeatFrequency,
+        repeatMetadata,
+        repeatDaily: formData.repeatFrequency === 'daily'
       });
 
-      const result = await response.json();
-      console.log('🔔 Create Alert Response:', result);
+      let result;
       
-      if (result.success) {
+      // Prepare alert data
+      const alertData = {
+        title: formData.title,
+        date: dateStr,
+        time: timeStr,
+        reason: formData.reason,
+        repeatFrequency: formData.repeatFrequency,
+        repeatMetadata: repeatMetadata, // Store day/month info for weekly/monthly/yearly
+        repeatDaily: formData.repeatFrequency === 'daily', // Map to repeatDaily for backward compatibility
+        isActive: true,
+      };
+      
+      if (isEditMode) {
+        // UPDATE existing alert using new API function
+        const alertId = alertToEdit._id || alertToEdit.id;
+        result = await updateAlert(alertId, alertData);
+        console.log('🔔 Update Alert Response:', result);
+      } else {
+        // CREATE new alert using new API function
+        result = await createAlert(alertData);
+        console.log('🔔 Create Alert Response:', result);
+      }
+      
+      if (result.success || result.alert || result.data) {
+        // Extract the alert ID from response
+        const alertId = isEditMode 
+          ? (alertToEdit._id || alertToEdit.id)
+          : (result.alert?._id || result.alert?.id || result.data?._id || result.data?.id);
+        
+        if (alertId) {
+          console.log(`📤 ${isEditMode ? 'Rescheduling' : 'Scheduling'} FCM notification for alert:`, alertId);
+          
+          // ⚠️ CRITICAL: Send FCM schedule request to backend
+          try {
+            // Get FCM token
+            const fcmToken = await getFCMToken();
+            
+            if (!fcmToken) {
+              console.warn('⚠️ No FCM token available, notification may not work');
+            }
+            
+            // Combine date and time for scheduledDateTime
+            const [year, month, day] = dateStr.split('-').map(Number);
+            const [hours, minutes] = timeStr.split(':').map(Number);
+            const scheduledDateTime = new Date(year, month - 1, day, hours, minutes).toISOString();
+            
+            // Get CRM auth headers for FCM scheduling request
+            const headers = await getCRMAuthHeaders();
+            
+            // Call backend API to schedule FCM notification
+            const fcmResponse = await fetch(`${BASE_URL}/api/alert/schedule-notification`, {
+              method: 'POST',
+              headers: {
+                ...headers,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                alertId: alertId,
+                reason: formData.reason,
+                date: dateStr,
+                time: timeStr,
+                scheduledDateTime: scheduledDateTime,
+                repeatFrequency: formData.repeatFrequency,
+                repeatMetadata: repeatMetadata,
+                repeatDaily: formData.repeatFrequency === 'daily',
+                notificationType: 'alert',
+                fcmToken: fcmToken, // Send FCM token to backend
+              }),
+            });
+            
+            // Check if response is JSON before parsing
+            const contentType = fcmResponse.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+              const fcmResult = await fcmResponse.json();
+              
+              if (fcmResult.success) {
+                console.log('✅ FCM notification scheduled successfully via backend');
+              } else {
+                console.warn('⚠️ Backend FCM scheduling failed:', fcmResult.message);
+              }
+            } else {
+              const errorText = await fcmResponse.text();
+              console.warn('⚠️ Backend returned non-JSON response (endpoint may not be implemented yet):', errorText.substring(0, 100));
+            }
+          } catch (fcmError) {
+            console.error('❌ Error scheduling FCM notification:', fcmError);
+            // Don't fail the whole operation, just log it
+          }
+          
+          // Also schedule local notification as backup
+          const scheduleResult = await AlertNotificationService.scheduleAlert({
+            id: alertId,
+            date: dateStr,
+            time: timeStr,
+            title: formData.title,
+            reason: formData.reason,
+            repeatFrequency: formData.repeatFrequency,
+            repeatMetadata: repeatMetadata,
+            repeatDaily: formData.repeatFrequency === 'daily',
+          });
+          
+          if (scheduleResult.success) {
+            console.log('✅ Local backup notification scheduled:', scheduleResult.scheduledFor);
+          } else {
+            console.warn('⚠️ Failed to schedule local notification:', scheduleResult.message);
+          }
+        } else {
+          console.warn('⚠️ No alert ID received, notification not scheduled');
+        }
+        
         // Reset form
         setFormData({
+          title: '',
           date: new Date(),
           time: new Date(),
           reason: '',
+          repeatFrequency: 'none',
           repeatDaily: false,
         });
         
-        Alert.alert('Success', 'Alert created successfully!', [
-          { 
-            text: 'OK', 
-            onPress: () => {
-              navigation.goBack();
-            }
-          },
-        ]);
+        // Get repeat message with specific details
+        let scheduleInfo;
+        if (formData.repeatFrequency === 'none') {
+          scheduleInfo = `📅 Scheduled: ${dateStr} at ${timeStr}`;
+        } else if (formData.repeatFrequency === 'daily') {
+          scheduleInfo = `🔄 Repeats daily at ${timeStr}`;
+        } else if (formData.repeatFrequency === 'weekly') {
+          const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+          const dayName = dayNames[formData.date.getDay()];
+          scheduleInfo = `🔄 Repeats every ${dayName} at ${timeStr}`;
+        } else if (formData.repeatFrequency === 'monthly') {
+          const dayOfMonth = formData.date.getDate();
+          scheduleInfo = `🔄 Repeats monthly on day ${dayOfMonth} at ${timeStr}`;
+        } else if (formData.repeatFrequency === 'yearly') {
+          const month = formData.date.getMonth() + 1;
+          const day = formData.date.getDate();
+          scheduleInfo = `🔄 Repeats yearly on ${day}/${month} at ${timeStr}`;
+        } else {
+          scheduleInfo = `🔄 Repeats ${formData.repeatFrequency} at ${timeStr}`;
+        }
+        
+        const repeatMsg = formData.repeatFrequency !== 'none' ? ' at the scheduled time' : '';
+        
+        Alert.alert(
+          '✅ Success', 
+          `Alert ${isEditMode ? 'updated' : 'created'} successfully!\n\n${scheduleInfo}\n\n🔔 You will receive notification${repeatMsg}`, 
+          [
+            { 
+              text: 'OK', 
+              onPress: () => {
+                navigation.goBack();
+              }
+            },
+          ]
+        );
       } else {
-        Alert.alert('Error', result.message || 'Failed to create alert');
+        Alert.alert('Error', result.message || 'Failed to create reminder');
       }
     } catch (error) {
       console.error('❌ Create alert error:', error);
-      Alert.alert('Error', 'Failed to create alert. Please try again.');
+      
+      // User-friendly error message
+      let errorMessage = 'Failed to create alert. ';
+      if (error.message.includes('404')) {
+        errorMessage += 'API endpoint not found. Please check backend.';
+      } else if (error.message.includes('401') || error.message.includes('403') || error.message.includes('unauthorized')) {
+        errorMessage += 'Authentication failed. Please login again.';
+      } else if (error.message) {
+        errorMessage += error.message;
+      } else {
+        errorMessage += 'Please try again.';
+      }
+      
+      Alert.alert('Error', errorMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -129,31 +323,58 @@ const CreateAlertScreen = ({ navigation, route }) => {
   const handleCancel = () => {
     // Reset form
     setFormData({
+      title: '',
       date: new Date(),
       time: new Date(),
       reason: '',
+      repeatFrequency: 'none',
       repeatDaily: false,
     });
     navigation.goBack();
   };
 
+  const getRepeatLabel = () => {
+    const labels = {
+      none: 'Does not repeat',
+      daily: 'Daily',
+      weekly: 'Weekly',
+      monthly: 'Monthly',
+      yearly: 'Yearly'
+    };
+    return labels[formData.repeatFrequency] || 'Does not repeat';
+  };
+
+  const handleRepeatSelect = (frequency) => {
+    setFormData(prev => ({
+      ...prev,
+      repeatFrequency: frequency,
+      repeatDaily: frequency === 'daily'
+    }));
+    setShowRepeatModal(false);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor="#7c3aed" barStyle="light-content" />
-      
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleCancel} style={styles.backButton}>
-          <Icon name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Create New Alert</Text>
-        <View style={styles.placeholder} />
-      </View>
+      <StatusBar backgroundColor="#f2f6ff" barStyle="dark-content" />
 
       <ScrollView style={styles.scrollContent}>
 
           {/* Form */}
           <View style={styles.formContainer}>
+            {/* Title Field */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>
+                Title <Text style={styles.required}>*</Text>
+              </Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter alert title"
+                value={formData.title}
+                onChangeText={(value) => handleInputChange('title', value)}
+                placeholderTextColor="#9ca3af"
+              />
+            </View>
+
             {/* Date Field */}
             <View style={styles.inputGroup}>
               <Text style={styles.label}>
@@ -219,17 +440,16 @@ const CreateAlertScreen = ({ navigation, route }) => {
               />
             </View>
 
-            {/* Repeat Daily Checkbox */}
-            <View style={styles.checkboxContainer}>
+            {/* Repeat Frequency Picker */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Repeat</Text>
               <TouchableOpacity
-                style={styles.checkbox}
-                onPress={() => handleInputChange('repeatDaily', !formData.repeatDaily)}
+                style={styles.inputContainer}
+                onPress={() => setShowRepeatModal(true)}
               >
-                {formData.repeatDaily && (
-                  <Icon name="checkmark" size={16} color="#1e40af" />
-                )}
+                <Text style={styles.dateTimeText}>{getRepeatLabel()}</Text>
+                <Icon name="chevron-down-outline" size={20} color="#6b7280" style={styles.inputIcon} />
               </TouchableOpacity>
-              <Text style={styles.checkboxLabel}>Repeat Daily</Text>
             </View>
 
             {/* Action Buttons */}
@@ -248,12 +468,83 @@ const CreateAlertScreen = ({ navigation, route }) => {
                 disabled={isSubmitting}
               >
                 <Text style={styles.createButtonText}>
-                  {isSubmitting ? 'Creating...' : 'Create Alert'}
+                  {isSubmitting ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Alert' : 'Create Alert')}
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
       </ScrollView>
+
+      {/* Repeat Frequency Modal */}
+      <Modal
+        visible={showRepeatModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowRepeatModal(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowRepeatModal(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Repeat</Text>
+            
+            {/* Repeat Options */}
+            <TouchableOpacity 
+              style={[styles.repeatOption, formData.repeatFrequency === 'none' && styles.repeatOptionSelected]}
+              onPress={() => handleRepeatSelect('none')}
+            >
+              <Text style={[styles.repeatOptionText, formData.repeatFrequency === 'none' && styles.repeatOptionTextSelected]}>
+                Does not repeat
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.repeatOption, formData.repeatFrequency === 'daily' && styles.repeatOptionSelected]}
+              onPress={() => handleRepeatSelect('daily')}
+            >
+              <Text style={[styles.repeatOptionText, formData.repeatFrequency === 'daily' && styles.repeatOptionTextSelected]}>
+                Daily
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.repeatOption, formData.repeatFrequency === 'weekly' && styles.repeatOptionSelected]}
+              onPress={() => handleRepeatSelect('weekly')}
+            >
+              <Text style={[styles.repeatOptionText, formData.repeatFrequency === 'weekly' && styles.repeatOptionTextSelected]}>
+                Weekly
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.repeatOption, formData.repeatFrequency === 'monthly' && styles.repeatOptionSelected]}
+              onPress={() => handleRepeatSelect('monthly')}
+            >
+              <Text style={[styles.repeatOptionText, formData.repeatFrequency === 'monthly' && styles.repeatOptionTextSelected]}>
+                Monthly
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.repeatOption, formData.repeatFrequency === 'yearly' && styles.repeatOptionSelected]}
+              onPress={() => handleRepeatSelect('yearly')}
+            >
+              <Text style={[styles.repeatOptionText, formData.repeatFrequency === 'yearly' && styles.repeatOptionTextSelected]}>
+                Yearly
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.modalCloseButton}
+              onPress={() => setShowRepeatModal(false)}
+            >
+              <Text style={styles.modalCloseText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -396,6 +687,61 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   createButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 30,
+    maxHeight: '70%',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  repeatOption: {
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 8,
+    backgroundColor: '#f9fafb',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  repeatOptionSelected: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#3b82f6',
+  },
+  repeatOptionText: {
+    fontSize: 15,
+    color: '#374151',
+    fontWeight: '500',
+  },
+  repeatOptionTextSelected: {
+    color: '#1e40af',
+    fontWeight: '600',
+  },
+  modalCloseButton: {
+    backgroundColor: '#6b7280',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  modalCloseText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',

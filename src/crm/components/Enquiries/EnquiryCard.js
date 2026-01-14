@@ -1,13 +1,15 @@
 /**
  * Enquiry Card Component
  * Displays individual enquiry with all details and actions
+ * Updated with ReminderNotificationService for background notifications
  */
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+// import Icon from 'react-native-vector-icons/MaterialIcons';
 import SourceBadge from './SourceBadge';
 import AssignmentBadge from './AssignmentBadge';
 import PriorityBadge from './PriorityBadge';
+import ReminderNotificationService from '../../../services/ReminderNotificationService';
 
 const EnquiryCard = ({ 
   enquiry, 
@@ -23,9 +25,9 @@ const EnquiryCard = ({
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-IN', {
+    return date.toLocaleDateString('en-GB', {
       day: '2-digit',
-      month: 'short',
+      month: '2-digit', 
       year: 'numeric',
     });
   };
@@ -41,6 +43,50 @@ const EnquiryCard = ({
       }).format(price);
     }
     return String(price);
+  };
+
+  // 🔔 QUICK REMINDER: Set reminder for 1 hour from now using ReminderNotificationService
+  const handleQuickReminder = async () => {
+    try {
+      // Set reminder for 1 hour from now
+      const reminderDate = new Date();
+      reminderDate.setHours(reminderDate.getHours() + 1);
+
+      const reminderData = {
+        id: `reminder_${enquiry._id}_${Date.now()}`,
+        clientName: enquiry.clientName,
+        message: `Follow up with ${enquiry.clientName} regarding property inquiry`,
+        scheduledDate: reminderDate,
+        enquiryId: enquiry._id,
+        enquiry: enquiry,
+        // Enhanced navigation configuration for notification click
+        targetScreen: 'EnquiryDetails',
+        navigationType: 'nested',
+        navigationData: {
+          enquiryId: enquiry._id,
+          clientName: enquiry.clientName,
+          reminderType: 'quick_follow_up',
+          enquiry: enquiry,
+          showDetails: true,
+          scrollToEnquiry: true,
+        },
+      };
+
+      const result = await ReminderNotificationService.scheduleReminder(reminderData);
+      
+      if (result.success) {
+        Alert.alert(
+          'Reminder Set!',
+          `🔔 Reminder scheduled for ${reminderDate.toLocaleString()}\n\nYou will receive a notification even if the app is closed.`,
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert('Error', result.message || 'Failed to set reminder');
+      }
+    } catch (error) {
+      console.error('❌ Failed to set quick reminder:', error);
+      Alert.alert('Error', 'Failed to set reminder. Please try again.');
+    }
   };
 
   // Safe value extraction to prevent object rendering
@@ -82,7 +128,7 @@ const EnquiryCard = ({
               onPress={() => canSelectItem && onSelect()}
               disabled={!canSelectItem}
             >
-              {isSelected && <Icon name="check" size={16} color="#ffffff" />}
+              {isSelected && <Text style={{ fontSize: 16, color: '#ffffff' }}>✓</Text>}
             </TouchableOpacity>
           )}
         </View>
@@ -97,15 +143,15 @@ const EnquiryCard = ({
       {/* Contact Details */}
       <View style={styles.detailsSection}>
         <View style={styles.detailRow}>
-          <Icon name="phone" size={16} color="#6b7280" />
+          <Text style={{ fontSize: 16, color: '#6b7280' }}>📞</Text>
           <Text style={styles.detailText}>{enquiry.contactNumber}</Text>
         </View>
         <View style={styles.detailRow}>
-          <Icon name="email" size={16} color="#6b7280" />
+          <Text style={{ fontSize: 16, color: '#6b7280' }}>📧</Text>
           <Text style={styles.detailText}>{enquiry.email}</Text>
         </View>
         <View style={styles.detailRow}>
-          <Icon name="location-on" size={16} color="#6b7280" />
+          <Text style={{ fontSize: 16, color: '#6b7280' }}>📍</Text>
           <Text style={styles.detailText}>{enquiry.propertyLocation}</Text>
         </View>
       </View>
@@ -114,18 +160,18 @@ const EnquiryCard = ({
       {enquiry.propertyType !== 'N/A' && (
         <View style={styles.propertySection}>
           <View style={styles.detailRow}>
-            <Icon name="home" size={16} color="#6b7280" />
+            <Text style={{ fontSize: 16, color: '#6b7280' }}>🏠</Text>
             <Text style={styles.detailText}>{enquiry.propertyType}</Text>
           </View>
           {enquiry.price !== 'N/A' && (
             <View style={styles.detailRow}>
-              <Icon name="currency-rupee" size={16} color="#6b7280" />
+              <Text style={{ fontSize: 16, color: '#6b7280' }}>₹</Text>
               <Text style={styles.detailText}>{formatPrice(enquiry.price)}</Text>
             </View>
           )}
           {safeAreaDetails !== 'N/A' && (
             <View style={styles.detailRow}>
-              <Icon name="square-foot" size={16} color="#6b7280" />
+              <Text style={{ fontSize: 16, color: '#6b7280' }}>□</Text>
               <Text style={styles.detailText}>{safeAreaDetails}</Text>
             </View>
           )}
@@ -134,10 +180,7 @@ const EnquiryCard = ({
 
       {/* Date and Status */}
       <View style={styles.metaSection}>
-        <View style={styles.detailRow}>
-          <Icon name="schedule" size={16} color="#6b7280" />
-          <Text style={styles.detailText}>{formatDate(enquiry.createdAt)}</Text>
-        </View>
+        <Text style={styles.dateText}>📅 {formatDate(enquiry.createdAt)}</Text>
         <View style={[
           styles.statusBadge,
           { backgroundColor: getStatusColor(enquiry.status) }
@@ -148,19 +191,24 @@ const EnquiryCard = ({
 
       {/* Action Buttons */}
       <View style={styles.actionsSection}>
-        <TouchableOpacity style={styles.actionButton} onPress={() => onSetReminder(enquiry)}>
-          <Icon name="notifications" size={18} color="#3b82f6" />
-          <Text style={styles.actionText}>Reminder</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.actionButton} onPress={() => onFollowUp(enquiry)}>
-          <Icon name="track-changes" size={18} color="#10b981" />
-          <Text style={styles.actionText}>Follow Up</Text>
+        {/* Custom Reminder Button */}
+        <TouchableOpacity 
+          style={[
+            styles.actionButton, 
+            styles.reminderButton,
+            { backgroundColor: enquiry.source === 'client' ? '#e0f2fe' : '#f0f9ff' }
+          ]} 
+          onPress={() => onSetReminder(enquiry)}
+        >
+          <Text style={{ fontSize: 18, color: '#3b82f6' }}>🔔</Text>
+          <Text style={styles.actionText}>
+            {enquiry.source === 'client' ? 'Set Reminder' : 'Reminder'}
+          </Text>
         </TouchableOpacity>
         
         {isAssigned && (
-          <TouchableOpacity style={styles.actionButton} onPress={() => onUnassign(enquiry)}>
-            <Icon name="person-remove" size={18} color="#ef4444" />
+          <TouchableOpacity style={[styles.actionButton, styles.unassignButton]} onPress={() => onUnassign(enquiry)}>
+            <Text style={{ fontSize: 18, color: '#ef4444' }}>🚫</Text>
             <Text style={styles.actionText}>Unassign</Text>
           </TouchableOpacity>
         )}
@@ -276,6 +324,11 @@ const styles = StyleSheet.create({
     color: '#4b5563',
     flex: 1,
   },
+  dateText: {
+    fontSize: 13,
+    color: '#6b7280',
+    fontWeight: '500',
+  },
   statusBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -302,11 +355,33 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: '#f8fafc',
     gap: 6,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  reminderButton: {
+    borderColor: '#bfdbfe',
+  },
+  followUpButton: {
+    backgroundColor: '#f0fdf4',
+    borderColor: '#bbf7d0',
+  },
+  unassignButton: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#fecaca',
   },
   actionText: {
     fontSize: 12,
     fontWeight: '500',
     color: '#6b7280',
+  },
+  quickReminderButton: {
+    backgroundColor: '#fef3c7',
+    borderColor: '#fde68a',
+  },
+  quickActionText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#92400e',
   },
 });
 

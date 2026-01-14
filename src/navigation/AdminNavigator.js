@@ -13,18 +13,27 @@ import AdminBottomTabs from './AdminBottomTabsSimple';
 import RoleManagementScreen from '../crm/crmscreens/Admin/RoleManagementScreen';
 import Reminders from '../crm/crmscreens/Admin/Reminders';
 import Alerts from '../crm/crmscreens/Admin/Alerts';
+// Reuse employee CreateAlert screen for both roles
+import CreateAlertScreen from '../crm/crmscreens/Employee/CreateAlertScreen';
 import EmployeeManagementScreen from '../crm/crmscreens/Admin/EmployeeManagementScreen';
 import AdminReminderControlScreen from '../crm/crmscreens/Admin/AdminReminderControlScreen';
 import AdminMyReminders from '../crm/crmscreens/Admin/AdminMyReminders';
+import AdminFollowUps from '../crm/crmscreens/Admin/AdminFollow-up';
 import AdminReminderMonitorScreen from '../crm/crmscreens/Admin/AdminReminderMonitorScreen';
 import BadAttendantAlertsScreen from '../crm/crmscreens/Admin/BadAttendantAlertsScreen';
 import EnquiriesScreen from '../crm/crmscreens/Admin/EnquiriesScreen';
+import EnquiryDetailScreen from '../crm/crmscreens/Admin/EnquiryDetailScreen';
 import BoughtPropertyScreen from '../crm/crmscreens/Admin/BoughtPropertyScreen';
 import ServiceManagementScreen from '../crm/crmscreens/Admin/ServiceManagementScreen';
 import USPCategoriesScreen from '../crm/crmscreens/Admin/USPCategoriesScreen';
 import USPEmployeesScreen from '../crm/crmscreens/Admin/USPEmployeesScreen';
 import MyRemindersScreen from '../crm/crmscreens/Employee/MyReminders';
 import FollowUpsScreen from '../crm/crmscreens/Employee/FollowUps';
+// Edit Screens for Notifications
+import EditReminderScreen from '../screens/EditReminderScreen';
+import EditAlertScreen from '../screens/EditAlertScreen';
+// Property Management Screens
+import PropertyAnalytics from '../screens/CRM/PropertyManagement/PropertyAnalytics';
 
 const Stack = createStackNavigator();
 
@@ -132,6 +141,21 @@ const AdminNavigator = ({ onLogout }) => {
         }}
       />
       <Stack.Screen
+        name="CreateAlert"
+        component={CreateAlertScreen}
+        options={{
+          headerShown: true,
+          title: 'Create Reminder',
+          headerStyle: {
+            backgroundColor: '#007AFF',
+          },
+          headerTintColor: '#fff',
+          headerTitleStyle: {
+            fontWeight: 'bold',
+          },
+        }}
+      />
+      <Stack.Screen
         name="BadAttendantAlerts"
         component={BadAttendantAlertsScreen}
         options={{
@@ -167,6 +191,11 @@ const AdminNavigator = ({ onLogout }) => {
         options={{ headerShown: false }}
       />
       <Stack.Screen
+        name="AdminFollowUps"
+        component={AdminFollowUps}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
         name="BoughtProperty"
         component={BoughtPropertyScreen}
         options={{
@@ -194,6 +223,21 @@ const AdminNavigator = ({ onLogout }) => {
         options={{
           headerShown: true,
           title: 'Enquiries',
+          headerStyle: {
+            backgroundColor: '#007AFF',
+          },
+          headerTintColor: '#fff',
+          headerTitleStyle: {
+            fontWeight: 'bold',
+          },
+        }}
+      />
+      <Stack.Screen
+        name="EnquiryDetail"
+        component={EnquiryDetailScreen}
+        options={{
+          headerShown: true,
+          title: 'Enquiry Details',
           headerStyle: {
             backgroundColor: '#007AFF',
           },
@@ -239,6 +283,55 @@ const AdminNavigator = ({ onLogout }) => {
           title: 'Alerts',
           headerStyle: {
             backgroundColor: '#007AFF',
+          },
+          headerTintColor: '#fff',
+          headerTitleStyle: {
+            fontWeight: 'bold',
+          },
+        }}
+      />
+      
+      {/* Property Management Screens */}
+      <Stack.Screen
+        name="PropertyAnalytics"
+        component={PropertyAnalytics}
+        options={{
+          headerShown: true,
+          title: 'Property Analytics',
+          headerStyle: {
+            backgroundColor: '#4F46E5',
+          },
+          headerTintColor: '#fff',
+          headerTitleStyle: {
+            fontWeight: 'bold',
+          },
+        }}
+      />
+      
+      {/* Edit Screens for Notifications */}
+      <Stack.Screen
+        name="EditReminder"
+        component={EditReminderScreen}
+        options={{
+          headerShown: true,
+          title: 'Edit Reminder',
+          headerStyle: {
+            backgroundColor: '#28a745',
+          },
+          headerTintColor: '#fff',
+          headerTitleStyle: {
+            fontWeight: 'bold',
+          },
+        }}
+      />
+      <Stack.Screen
+        name="EditAlert"
+        component={EditAlertScreen}
+        options={{
+          headerShown: true,
+          title: 'Edit Alert',
+          headerStyle: {
+            backgroundColor: '#ff9800',
           },
           headerTintColor: '#fff',
           headerTitleStyle: {

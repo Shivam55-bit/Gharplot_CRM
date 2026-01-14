@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   Dimensions,
   Text,
+  Platform,
 } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -285,7 +286,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderTopWidth: 1,
     borderTopColor: '#e1e1e1',
-    paddingBottom: 8,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 8,
     paddingTop: 8,
     shadowColor: '#000',
     shadowOffset: {

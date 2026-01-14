@@ -11,9 +11,10 @@ react {
 }
 
 /**
- * Use ProGuard (R8) for Release builds if needed.
+ * Use ProGuard (R8) for Release builds for optimization.
+ * Enable for smaller APK size
  */
-def enableProguardInReleaseBuilds = false
+def enableProguardInReleaseBuilds = true
 
 /**
  * JavaScriptCore (JSC) for non-Hermes builds
@@ -31,7 +32,7 @@ android {
         applicationId "com.bhoomitechzone.gharplot.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 3
+        versionCode 5
         versionName "1.0.2"
 
         // Needed for new Gradle plugin
@@ -58,6 +59,12 @@ android {
                 storePassword MYAPP_RELEASE_STORE_PASSWORD
                 keyAlias MYAPP_RELEASE_KEY_ALIAS
                 keyPassword MYAPP_RELEASE_KEY_PASSWORD
+            } else {
+                // Fallback to debug keystore for testing
+                storeFile file("debug.keystore")
+                storePassword "android"
+                keyAlias "androiddebugkey"
+                keyPassword "android"
             }
         }
     }

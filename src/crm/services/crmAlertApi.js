@@ -80,7 +80,8 @@ export const deleteAlert = async (alertId) => {
 export const getSystemAlerts = async (params = {}) => {
   try {
     const queryString = buildQueryString(params);
-    const url = `${CRM_BASE_URL}/api/crm/admin/alerts${queryString ? `?${queryString}` : ''}`;
+    // Use public alerts endpoint; some deployments do not expose the admin-specific path
+    const url = `${CRM_BASE_URL}/api/alerts${queryString ? `?${queryString}` : ''}`;
     
     const response = await fetch(url, {
       method: 'GET',
@@ -99,7 +100,7 @@ export const getSystemAlerts = async (params = {}) => {
  */
 export const createSystemAlert = async (alertData) => {
   try {
-    const response = await fetch(`${CRM_BASE_URL}/api/crm/admin/alerts`, {
+    const response = await fetch(`${CRM_BASE_URL}/api/alerts`, {
       method: 'POST',
       headers: await getCRMAuthHeaders(),
       body: JSON.stringify(alertData),
@@ -117,7 +118,7 @@ export const createSystemAlert = async (alertData) => {
  */
 export const updateSystemAlert = async (alertId, alertData) => {
   try {
-    const response = await fetch(`${CRM_BASE_URL}/api/crm/admin/alerts/${alertId}`, {
+    const response = await fetch(`${CRM_BASE_URL}/api/alerts/${alertId}`, {
       method: 'PUT',
       headers: await getCRMAuthHeaders(),
       body: JSON.stringify(alertData),
@@ -135,7 +136,7 @@ export const updateSystemAlert = async (alertId, alertData) => {
  */
 export const deleteSystemAlert = async (alertId) => {
   try {
-    const response = await fetch(`${CRM_BASE_URL}/api/crm/admin/alerts/${alertId}`, {
+    const response = await fetch(`${CRM_BASE_URL}/api/alerts/${alertId}`, {
       method: 'DELETE',
       headers: await getCRMAuthHeaders(),
     });

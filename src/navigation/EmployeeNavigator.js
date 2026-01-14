@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -15,6 +16,7 @@ import MyReminders from '../screens/Employee/MyReminders';
 import FollowUps from '../screens/Employee/FollowUps';
 import EmployeeReminderAcceptScreen from '../screens/Employee/EmployeeReminderAcceptScreen';
 import EmployeeProfile from '../crm/crmscreens/Employee/EmployeeProfile';
+import CreateAlertScreen from '../crm/crmscreens/Employee/CreateAlertScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -42,6 +44,11 @@ const DashboardStack = () => (
       component={EmployeeProfile}
       options={{ title: 'Profile', headerShown: false }}
     />
+      <Stack.Screen
+        name="CreateAlert"
+        component={CreateAlertScreen}
+        options={{ title: 'Create Reminder' }}
+      />
   </Stack.Navigator>
 );
 
@@ -135,6 +142,11 @@ const EmployeeNavigator = ({ onLogout }) => {
         tabBarActiveTintColor: '#2196F3',
         tabBarInactiveTintColor: 'gray',
         headerShown: false,
+        tabBarStyle: {
+          paddingBottom: Platform.OS === 'ios' ? 20 : 8,
+          height: Platform.OS === 'ios' ? 88 : 60,
+          paddingTop: 8,
+        },
       })}
     >
       <Tab.Screen

@@ -9,6 +9,9 @@ import {
   TouchableOpacity,
   Dimensions,
   ActivityIndicator,
+  Linking,
+  Alert,
+  FlatList,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { getPropertyAnalytics, getAllProperties } from '../../../services/propertyService';
@@ -18,6 +21,8 @@ const { width } = Dimensions.get('window');
 const PropertyAnalytics = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showPropertyList, setShowPropertyList] = useState(false);
+  const [properties, setProperties] = useState([]);
   const [analytics, setAnalytics] = useState({
     total: 0,
     residential: 0,
@@ -41,14 +46,39 @@ const PropertyAnalytics = ({ navigation }) => {
   const loadAnalytics = async () => {
     try {
       setError(null);
-      const analyticsData = await getPropertyAnalytics();
+      const [analyticsData, propertiesData] = await Promise.all([
+        getPropertyAnalytics(),
+        getAllProperties()
+      ]);
       setAnalytics(analyticsData);
+      setProperties(propertiesData);
     } catch (error) {
       console.error('Error loading analytics:', error);
       setError(error.message || 'Failed to load analytics');
     } finally {
       setLoading(false);
     }
+  };
+
+  const makeCall = (phoneNumber) => {
+    if (!phoneNumber) {
+      Alert.alert('Error', 'Phone number not available');
+      return;
+    }
+    
+    const url = `tel:${phoneNumber}`;
+    Linking.canOpenURL(url)
+      .then((supported) => {
+        if (supported) {
+          return Linking.openURL(url);
+        } else {
+          Alert.alert('Error', 'Unable to make phone calls on this device');
+        }
+      })
+      .catch((err) => {
+        console.error('Error making call:', err);
+        Alert.alert('Error', 'Failed to make call');
+      });
   };
 
   const calculatePercentage = (value, total) => {
@@ -350,6 +380,138 @@ const PropertyAnalytics = ({ navigation }) => {
             </View>
           </View>
         </View>
+
+        {/* Property List Button */}
+        <TouchableOpacity 
+          style={styles.viewPropertiesButton}
+          onPress={() => setShowPropertyList(!showPropertyList)}
+        >
+          <MaterialIcons name={showPropertyList ? "expand-less" : "expand-more"} size={24} color="#FFFFFF" />
+          <Text style={styles.viewPropertiesText}>
+            {showPropertyList ? 'Hide' : 'View'} All Properties ({properties.length})
+          </Text>
+        </TouchableOpacity>
+
+        {/* Property List */}
+        {showPropertyList && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Property List with Sellers</Text>
+            {properties.length > 0 ? (
+              properties.map((property, index) => (
+                <View key={property._id || index} style={styles.propertyCard}>
+                  {/* Property Header */}
+                  <View style={styles.propertyHeader}>
+                    <View style={styles.propertyTitleSection}>
+                      <Text style={styles.propertyTitle} numberOfLines={2}>
+                        {property.title || property.name || property.propertyName || 'Untitled Property'}
+                      </Text>
+                      <Text style={styles.propertyType}>
+                        {property.type || property.propertyType || 'N/A'} • {property.purpose || 'Sale'}
+                      </Text>
+                    </View>
+                    <View style={[
+                      styles.statusBadge,
+                      { backgroundColor: property.status?.toLowerCase() === 'approved' ? '#10B981' : 
+                                        property.status?.toLowerCase() === 'pending' ? '#F59E0B' : '#EF4444' }
+                    ]}>
+                      <Text style={styles.statusBadgeText}>
+                        {property.status || 'Pending'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Property Details */}
+                  <View style={styles.propertyDetails}>
+                    <View style={styles.detailRow}>
+                      <MaterialIcons name="location-on" size={16} color="#6B7280" />
+                      <Text style={styles.detailText} numberOfLines={1}>
+                        {property.location || property.address || property.city || 'Location not specified'}
+                      </Text>
+                    </View>
+                    <View style={styles.detailRow}>
+                      <MaterialIcons name="currency-rupee" size={16} color="#6B7280" />
+                      <Text style={styles.detailText}>
+                        {property.price ? `₹${parseInt(property.price).toLocaleString('en-IN')}` : 'Price not available'}
+                      </Text>
+                    </View>
+                    {property.area && (
+                      <View style={styles.detailRow}>
+                        <MaterialIcons name="square-foot" size={16} color="#6B7280" />
+                        <Text style={styles.detailText}>
+                          {property.area}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Seller Information */}
+                  <View style={styles.sellerSection}>
+                    <View style={styles.sellerHeader}>
+                      <MaterialIcons name="person" size={20} color="#3B82F6" />
+                      <Text style={styles.sellerTitle}>Seller/Owner Details</Text>
+                    </View>
+                    
+                    <View style={styles.sellerInfo}>
+                      <View style={styles.sellerDetailRow}>
+                        <Text style={styles.sellerLabel}>Name:</Text>
+                        <Text style={styles.sellerValue}>
+                          {property.postedBy?.fullName || property.ownerName || property.userName || 'N/A'}
+                        </Text>
+                      </View>
+                      
+                      {(property.postedBy?.email || property.email) && (
+                        <View style={styles.sellerDetailRow}>
+                          <Text style={styles.sellerLabel}>Email:</Text>
+                          <Text style={styles.sellerValue} numberOfLines={1}>
+                            {property.postedBy?.email || property.email}
+                          </Text>
+                        </View>
+                      )}
+                      
+                      {(property.postedBy?.phone || property.phone || property.contactNumber) && (
+                        <View style={styles.sellerDetailRow}>
+                          <Text style={styles.sellerLabel}>Phone:</Text>
+                          <Text style={styles.sellerValue}>
+                            {property.postedBy?.phone || property.phone || property.contactNumber}
+                          </Text>
+                        </View>
+                      )}
+
+                      {property.createdAt && (
+                        <View style={styles.sellerDetailRow}>
+                          <Text style={styles.sellerLabel}>Posted:</Text>
+                          <Text style={styles.sellerValue}>
+                            {new Date(property.createdAt).toLocaleDateString('en-IN', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric'
+                            })}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Call Button */}
+                    {(property.postedBy?.phone || property.phone || property.contactNumber) && (
+                      <TouchableOpacity 
+                        style={styles.callButton}
+                        onPress={() => makeCall(property.postedBy?.phone || property.phone || property.contactNumber)}
+                      >
+                        <MaterialIcons name="phone" size={20} color="#FFFFFF" />
+                        <Text style={styles.callButtonText}>Call Seller</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyState}>
+                <MaterialIcons name="inventory-2" size={48} color="#D1D5DB" />
+                <Text style={styles.emptyStateText}>No properties found</Text>
+              </View>
+            )}
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -446,6 +608,151 @@ const styles = StyleSheet.create({
   metricTitle: {
     fontSize: 14,
     fontWeight: '500',
+  viewPropertiesButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#3B82F6',
+    borderRadius: 12,
+    padding: 16,
+    marginVertical: 16,
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  viewPropertiesText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginLeft: 8,
+  },
+  propertyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  propertyHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  propertyTitleSection: {
+    flex: 1,
+    marginRight: 12,
+  },
+  propertyTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 4,
+  },
+  propertyType: {
+    fontSize: 13,
+    color: '#6B7280',
+    textTransform: 'capitalize',
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    textTransform: 'uppercase',
+  },
+  propertyDetails: {
+    gap: 8,
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  detailText: {
+    fontSize: 14,
+    color: '#374151',
+    flex: 1,
+  },
+  sellerSection: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 12,
+  },
+  sellerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sellerTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginLeft: 8,
+  },
+  sellerInfo: {
+    gap: 8,
+    marginBottom: 12,
+  },
+  sellerDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sellerLabel: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  sellerValue: {
+    fontSize: 13,
+    color: '#1F2937',
+    fontWeight: '600',
+    flex: 1,
+    textAlign: 'right',
+    marginLeft: 8,
+  },
+  callButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#10B981',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+  },
+  callButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginLeft: 8,
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  emptyStateText: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginTop: 12,
+  },
     color: '#6B7280',
     marginBottom: 2,
   },

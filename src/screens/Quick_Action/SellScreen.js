@@ -249,9 +249,7 @@ const SellScreen = ({ navigation }) => {
             <Text style={styles.headerTitle}>My Listings</Text>
             <Text style={styles.headerSubtitle}>Manage your properties</Text>
           </View>
-          <TouchableOpacity style={styles.headerIcon}>
-            <Icon name="notifications-outline" size={20} color={COLORS.dark} />
-          </TouchableOpacity>
+          <View style={styles.headerIcon} />
         </View>
 
         <View style={styles.quickActions}>

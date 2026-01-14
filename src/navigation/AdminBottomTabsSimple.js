@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, ScrollView } from 'react-native';
+import { View, Text, ScrollView, Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -78,7 +78,7 @@ const USPCategoriesScreen = () => (
 const USPEmployeesScreen = () => (
   <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f5f5' }}>
     <MaterialIcons name="person-pin" size={64} color="#007AFF" />
-    <Text style={{ fontSize: 18, color: '#333', marginTop: 16 }}>USP Employees</Text>
+    <Text style={{ fontSize: 18, color: '#333', marginTop: 16 }}>Team's USP</Text>
     <Text style={{ fontSize: 14, color: '#666', marginTop: 8 }}>Employee USP management</Text>
   </View>
 );
@@ -262,7 +262,7 @@ const ManagementStack = () => (
     <Stack.Screen
       name="USPEmployees"
       component={USPEmployeesScreen}
-      options={{ title: 'USP Employees' }}
+      options={{ title: 'Team\'s USP' }}
     />
   </Stack.Navigator>
 );
@@ -353,9 +353,9 @@ const AdminBottomTabs = () => {
           backgroundColor: '#fff',
           borderTopWidth: 1,
           borderTopColor: '#e1e1e1',
-          paddingBottom: 8,
+          paddingBottom: Platform.OS === 'ios' ? 20 : 8,
           paddingTop: 8,
-          height: 70,
+          height: Platform.OS === 'ios' ? 88 : 70,
         },
       })}>
       <Tab.Screen

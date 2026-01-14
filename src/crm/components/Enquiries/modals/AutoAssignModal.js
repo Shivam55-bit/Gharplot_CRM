@@ -13,7 +13,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialIcons';
+// import Icon from 'react-native-vector-icons/MaterialIcons';
 import { getAvailableRoles, getAvailableEmployees, autoAssignEnquiriesByRoles } from '../../../services/assignmentService';
 
 const AutoAssignModal = ({ visible, onClose, selectedEnquiries, onSuccess }) => {
@@ -116,11 +116,11 @@ const AutoAssignModal = ({ visible, onClose, selectedEnquiries, onSuccess }) => 
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <View style={styles.headerLeft}>
-              <Icon name="auto-awesome" size={24} color="#8b5cf6" />
+              <Text style={{ fontSize: 24, color: '#8b5cf6' }}>⚡</Text>
               <Text style={styles.modalTitle}>Auto Assign by Role</Text>
             </View>
             <TouchableOpacity onPress={handleClose} disabled={loading}>
-              <Icon name="close" size={24} color="#6b7280" />
+              <Text style={{ fontSize: 24, color: '#6b7280' }}>×</Text>
             </TouchableOpacity>
           </View>
 
@@ -155,7 +155,7 @@ const AutoAssignModal = ({ visible, onClose, selectedEnquiries, onSuccess }) => 
                       styles.checkbox,
                       isSelected && styles.checkboxActive,
                     ]}>
-                      {isSelected && <Icon name="check" size={16} color="#ffffff" />}
+                      {isSelected && <Text style={{ fontSize: 16, color: '#ffffff' }}>✓</Text>}
                     </View>
                   </TouchableOpacity>
                 );
@@ -194,7 +194,7 @@ const AutoAssignModal = ({ visible, onClose, selectedEnquiries, onSuccess }) => 
                 <ActivityIndicator size="small" color="#ffffff" />
               ) : (
                 <>
-                  <Icon name="auto-awesome" size={18} color="#ffffff" />
+                  <Text style={{ fontSize: 18, color: '#ffffff' }}>⚡</Text>
                   <Text style={styles.submitButtonText}>Auto Assign</Text>
                 </>
               )}

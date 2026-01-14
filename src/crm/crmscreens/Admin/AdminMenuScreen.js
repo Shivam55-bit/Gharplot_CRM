@@ -34,8 +34,7 @@ const AdminMenuScreen = ({ navigation }) => {
     {
       title: 'USP MANAGEMENT',
       items: [
-        { name: 'USP Categories', icon: 'category', route: 'USPCategories', screen: null, color: '#f59e0b' },
-        { name: 'USP Employees', icon: 'person-pin', route: 'USPEmployees', screen: null, color: '#10b981' },
+        { name: 'Team\'s USP', icon: 'person-pin', route: 'USPEmployees', screen: null, color: '#10b981' },
       ]
     },
     {
@@ -43,7 +42,7 @@ const AdminMenuScreen = ({ navigation }) => {
       items: [
         { name: 'All Leads', icon: 'trending-up', route: 'Operations', screen: 'AllLeads', color: '#3b82f6' },
         { name: 'My Reminders', icon: 'notifications', route: 'AdminMyReminders', screen: null, color: '#8b5cf6' },
-        { name: 'Follow-ups', icon: 'follow-the-signs', route: 'FollowUps', screen: null, color: '#06b6d4' },
+        // { name: 'Follow-ups', icon: 'follow-the-signs', route: 'AdminFollowUps', screen: null, color: '#06b6d4' },
         { name: 'Alerts', icon: 'notification-important', route: 'Operations', screen: 'Alerts', color: '#ef4444' },
       ]
     },
