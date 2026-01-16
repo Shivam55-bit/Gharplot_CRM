@@ -98,6 +98,94 @@ const EnquiriesScreen = ({ navigation, route }) => {
   const [showReminderPopup, setShowReminderPopup] = useState(false);
   const [currentReminder, setCurrentReminder] = useState(null);
 
+  // Comment states
+  const [newComment, setNewComment] = useState('');
+  const [isAddingComment, setIsAddingComment] = useState(false);
+  const [userName, setUserName] = useState('Admin User');
+
+  // Get user name on mount
+  useEffect(() => {
+    const getUserName = async () => {
+      try {
+        const adminName = await AsyncStorage.getItem('adminName');
+        const employeeName = await AsyncStorage.getItem('employeeName');
+        const name = await AsyncStorage.getItem('userName');
+        setUserName(adminName || employeeName || name || 'Admin User');
+      } catch (error) {
+        console.log('Error getting user name:', error);
+      }
+    };
+    getUserName();
+  }, []);
+
+  // Add comment to enquiry
+  const handleAddComment = async () => {
+    if (!newComment.trim()) {
+      Alert.alert('Error', 'Please enter a comment');
+      return;
+    }
+
+    if (!selectedEnquiry?._id) {
+      Alert.alert('Error', 'No enquiry selected');
+      return;
+    }
+
+    setIsAddingComment(true);
+    try {
+      const token = await AsyncStorage.getItem('adminToken') ||
+                    await AsyncStorage.getItem('crm_auth_token') ||
+                    await AsyncStorage.getItem('employee_auth_token') ||
+                    await AsyncStorage.getItem('employee_token');
+
+      if (!token) {
+        Alert.alert('Error', 'Please login again');
+        return;
+      }
+
+      const response = await fetch(
+        `https://abc.bhoomitechzone.us/api/inquiry/comment/${selectedEnquiry._id}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            comment: newComment.trim(),
+            addedBy: userName,
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (result.success) {
+        console.log('✅ Comment added successfully');
+        setNewComment('');
+        
+        // Update selected enquiry with new comments
+        if (result.data) {
+          setSelectedEnquiry(prev => ({
+            ...prev,
+            comments: result.data.comments || [],
+            majorComments: result.data.majorComments || prev.majorComments
+          }));
+        }
+        
+        Alert.alert('Success', 'Comment added successfully!');
+        // Refresh enquiries list
+        fetchEnquiries();
+      } else {
+        throw new Error(result.message || 'Failed to add comment');
+      }
+    } catch (error) {
+      console.error('❌ Error adding comment:', error);
+      Alert.alert('Error', error.message || 'Failed to add comment');
+    } finally {
+      setIsAddingComment(false);
+    }
+  };
+
   // 🔔 NOTIFICATION NAVIGATION: Handle navigation from notifications
   useEffect(() => {
     if (route?.params) {
@@ -963,25 +1051,103 @@ const EnquiriesScreen = ({ navigation, route }) => {
                     )}
                   </View>
 
-                  {/* Comments Section */}
+                  {/* Major Comments (Previous Notes) - Moved to top */}
                   {selectedEnquiry.majorComments && (
                     <View style={styles.modalSection}>
-                      <Text style={styles.modalSectionTitle}>Comments</Text>
                       <View style={{
-                        backgroundColor: '#eff6ff',
+                        backgroundColor: '#fef3c7',
                         padding: 12,
                         borderRadius: 8,
                         borderLeftWidth: 3,
-                        borderLeftColor: '#3b82f6'
+                        borderLeftColor: '#f59e0b',
+                        marginBottom: 10
                       }}>
-                        <Text style={{ fontSize: 12, color: '#374151', lineHeight: 18 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '600', color: '#92400e', marginBottom: 4 }}>Previous Notes:</Text>
+                        <Text style={{ fontSize: 12, color: '#78350f', lineHeight: 18 }}>
                           {selectedEnquiry.majorComments}
                         </Text>
                       </View>
                     </View>
                   )}
 
-                  {/* Reminder Details Section */}
+                  {/* Comments Section */}
+                  <View style={styles.modalSection}>
+                    <Text style={styles.modalSectionTitle}>💬 Comments</Text>
+                    
+                    {/* Existing Comments Array */}
+                    {selectedEnquiry.comments && selectedEnquiry.comments.length > 0 ? (
+                      selectedEnquiry.comments.map((comment, index) => (
+                        <View key={comment._id || index} style={{
+                          backgroundColor: '#f3f4f6',
+                          padding: 10,
+                          borderRadius: 8,
+                          marginBottom: 8,
+                          borderLeftWidth: 3,
+                          borderLeftColor: '#3b82f6'
+                        }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                            <Text style={{ fontSize: 12, fontWeight: '600', color: '#3b82f6' }}>
+                              {comment.addedBy || 'Unknown'}
+                            </Text>
+                            <Text style={{ fontSize: 10, color: '#9ca3af' }}>
+                              {comment.addedAt ? new Date(comment.addedAt).toLocaleString() : ''}
+                            </Text>
+                          </View>
+                          <Text style={{ fontSize: 13, color: '#374151' }}>{comment.comment}</Text>
+                        </View>
+                      ))
+                    ) : null}
+                  </View>
+
+                  {/* Add Comment Input */}
+                  <View style={styles.modalSection}>
+                    <View style={{
+                      marginTop: 10,
+                      borderTopWidth: 1,
+                      borderTopColor: '#e5e7eb',
+                      paddingTop: 10
+                    }}>
+                      <TextInput
+                        style={{
+                          borderWidth: 1,
+                          borderColor: '#d1d5db',
+                          borderRadius: 8,
+                          paddingHorizontal: 12,
+                          paddingVertical: 10,
+                          fontSize: 13,
+                          color: '#1f2937',
+                          backgroundColor: '#ffffff',
+                          minHeight: 70,
+                          textAlignVertical: 'top'
+                        }}
+                        placeholder="Add a comment..."
+                        placeholderTextColor="#9ca3af"
+                        value={newComment}
+                        onChangeText={setNewComment}
+                        multiline
+                        numberOfLines={3}
+                      />
+                      <TouchableOpacity
+                        style={{
+                          backgroundColor: isAddingComment ? '#9ca3af' : '#3b82f6',
+                          borderRadius: 8,
+                          paddingVertical: 10,
+                          alignItems: 'center',
+                          marginTop: 8
+                        }}
+                        onPress={handleAddComment}
+                        disabled={isAddingComment}
+                      >
+                        {isAddingComment ? (
+                          <ActivityIndicator size="small" color="#ffffff" />
+                        ) : (
+                          <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: '600' }}>Add Comment</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Reminder Details Section - Moved to bottom */}
                   <View style={styles.modalSection}>
                     <Text style={styles.modalSectionTitle}>Reminder Details</Text>
                     

@@ -401,9 +401,8 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- ✅ VIBRATION PERMISSION for reminder alerts -->
     <uses-permission android:name="android.permission.VIBRATE" />
-    <!-- ✅ SCHEDULE EXACT ALARM PERMISSION for precise notifications (Android 12+) -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- Note: SCHEDULE_EXACT_ALARM and USE_EXACT_ALARM removed as per Google Play Policy -->
+    <!-- These permissions are only allowed for calendar/alarm clock apps -->
     
     
     <application

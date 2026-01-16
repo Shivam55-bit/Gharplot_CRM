@@ -586,9 +586,12 @@ export async function createAlert(data) {
         const url = cleanUrl(BASE_URL, '/api/alerts');
         
         // ⚠️ CRITICAL: Use CRM auth headers for alert APIs
-        const crmToken = await AsyncStorage.getItem('crm_token') ||
+        // Token keys priority: adminToken > crm_auth_token > employee_auth_token > employee_token
+        const crmToken = await AsyncStorage.getItem('adminToken') ||
+                        await AsyncStorage.getItem('crm_auth_token') ||
+                        await AsyncStorage.getItem('employee_auth_token') ||
+                        await AsyncStorage.getItem('employee_token') ||
                         await AsyncStorage.getItem('admin_token') ||
-                        await AsyncStorage.getItem('authToken') ||
                         await AsyncStorage.getItem('userToken');
         
         if (!crmToken) {
@@ -648,9 +651,12 @@ export async function updateAlert(alertId, data) {
         const url = cleanUrl(BASE_URL, `/api/alerts/${alertId}`);
         
         // ⚠️ CRITICAL: Use CRM auth headers for alert APIs
-        const crmToken = await AsyncStorage.getItem('crm_token') ||
+        // Token keys priority: adminToken > crm_auth_token > employee_auth_token > employee_token
+        const crmToken = await AsyncStorage.getItem('adminToken') ||
+                        await AsyncStorage.getItem('crm_auth_token') ||
+                        await AsyncStorage.getItem('employee_auth_token') ||
+                        await AsyncStorage.getItem('employee_token') ||
                         await AsyncStorage.getItem('admin_token') ||
-                        await AsyncStorage.getItem('authToken') ||
                         await AsyncStorage.getItem('userToken');
         
         if (!crmToken) {

@@ -16,14 +16,14 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.bhoomitechzone.gharplot.app"
+      "bundleIdentifier": "com.bhoomitechzone.gharplot"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./src/assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.bhoomitechzone.gharplot.app"
+      "package": "com.bhoomitechzone.gharplot"
     },
     "web": {
       "bundler": "metro",

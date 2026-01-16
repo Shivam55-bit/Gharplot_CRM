@@ -27,6 +27,26 @@ const EnquiryDetailScreen = ({ route, navigation }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedData, setEditedData] = useState({});
   const [editReminderModalVisible, setEditReminderModalVisible] = useState(false);
+  
+  // Comment states
+  const [newComment, setNewComment] = useState('');
+  const [isAddingComment, setIsAddingComment] = useState(false);
+  const [userName, setUserName] = useState('Admin User');
+
+  // Get user name from AsyncStorage
+  useEffect(() => {
+    const getUserName = async () => {
+      try {
+        const adminName = await AsyncStorage.getItem('adminName');
+        const employeeName = await AsyncStorage.getItem('employeeName');
+        const userName = await AsyncStorage.getItem('userName');
+        setUserName(adminName || employeeName || userName || 'Admin User');
+      } catch (error) {
+        console.log('Error getting user name:', error);
+      }
+    };
+    getUserName();
+  }, []);
 
   // Fetch enquiry details on mount
   useEffect(() => {
@@ -136,6 +156,60 @@ const EnquiryDetailScreen = ({ route, navigation }) => {
       }
     } catch (error) {
       console.error('❌ Error deleting reminder:', error);
+    }
+  };
+
+  // Add comment to enquiry
+  const handleAddComment = async () => {
+    if (!newComment.trim()) {
+      Alert.alert('Error', 'Please enter a comment');
+      return;
+    }
+
+    setIsAddingComment(true);
+    try {
+      // Get auth token
+      const token = await AsyncStorage.getItem('adminToken') ||
+                    await AsyncStorage.getItem('crm_auth_token') ||
+                    await AsyncStorage.getItem('employee_auth_token') ||
+                    await AsyncStorage.getItem('employee_token');
+
+      if (!token) {
+        Alert.alert('Error', 'Please login again');
+        return;
+      }
+
+      const response = await fetch(
+        `https://abc.bhoomitechzone.us/api/inquiry/comment/${enquiryId}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            comment: newComment.trim(),
+            addedBy: userName,
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (result.success) {
+        console.log('✅ Comment added successfully');
+        setNewComment('');
+        Alert.alert('Success', 'Comment added successfully!');
+        // Refresh enquiry details to show new comment
+        fetchEnquiryDetails();
+      } else {
+        throw new Error(result.message || 'Failed to add comment');
+      }
+    } catch (error) {
+      console.error('❌ Error adding comment:', error);
+      Alert.alert('Error', error.message || 'Failed to add comment');
+    } finally {
+      setIsAddingComment(false);
     }
   };
 
@@ -295,6 +369,63 @@ const EnquiryDetailScreen = ({ route, navigation }) => {
               </Text>
             </View>
           )}
+        </View>
+
+        {/* Comments Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>💬 Comments</Text>
+          
+          {/* Existing Comments */}
+          {displayData.comments && displayData.comments.length > 0 ? (
+            displayData.comments.map((comment, index) => (
+              <View key={comment._id || index} style={styles.commentItem}>
+                <View style={styles.commentHeader}>
+                  <Text style={styles.commentAuthor}>{comment.addedBy || 'Unknown'}</Text>
+                  <Text style={styles.commentDate}>
+                    {comment.addedAt ? new Date(comment.addedAt).toLocaleString() : ''}
+                  </Text>
+                </View>
+                <Text style={styles.commentText}>{comment.comment}</Text>
+              </View>
+            ))
+          ) : (
+            <Text style={styles.noCommentsText}>No comments yet</Text>
+          )}
+
+          {/* Major Comments (if any) */}
+          {displayData.majorComments && (
+            <View style={styles.majorCommentsContainer}>
+              <Text style={styles.majorCommentsLabel}>Previous Notes:</Text>
+              <Text style={styles.majorCommentsText}>{displayData.majorComments}</Text>
+            </View>
+          )}
+
+          {/* Add Comment Input */}
+          <View style={styles.addCommentContainer}>
+            <TextInput
+              style={styles.commentInput}
+              placeholder="Add a comment..."
+              placeholderTextColor="#9ca3af"
+              value={newComment}
+              onChangeText={setNewComment}
+              multiline
+              numberOfLines={3}
+            />
+            <TouchableOpacity
+              style={[
+                styles.addCommentButton,
+                isAddingComment && styles.addCommentButtonDisabled
+              ]}
+              onPress={handleAddComment}
+              disabled={isAddingComment}
+            >
+              {isAddingComment ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Text style={styles.addCommentButtonText}>Add Comment</Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
 
@@ -484,6 +615,94 @@ const styles = StyleSheet.create({
   },
   backButtonText: {
     color: '#ffffff',
+    fontWeight: '600',
+  },
+  // Comment styles
+  commentItem: {
+    backgroundColor: '#f3f4f6',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#3b82f6',
+  },
+  commentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  commentAuthor: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#3b82f6',
+  },
+  commentDate: {
+    fontSize: 11,
+    color: '#9ca3af',
+  },
+  commentText: {
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 20,
+  },
+  noCommentsText: {
+    fontSize: 14,
+    color: '#9ca3af',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 16,
+  },
+  majorCommentsContainer: {
+    backgroundColor: '#fef3c7',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#f59e0b',
+  },
+  majorCommentsLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#92400e',
+    marginBottom: 4,
+  },
+  majorCommentsText: {
+    fontSize: 13,
+    color: '#78350f',
+    lineHeight: 18,
+  },
+  addCommentContainer: {
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+    paddingTop: 12,
+  },
+  commentInput: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#1f2937',
+    backgroundColor: '#ffffff',
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  addCommentButton: {
+    backgroundColor: '#3b82f6',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  addCommentButtonDisabled: {
+    backgroundColor: '#9ca3af',
+  },
+  addCommentButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
     fontWeight: '600',
   },
 });

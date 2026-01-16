@@ -22,18 +22,18 @@ def enableProguardInReleaseBuilds = true
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
 android {
-    namespace "com.bhoomitechzone.gharplot.app"
+    namespace "com.bhoomitechzone.gharplot"
 
     compileSdk rootProject.ext.compileSdkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
     ndkVersion rootProject.ext.ndkVersion
 
     defaultConfig {
-        applicationId "com.bhoomitechzone.gharplot.app"
+        applicationId "com.bhoomitechzone.gharplot"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 5
-        versionName "1.0.2"
+        versionCode 6
+        versionName "1.0.3"
 
         // Needed for new Gradle plugin
         multiDexEnabled true

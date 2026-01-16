@@ -1,4 +1,4 @@
-package com.bhoomitechzone.gharplot.app
+package com.bhoomitechzone.gharplot
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

@@ -1,4 +1,4 @@
-package com.bhoomitechzone.gharplot.app
+package com.bhoomitechzone.gharplot
 
 import android.app.Application
 import com.facebook.react.PackageList

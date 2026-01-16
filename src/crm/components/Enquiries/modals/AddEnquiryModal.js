@@ -284,11 +284,97 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
     }
   };
 
+  // Check if contact number already exists
+  const checkDuplicateContact = async (contactNumber) => {
+    if (!contactNumber || contactNumber.length < 10) return;
+    
+    try {
+      console.log('🔍 Checking for duplicate contact:', contactNumber);
+      
+      // Import the API function
+      const { getAllEnquiries } = await import('../../../services/crmEnquiryApi');
+      const result = await getAllEnquiries();
+      
+      if (result && result.success && result.data) {
+        // Check if any enquiry has same contact number
+        const existingEnquiry = result.data.find(enq => 
+          enq.contactNumber === contactNumber || 
+          enq.contactNumber === contactNumber.trim()
+        );
+        
+        if (existingEnquiry) {
+          console.log('⚠️ Found existing profile:', existingEnquiry);
+          
+          // Show alert with existing profile details
+          Alert.alert(
+            '⚠️ Profile Already Available',
+            `📋 Name: ${existingEnquiry.clientName}\n` +
+            `📞 Phone: ${existingEnquiry.contactNumber}\n` +
+            `📍 Location: ${existingEnquiry.location}\n` +
+            `🏢 Product: ${existingEnquiry.productType}\n` +
+            `📅 Created: ${new Date(existingEnquiry.createdAt).toLocaleDateString('en-IN')}\n` +
+            `📊 Status: ${existingEnquiry.caseStatus}\n` +
+            `💼 Client Code: ${existingEnquiry.ClientCode}\n\n` +
+            `An enquiry with this phone number already exists in the system. Do you want to continue creating a new entry?`,
+            [
+              {
+                text: 'Cancel',
+                style: 'cancel',
+                onPress: () => {
+                  // Clear the contact number field
+                  handleInputChange('contactNumber', '');
+                }
+              },
+              {
+                text: 'View Profile',
+                onPress: () => {
+                  // Navigate to existing profile or show more details
+                  Alert.alert(
+                    'Profile Details',
+                    `📋 Full Details:\n\n` +
+                    `Name: ${existingEnquiry.clientName}\n` +
+                    `Phone: ${existingEnquiry.contactNumber}\n` +
+                    `Client Code: ${existingEnquiry.ClientCode}\n` +
+                    `Project Code: ${existingEnquiry.ProjectCode}\n` +
+                    `Location: ${existingEnquiry.location}\n` +
+                    `Product Type: ${existingEnquiry.productType}\n` +
+                    `Status: ${existingEnquiry.caseStatus}\n` +
+                    `Source: ${existingEnquiry.source}\n` +
+                    `Address: ${existingEnquiry.address || 'N/A'}\n` +
+                    `Reference By: ${existingEnquiry.referenceBy || 'N/A'}\n` +
+                    `Comments: ${existingEnquiry.majorComments || 'N/A'}\n` +
+                    `Created: ${new Date(existingEnquiry.createdAt).toLocaleString('en-IN')}`
+                  );
+                }
+              },
+              {
+                text: 'Create New Anyway',
+                style: 'destructive'
+              }
+            ]
+          );
+          
+          return true; // Duplicate found
+        }
+      }
+      
+      return false; // No duplicate
+    } catch (error) {
+      console.error('Error checking duplicate contact:', error);
+      return false;
+    }
+  };
+
   const handleInputChange = (field, value) => {
     setFormData(prev => ({
       ...prev,
       [field]: value,
     }));
+    
+    // Check for duplicate when contact number is fully entered (10 digits)
+    if (field === 'contactNumber' && value && value.length === 10) {
+      checkDuplicateContact(value);
+    }
   };
 
   // Handle date picker change

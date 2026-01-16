@@ -1,7 +1,7 @@
 module.exports = {
   project: {
     android: {
-      packageName: 'com.bhoomitechzone.gharplot.app',
+      packageName: 'com.bhoomitechzone.gharplot',
     },
     ios: {},
   },

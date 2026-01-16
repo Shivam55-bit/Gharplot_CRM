@@ -154,7 +154,9 @@ export const getAllEnquiriesMerged = async () => {
           // Only include essential flat properties
           propertyId: enquiry.propertyId?._id || null,
           buyerId: enquiry.buyerId?._id || null,
-          ownerId: enquiry.ownerId?._id || null
+          ownerId: enquiry.ownerId?._id || null,
+          comments: enquiry.comments || [], // Add comments array
+          majorComments: enquiry.majorComments || '', // Add majorComments
         };
       });
       mergedData = [...mergedData, ...clientEnquiries];
@@ -183,6 +185,7 @@ export const getAllEnquiriesMerged = async () => {
         caseStatus: enquiry.caseStatus,
         source_detail: enquiry.source,
         majorComments: enquiry.majorComments,
+        comments: enquiry.comments || [], // Add comments array
         address: enquiry.address,
         weekOrActionTaken: enquiry.weekOrActionTaken,
         actionPlan: enquiry.actionPlan,
