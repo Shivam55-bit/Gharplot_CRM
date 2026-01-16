@@ -1261,6 +1261,7 @@ const EnquiriesScreen = ({ navigation, route }) => {
         addEnquiryAPI={addManualEnquiry}
         onSuccess={handleAddSuccess}
         totalEnquiries={enquiries.length}
+        navigation={navigation}
       />
 
       <AssignEnquiryModal
@@ -1303,6 +1304,7 @@ const EnquiriesScreen = ({ navigation, route }) => {
         <ReminderPopup
           visible={showReminderPopup}
           reminder={currentReminder}
+          navigation={navigation}
           onClose={() => {
             setShowReminderPopup(false);
             setCurrentReminder(null);

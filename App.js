@@ -514,6 +514,7 @@ const AppMain = () => {
       <ReminderPopup
         visible={showReminderPopup}
         reminder={currentReminder}
+        navigation={navigationRef.current}
         onClose={handleReminderClose}
       />
     </>

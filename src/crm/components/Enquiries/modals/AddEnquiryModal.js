@@ -24,7 +24,7 @@ import ReminderPopup from '../../Reminders/ReminderPopup';
 import ReminderNotificationService from '../../../../services/ReminderNotificationService';
 import { createManualEnquiry } from '../../../services/enquiryService';
 
-const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnquiries = 0 }) => {
+const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnquiries = 0, navigation }) => {
   const [loading, setLoading] = useState(false);
   const [nextSerialNumber, setNextSerialNumber] = useState(1);
   const [nextClientCode, setNextClientCode] = useState('CC001');
@@ -952,6 +952,7 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
         <ReminderPopup
           visible={showReminderPopup}
           reminder={currentReminder}
+          navigation={navigation}
           onClose={() => {
             setShowReminderPopup(false);
             setCurrentReminder(null);

@@ -17,7 +17,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import Sound from 'react-native-sound';
 
-const ReminderPopup = ({ visible, onClose, reminder }) => {
+const ReminderPopup = ({ visible, onClose, reminder, navigation }) => {
   const [response, setResponse] = useState('');
   const [reminderSound, setReminderSound] = useState(null);
   const [selectedRepeat, setSelectedRepeat] = useState(null);
@@ -257,6 +257,50 @@ const ReminderPopup = ({ visible, onClose, reminder }) => {
 
   const handleDismiss = () => {
     onClose('');
+  };
+
+  const handleViewProfile = () => {
+    // Navigate to enquiry detail screen
+    if (reminder && navigation) {
+      console.log('📋 ===== VIEW PROFILE CLICKED =====');
+      console.log('📋 Full reminder data:', JSON.stringify(reminder, null, 2));
+      
+      // Close the popup first
+      onClose('');
+      
+      // Try to find enquiry ID from reminder data (multiple fallbacks)
+      const enquiryId = reminder.enquiryId || reminder._id || reminder.id;
+      
+      console.log('🔍 Extracted enquiry ID:', enquiryId);
+      console.log('🔍 From reminder.enquiryId:', reminder.enquiryId);
+      console.log('🔍 From reminder._id:', reminder._id);
+      console.log('🔍 From reminder.id:', reminder.id);
+      
+      if (enquiryId) {
+        // Navigate to Enquiry Detail Screen
+        console.log('🧭 Navigating to EnquiryDetailScreen with params:', {
+          enquiryId: enquiryId,
+          clientName: reminder.name || reminder.clientName,
+          fromNotification: true
+        });
+        
+        navigation.navigate('EnquiryDetailScreen', { 
+          enquiryId: enquiryId,
+          clientName: reminder.name || reminder.clientName,
+          fromNotification: true
+        });
+        console.log('✅ Navigation command sent to EnquiryDetailScreen');
+      } else {
+        console.warn('⚠️ No enquiry ID found in reminder');
+        console.warn('⚠️ Reminder keys:', Object.keys(reminder));
+        Alert.alert('Error', 'Cannot open profile. Enquiry ID not found in reminder data.');
+      }
+    } else {
+      console.warn('⚠️ Navigation not available or reminder missing');
+      console.warn('⚠️ Navigation:', navigation ? 'Available' : 'NOT Available');
+      console.warn('⚠️ Reminder:', reminder ? 'Available' : 'NOT Available');
+      Alert.alert('Error', 'Cannot navigate to profile at this time.');
+    }
   };
 
   const handleSnooze = async (minutes) => {
@@ -597,11 +641,16 @@ const ReminderPopup = ({ visible, onClose, reminder }) => {
             </View>
           </ScrollView>
 
-          {/* ✅ ENHANCED: Footer Actions with Repeat and Dismiss */}
+          {/* ✅ ENHANCED: Footer Actions with View Profile, Repeat and Dismiss */}
           <View style={styles.footer}>
             <TouchableOpacity style={styles.dismissButton} onPress={handleDismiss}>
               <Icon name="close" size={20} color="#ffffff" />
               <Text style={styles.dismissButtonText}>Dismiss</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.viewProfileButton} onPress={handleViewProfile}>
+              <Icon name="person" size={20} color="#ffffff" />
+              <Text style={styles.viewProfileButtonText}>View Profile</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.callButton} onPress={handleCall}>
@@ -899,6 +948,21 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   dismissButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  viewProfileButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#3b82f6',
+    paddingVertical: 14,
+    borderRadius: 8,
+    gap: 8,
+  },
+  viewProfileButtonText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
