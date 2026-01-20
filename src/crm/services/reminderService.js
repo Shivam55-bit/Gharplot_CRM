@@ -7,10 +7,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const getAuthHeaders = async () => {
   const adminToken = await AsyncStorage.getItem('adminToken');
+  const adminToken2 = await AsyncStorage.getItem('admin_token');
   const employeeToken = await AsyncStorage.getItem('employeeToken');
+  const employeeToken2 = await AsyncStorage.getItem('employee_token');
+  const employeeAuthToken = await AsyncStorage.getItem('employee_auth_token');
+  const crmToken = await AsyncStorage.getItem('crm_auth_token');
   const token = await AsyncStorage.getItem('token');
   
-  const authToken = adminToken || employeeToken || token;
+  const authToken = adminToken || adminToken2 || employeeToken || employeeToken2 || employeeAuthToken || crmToken || token;
   
   return {
     'Content-Type': 'application/json',

@@ -14,9 +14,9 @@ import Icon from "react-native-vector-icons/Ionicons";
 
 // CRM Employee Screens
 import DashboardEmployee from "../crm/crmscreens/Employee/DashboardEmployee";
-import MyLeads from "../crm/crmscreens/Employee/MyLeads";
-import MyReminders from "../crm/crmscreens/Employee/MyReminders";
-import FollowUps from "../crm/crmscreens/Employee/FollowUps";
+import EmployeeLeads from "../crm/crmscreens/Employee/EmployeeLeads";
+import EmployeeReminders from "../crm/crmscreens/Employee/EmployeeReminders";
+import EmployeeFollowUps from "../crm/crmscreens/Employee/EmployeeFollowUps";
 import Alerts from "../crm/crmscreens/Employee/Alerts";
 import CreateAlertScreen from "../crm/crmscreens/Employee/CreateAlertScreen";
 import EmployeeProfile from "../crm/crmscreens/Employee/EmployeeProfile";
@@ -112,17 +112,17 @@ const EmployeeBottomTabNavigator = () => {
       />
       <Tab.Screen
         name="Leads"
-        component={MyLeads}
+        component={EmployeeLeads}
         options={{ tabBarIconName: "people-outline" }}
       />
       <Tab.Screen
         name="Reminders"
-        component={MyReminders}
+        component={EmployeeReminders}
         options={{ tabBarIconName: "notifications-outline" }}
       />
       <Tab.Screen
         name="FollowUps"
-        component={FollowUps}
+        component={EmployeeFollowUps}
         options={{ tabBarIconName: "calendar-outline" }}
       />
       <Tab.Screen

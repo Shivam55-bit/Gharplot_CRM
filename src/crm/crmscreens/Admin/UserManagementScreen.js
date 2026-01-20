@@ -24,6 +24,7 @@ import {
   deleteUser,
   searchUsers,
   bulkDeleteUsers,
+  assignUsersToEmployee,
 } from '../../services/crmUserManagementApi';
 import { getAllEmployees } from '../../services/crmEmployeeManagementApi';
 
@@ -57,6 +58,8 @@ const UserManagementScreen = ({ navigation }) => {
   const [employees, setEmployees] = useState([]);
   const [selectedEmployee, setSelectedEmployee] = useState('');
   const [assignmentLoading, setAssignmentLoading] = useState(false);
+  const [assignmentPriority, setAssignmentPriority] = useState('medium');
+  const [assignmentNotes, setAssignmentNotes] = useState('');
   
   // Auto Assignment
   const [autoAssignEnabled, setAutoAssignEnabled] = useState(false);
@@ -205,12 +208,33 @@ const UserManagementScreen = ({ navigation }) => {
   // Load employees
   const loadEmployees = async () => {
     try {
+      console.log('🔄 Loading employees for assignment...');
       const response = await getAllEmployees();
+      console.log('📥 Employees API response:', JSON.stringify(response, null, 2));
+      
+      // Handle different response structures
+      let employeesList = [];
       if (response && response.employees) {
-        setEmployees(response.employees);
+        employeesList = response.employees;
+      } else if (response && Array.isArray(response)) {
+        employeesList = response;
+      } else if (response && response.data) {
+        employeesList = Array.isArray(response.data) ? response.data : [];
+      }
+      
+      console.log('✅ Setting employees:', employeesList.length);
+      if (employeesList.length > 0) {
+        console.log('👥 Employee names:', employeesList.map(e => e.name || e.fullName));
+      }
+      
+      setEmployees(employeesList);
+      
+      if (employeesList.length === 0) {
+        console.warn('⚠️ No employees found in the system');
       }
     } catch (error) {
-      console.error('Error loading employees:', error);
+      console.error('❌ Error loading employees:', error);
+      Alert.alert('Error', 'Failed to load employees list. Please try again.');
     }
   };
 
@@ -313,20 +337,54 @@ const UserManagementScreen = ({ navigation }) => {
       return;
     }
     
-    // For now, just show success message since backend might not be ready
-    Alert.alert(
-      'Assignment Simulated',
-      `Selected ${selectedUsers.size} user(s) would be assigned to the selected employee.\n\nNote: This will work when the backend API is implemented.`,
-      [
-        {
-          text: 'OK',
-          onPress: () => {
-            setShowAssignModal(false);
-            clearSelection();
+    try {
+      setAssignmentLoading(true);
+      
+      const userIds = Array.from(selectedUsers);
+      
+      console.log('🔄 Assigning users:', {
+        userIds,
+        employeeId: selectedEmployee,
+        priority: assignmentPriority,
+        notes: assignmentNotes
+      });
+      
+      const response = await assignUsersToEmployee({
+        userIds,
+        employeeId: selectedEmployee,
+        priority: assignmentPriority,
+        notes: assignmentNotes,
+      });
+      
+      console.log('✅ Assignment successful:', response);
+      
+      Alert.alert(
+        'Success',
+        `Successfully assigned ${userIds.length} user(s) to the selected employee!`,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              setShowAssignModal(false);
+              setSelectedEmployee('');
+              setAssignmentPriority('medium');
+              setAssignmentNotes('');
+              clearSelection();
+              fetchUsers(); // Refresh user list
+            }
           }
-        }
-      ]
-    );
+        ]
+      );
+    } catch (error) {
+      console.error('❌ Assignment failed:', error);
+      Alert.alert(
+        'Assignment Failed',
+        error.message || 'Failed to assign users. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setAssignmentLoading(false);
+    }
   };
 
   // Handle auto assignment toggle - DISABLED FOR NOW
@@ -464,19 +522,89 @@ const UserManagementScreen = ({ navigation }) => {
             <Text style={styles.metaText}>📅 Joined: {formatDate(item.createdAt)}</Text>
             <Text style={styles.metaText}>👀 Last seen: {formatLastSeen(item.lastSeenAt)}</Text>
           </View>
+
+          {/* Assignment Information */}
+          {item.assignment && (
+            <View style={styles.assignmentInfo}>
+              <View style={styles.assignmentHeader}>
+                <MaterialCommunityIcons name="account-check" size={18} color="#10B981" />
+                <Text style={styles.assignmentTitle}>ASSIGNED TO</Text>
+              </View>
+              <View style={styles.assignmentDetails}>
+                <View style={styles.assignmentRow}>
+                  <MaterialCommunityIcons name="account-tie" size={16} color="#6b7280" />
+                  <Text style={styles.assignmentText}>
+                    {item.assignment.employeeId?.name || 
+                     item.assignment.employeeName || 
+                     'Unknown Employee'}
+                  </Text>
+                </View>
+                {item.assignment.employeeId?.email && (
+                  <View style={styles.assignmentRow}>
+                    <MaterialCommunityIcons name="email" size={16} color="#6b7280" />
+                    <Text style={styles.assignmentTextSmall}>
+                      {item.assignment.employeeId.email}
+                    </Text>
+                  </View>
+                )}
+                {item.assignment.priority && (
+                  <View style={styles.assignmentRow}>
+                    <MaterialCommunityIcons 
+                      name="flag" 
+                      size={16} 
+                      color={
+                        item.assignment.priority === 'urgent' ? '#EF4444' :
+                        item.assignment.priority === 'high' ? '#F59E0B' :
+                        item.assignment.priority === 'medium' ? '#10B981' :
+                        '#6B7280'
+                      } 
+                    />
+                    <Text style={[
+                      styles.priorityText,
+                      {color: item.assignment.priority === 'urgent' ? '#EF4444' :
+                              item.assignment.priority === 'high' ? '#F59E0B' :
+                              item.assignment.priority === 'medium' ? '#10B981' :
+                              '#6B7280'}
+                    ]}>
+                      {item.assignment.priority?.toUpperCase() || 'MEDIUM'}
+                    </Text>
+                  </View>
+                )}
+                <View style={styles.assignmentRow}>
+                  <MaterialCommunityIcons name="calendar" size={16} color="#6b7280" />
+                  <Text style={styles.assignmentTextSmall}>
+                    {formatDate(item.assignment.assignedDate || item.assignment.createdAt)}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
           
           {!isSelectionMode && (
             <View style={styles.userActions}>
-              <TouchableOpacity 
-                style={styles.assignButton}
-                onPress={() => {
-                  setSelectedUsers(new Set([item.id]));
-                  setShowAssignModal(true);
-                }}
-              >
-                <MaterialCommunityIcons name="account-plus" size={18} color="#fff" />
-                <Text style={styles.actionButtonText}>ASSIGN</Text>
-              </TouchableOpacity>
+              {item.assignment ? (
+                <TouchableOpacity 
+                  style={styles.reassignButton}
+                  onPress={() => {
+                    setSelectedUsers(new Set([item.id]));
+                    setShowAssignModal(true);
+                  }}
+                >
+                  <MaterialCommunityIcons name="account-switch" size={18} color="#fff" />
+                  <Text style={styles.actionButtonText}>REASSIGN</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity 
+                  style={styles.assignButton}
+                  onPress={() => {
+                    setSelectedUsers(new Set([item.id]));
+                    setShowAssignModal(true);
+                  }}
+                >
+                  <MaterialCommunityIcons name="account-plus" size={18} color="#fff" />
+                  <Text style={styles.actionButtonText}>ASSIGN</Text>
+                </TouchableOpacity>
+              )}
               
               <TouchableOpacity 
                 style={styles.deleteButton}
@@ -530,7 +658,7 @@ const UserManagementScreen = ({ navigation }) => {
         <Text style={styles.headerTitle}>User Management</Text>
         
         <View style={styles.headerActions}>
-          <TouchableOpacity 
+          {/* <TouchableOpacity 
             style={styles.headerButton}
             onPress={() => {
               Alert.alert('Feature Coming Soon', 'Activity chart feature will be available soon.');
@@ -539,9 +667,9 @@ const UserManagementScreen = ({ navigation }) => {
             }}
           >
             <MaterialCommunityIcons name="chart-line" size={20} color="#fff" />
-          </TouchableOpacity>
+          </TouchableOpacity> */}
           
-          <TouchableOpacity 
+          {/* <TouchableOpacity 
             style={styles.headerButton}
             onPress={() => {
               Alert.alert('Feature Coming Soon', 'Auto assignment feature will be available soon.');
@@ -549,7 +677,7 @@ const UserManagementScreen = ({ navigation }) => {
             }}
           >
             <MaterialCommunityIcons name="auto-fix" size={20} color="#fff" />
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
       </View>
 
@@ -714,8 +842,9 @@ const UserManagementScreen = ({ navigation }) => {
                 </TouchableOpacity>
               </View>
               
-              <View style={styles.modalBody}>
-                <Text style={styles.inputLabel}>Select Employee:</Text>
+              <ScrollView style={styles.modalBody}>
+                {/* Employee Selection */}
+                <Text style={styles.inputLabel}>Select Employee *</Text>
                 <View style={styles.pickerContainer}>
                   <Picker
                     selectedValue={selectedEmployee}
@@ -723,16 +852,61 @@ const UserManagementScreen = ({ navigation }) => {
                     style={styles.picker}
                   >
                     <Picker.Item label="Choose an employee..." value="" />
-                    {employees.map((employee) => (
-                      <Picker.Item
-                        key={employee.id}
-                        label={`${employee.name} (${employee.email})`}
-                        value={employee.id}
-                      />
-                    ))}
+                    {employees.length === 0 ? (
+                      <Picker.Item label="No employees available" value="" enabled={false} />
+                    ) : (
+                      employees.map((employee) => (
+                        <Picker.Item
+                          key={employee.id || employee._id}
+                          label={`${employee.name || employee.fullName || 'Unknown'} (${employee.email || 'No email'})`}
+                          value={employee.id || employee._id}
+                        />
+                      ))
+                    )}
                   </Picker>
                 </View>
-              </View>
+                
+                {employees.length === 0 && (
+                  <Text style={styles.warningText}>
+                    ⚠️ No employees found. Please add employees first.
+                  </Text>
+                )}
+
+                {/* Priority Selection */}
+                <Text style={styles.inputLabel}>Priority Level *</Text>
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={assignmentPriority}
+                    onValueChange={setAssignmentPriority}
+                    style={styles.picker}
+                  >
+                    <Picker.Item label="🔴 Urgent" value="urgent" />
+                    <Picker.Item label="🟠 High" value="high" />
+                    <Picker.Item label="🟡 Medium" value="medium" />
+                    <Picker.Item label="🟢 Low" value="low" />
+                  </Picker>
+                </View>
+
+                {/* Notes Input */}
+                <Text style={styles.inputLabel}>Notes (Optional)</Text>
+                <TextInput
+                  style={styles.notesInput}
+                  placeholder="Add any notes or comments about this assignment..."
+                  placeholderTextColor="#94A3B8"
+                  value={assignmentNotes}
+                  onChangeText={setAssignmentNotes}
+                  multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
+                />
+                
+                <View style={styles.infoBox}>
+                  <MaterialCommunityIcons name="information" size={16} color="#2563EB" />
+                  <Text style={styles.infoText}>
+                    Assigning {selectedUsers.size} user(s) to selected employee
+                  </Text>
+                </View>
+              </ScrollView>
               
               <View style={styles.modalActions}>
                 <TouchableOpacity
@@ -1045,6 +1219,51 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginBottom: 4,
   },
+  // Assignment Info Styles
+  assignmentInfo: {
+    backgroundColor: '#F0FDF4',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  assignmentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 6,
+  },
+  assignmentTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#10B981',
+    letterSpacing: 0.5,
+  },
+  assignmentDetails: {
+    gap: 6,
+  },
+  assignmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  assignmentText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E293B',
+    flex: 1,
+  },
+  assignmentTextSmall: {
+    fontSize: 12,
+    color: '#64748B',
+    flex: 1,
+  },
+  priorityText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
   userActions: {
     flexDirection: 'row',
     gap: 8,
@@ -1055,6 +1274,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#2563EB',
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 4,
+  },
+  reassignButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F59E0B',
     paddingVertical: 10,
     borderRadius: 8,
     gap: 4,
@@ -1195,6 +1424,36 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontStyle: 'italic',
     marginTop: 8,
+  },
+  warningText: {
+    fontSize: 13,
+    color: '#EF4444',
+    marginTop: 8,
+    fontWeight: '500',
+  },
+  notesInput: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    color: '#1E293B',
+    backgroundColor: '#F9FAFB',
+    minHeight: 80,
+    marginBottom: 16,
+  },
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 8,
+    padding: 12,
+    gap: 8,
+  },
+  infoText: {
+    fontSize: 13,
+    color: '#1E40AF',
+    flex: 1,
   },
   modalActions: {
     flexDirection: 'row',

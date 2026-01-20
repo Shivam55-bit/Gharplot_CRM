@@ -23,7 +23,8 @@ import {
   createEmployee,
   updateEmployee,
   deleteEmployee,
-  changeEmployeePassword
+  changeEmployeePassword,
+  toggleEmployeePopup
 } from '../../services/crmEmployeeManagementApi';
 import { getAllRoles } from '../../services/crmRoleApi';
 import * as UspService from '../../services/crmUSPApi';
@@ -187,6 +188,7 @@ const EmployeeManagementScreen = ({ navigation }) => {
           isActive: emp.isActive !== false,
           joinDate: emp.createdAt ? new Date(emp.createdAt).toLocaleDateString('en-GB') : '',
           giveAdminAccess: emp.giveAdminAccess || false,
+          popupEnabled: emp.popupEnabled || false,
           address: emp.address || {}
         }));
         
@@ -389,6 +391,25 @@ const EmployeeManagementScreen = ({ navigation }) => {
     }
   };
 
+  // Handle toggle popup
+  const handleTogglePopup = async (employee, currentValue) => {
+    try {
+      const result = await toggleEmployeePopup(employee.id, !currentValue);
+      if (result.success) {
+        // Update local state immediately
+        setEmployees(prev => prev.map(e => 
+          e.id === employee.id ? {...e, popupEnabled: !currentValue} : e
+        ));
+        showAlert('success', `Popup ${!currentValue ? 'enabled' : 'disabled'} for ${employee.name}`);
+      } else {
+        showAlert('error', result.message || 'Failed to toggle popup');
+      }
+    } catch (error) {
+      console.error('Error toggling popup:', error);
+      showAlert('error', error.message || 'Failed to toggle popup');
+    }
+  };
+
   // Handle USP submission
   const handleUspSubmit = async () => {
     if (!validateUspForm()) {
@@ -507,6 +528,20 @@ const EmployeeManagementScreen = ({ navigation }) => {
         </View>
       </View>
       
+      {/* Enable Popup Access Row */}
+      <View style={styles.popupAccessRow}>
+        <View style={styles.popupAccessLeft}>
+          <Icon name="notifications" size={20} color="#f59e0b" />
+          <Text style={styles.popupAccessText}>Enable Popup Access</Text>
+        </View>
+        <Switch
+          value={item.popupEnabled}
+          onValueChange={() => handleTogglePopup(item, item.popupEnabled)}
+          trackColor={{ false: '#e5e7eb', true: '#3b82f6' }}
+          thumbColor={item.popupEnabled ? '#ffffff' : '#f4f3f4'}
+        />
+      </View>
+      
       <View style={styles.cardActions}>
         <TouchableOpacity 
           style={styles.actionButton}
@@ -520,7 +555,7 @@ const EmployeeManagementScreen = ({ navigation }) => {
           style={styles.actionButton}
           onPress={() => openPasswordModal(item)}
         >
-          <Icon name="key" size={16} color="#10b981" />
+          <Icon name="key" size={16} color="#f59e0b" />
           <Text style={styles.actionText}>Password</Text>
         </TouchableOpacity>
         
@@ -1316,28 +1351,66 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#374151',
   },
-  cardActions: {
+  popupAccessRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingTop: 12,
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 12,
+  },
+  popupAccessLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  popupAccessText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#1e40af',
+    marginLeft: 10,
+  },
+  cardActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingTop: 14,
+    paddingHorizontal: 0,
     borderTopWidth: 1,
     borderTopColor: '#e5e7eb',
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
     backgroundColor: '#f8fafc',
-    minWidth: 65,
-    justifyContent: 'center',
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  editButton: {
+    borderColor: '#dbeafe',
+    backgroundColor: '#eff6ff',
+  },
+  passwordButton: {
+    borderColor: '#fef3c7',
+    backgroundColor: '#fffbeb',
+  },
+  uspButton: {
+    borderColor: '#fef3c7',
+    backgroundColor: '#fffbeb',
+  },
+  deleteButton: {
+    borderColor: '#fee2e2',
+    backgroundColor: '#fef2f2',
   },
   actionText: {
-    fontSize: 11,
-    color: '#6b7280',
-    marginLeft: 4,
-    fontWeight: '500',
+    fontSize: 12,
+    marginLeft: 5,
+    fontWeight: '600',
   },
   loadingContainer: {
     flex: 1,

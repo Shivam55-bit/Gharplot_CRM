@@ -7,6 +7,7 @@ import { Alert } from 'react-native';
 
 const REMINDERS_KEY = 'app_reminders';
 const CHECK_INTERVAL = 5000; // ✅ ENHANCED: Check every 5 seconds for better accuracy
+const CRM_BASE_URL = 'https://abc.bhoomitechzone.us';
 
 class ReminderManager {
   constructor() {
@@ -61,7 +62,7 @@ class ReminderManager {
   }
 
   /**
-   * Add reminder to local storage
+   * Add reminder to local storage AND backend for FCM notifications
    */
   async addReminder(reminderData) {
     try {
@@ -80,10 +81,74 @@ class ReminderManager {
       await AsyncStorage.setItem(REMINDERS_KEY, JSON.stringify(reminders));
       
       console.log('✅ Reminder added to local storage:', reminder.id);
+      
+      // 🔥 Also save to backend for FCM notifications (background/killed mode)
+      try {
+        await this.saveReminderToBackend(reminder);
+      } catch (backendError) {
+        console.warn('⚠️ Backend save failed (local still works):', backendError.message);
+      }
+      
       return reminder;
     } catch (error) {
       console.error('❌ Error adding reminder:', error);
       throw error;
+    }
+  }
+
+  /**
+   * 🔥 Save reminder to backend for FCM push notifications
+   * This enables notifications in background/killed mode via cron job
+   */
+  async saveReminderToBackend(reminderData) {
+    try {
+      const accessToken = await AsyncStorage.getItem('accessToken');
+      
+      if (!accessToken) {
+        console.warn('⚠️ No auth token, skipping backend save');
+        return { success: false, message: 'No auth token' };
+      }
+
+      // Map frontend reminder format to backend API format
+      const backendPayload = {
+        title: reminderData.title || 'Reminder',
+        comment: reminderData.note || reminderData.comment || '',
+        reminderDateTime: reminderData.reminderDateTime || reminderData.scheduledDate,
+        isRepeating: reminderData.repeatType && reminderData.repeatType !== 'none',
+        repeatType: reminderData.repeatType || 'daily',
+        // Client info
+        clientName: reminderData.clientName || reminderData.name || '',
+        phone: reminderData.phone || '',
+        email: reminderData.email || '',
+        location: reminderData.location || '',
+        // Optional IDs
+        enquiryId: reminderData.enquiryId,
+        manualInquiryId: reminderData.manualInquiryId,
+      };
+
+      console.log('📤 Saving reminder to backend for FCM:', backendPayload);
+
+      const response = await fetch(`${CRM_BASE_URL}/api/reminder/create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(backendPayload),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        console.log('✅ Reminder saved to backend! FCM will send notification at scheduled time.');
+        return { success: true, data };
+      } else {
+        console.warn('⚠️ Backend response:', data.message);
+        return { success: false, message: data.message };
+      }
+    } catch (error) {
+      console.error('❌ Error saving reminder to backend:', error);
+      return { success: false, message: error.message };
     }
   }
 

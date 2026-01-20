@@ -98,6 +98,35 @@ export const employeeLogin = async (email, password) => {
     
     if (data.token) {
       await AsyncStorage.setItem('employee_auth_token', data.token);
+      await AsyncStorage.setItem('accessToken', data.token);
+    }
+    
+    // 🔥 Store employee ID for FCM token sync
+    let employeeId = null;
+    if (data.employee && data.employee._id) {
+      employeeId = data.employee._id;
+      await AsyncStorage.setItem('userId', data.employee._id);
+      await AsyncStorage.setItem('employeeId', data.employee._id);
+      console.log('✅ Employee ID stored from crmAuthApi:', data.employee._id);
+    } else if (data.user && data.user._id) {
+      employeeId = data.user._id;
+      await AsyncStorage.setItem('userId', data.user._id);
+      await AsyncStorage.setItem('employeeId', data.user._id);
+      console.log('✅ User ID stored from crmAuthApi:', data.user._id);
+    }
+    
+    // 🔥 Sync FCM token to Employee model for notifications
+    if (employeeId) {
+      try {
+        const { getFCMToken, sendTokenToBackend } = await import('../../utils/fcmService');
+        const fcmToken = await getFCMToken();
+        if (fcmToken) {
+          await sendTokenToBackend(employeeId, fcmToken);
+          console.log('✅ FCM token synced after employee login');
+        }
+      } catch (fcmError) {
+        console.warn('⚠️ FCM sync failed:', fcmError.message);
+      }
     }
     
     return data;

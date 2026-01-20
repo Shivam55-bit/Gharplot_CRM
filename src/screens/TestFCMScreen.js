@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
-import { getStoredFCMToken, getFCMToken } from '../utils/fcmService';
+import { getStoredFCMToken, getFCMToken, forceRefreshFCMToken } from '../utils/fcmService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   sendNewPropertyNotification,
@@ -52,6 +52,73 @@ const TestFCMScreen = () => {
       }
     } catch (error) {
       Alert.alert('Error', error.message);
+    }
+  };
+
+  // Force delete old token and get fresh one (for Firebase project change)
+  const forceRefresh = async () => {
+    try {
+      Alert.alert(
+        '⚠️ Force Refresh Token',
+        'This will delete old token and get a fresh one from new Firebase project. Continue?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Yes, Refresh',
+            onPress: async () => {
+              const newToken = await forceRefreshFCMToken();
+              if (newToken) {
+                setFcmToken(newToken);
+                Alert.alert('✅ Success', 'New FCM Token generated!\n\nToken: ' + newToken.substring(0, 50) + '...');
+              } else {
+                Alert.alert('Error', 'Failed to get new FCM token');
+              }
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      Alert.alert('Error', error.message);
+    }
+  };
+
+  // Test FCM via backend API
+  const testBackendFCM = async () => {
+    try {
+      if (fcmToken === 'Loading...' || fcmToken === 'No token found') {
+        Alert.alert('Error', 'FCM Token not available');
+        return;
+      }
+
+      const authToken = await AsyncStorage.getItem('accessToken');
+      
+      const response = await fetch('https://abc.bhoomitechzone.us/api/alert/schedule-notification', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          title: '🧪 FCM Test',
+          reason: 'Testing FCM notification from app',
+          date: new Date().toISOString().split('T')[0],
+          time: new Date().toTimeString().substring(0, 5),
+          repeatDaily: false,
+          notificationType: 'test',
+          fcmToken: fcmToken,
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        Alert.alert('✅ Success', 'FCM notification sent via backend!\n\nCheck if notification arrives.');
+      } else {
+        Alert.alert('❌ Error', 'Backend response: ' + (data.message || JSON.stringify(data)));
+      }
+    } catch (error) {
+      Alert.alert('❌ Error', error.message);
+      console.error('Backend FCM test error:', error);
     }
   };
 
@@ -223,6 +290,14 @@ const TestFCMScreen = () => {
 
       <TouchableOpacity style={styles.button} onPress={refreshToken}>
         <Text style={styles.buttonText}>Refresh Token</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={[styles.button, {backgroundColor: '#e74c3c'}]} onPress={forceRefresh}>
+        <Text style={styles.buttonText}>🔄 Force Refresh (New Firebase)</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={[styles.button, {backgroundColor: '#27ae60'}]} onPress={testBackendFCM}>
+        <Text style={styles.buttonText}>🚀 Test FCM via Backend</Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.button} onPress={loadFCMInfo}>

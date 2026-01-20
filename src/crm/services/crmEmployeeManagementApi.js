@@ -4,15 +4,20 @@ const API_BASE_URL = 'https://abc.bhoomitechzone.us';
 
 const getAuthHeaders = async () => {
   const adminToken = await AsyncStorage.getItem('adminToken');
+  const adminToken2 = await AsyncStorage.getItem('admin_token');
   const crmToken = await AsyncStorage.getItem('crm_auth_token');
   const empToken = await AsyncStorage.getItem('employee_auth_token');
+  const empToken2 = await AsyncStorage.getItem('employee_token');
+  const authToken = await AsyncStorage.getItem('authToken');
   
   console.log('🔐 Auth tokens check:');
   console.log('- adminToken:', adminToken ? `${adminToken.slice(0, 20)}...` : 'Not found');
+  console.log('- admin_token:', adminToken2 ? `${adminToken2.slice(0, 20)}...` : 'Not found');
   console.log('- crm_auth_token:', crmToken ? `${crmToken.slice(0, 20)}...` : 'Not found');
   console.log('- employee_auth_token:', empToken ? `${empToken.slice(0, 20)}...` : 'Not found');
+  console.log('- employee_token:', empToken2 ? `${empToken2.slice(0, 20)}...` : 'Not found');
   
-  const token = adminToken || crmToken || empToken;
+  const token = adminToken || adminToken2 || crmToken || empToken || empToken2 || authToken;
   
   if (!token) {
     console.error('❌ No authentication token found!');
@@ -302,6 +307,35 @@ export const changeEmployeePassword = async (employeeId, passwordData) => {
     }
   } catch (error) {
     console.error('❌ Change password error:', error);
+    return { success: false, message: error.message };
+  }
+};
+
+// Toggle employee popup access
+export const toggleEmployeePopup = async (employeeId, enabled) => {
+  console.log('🔔 Toggling popup for employee:', employeeId, 'enabled:', enabled);
+  
+  try {
+    const headers = await getAuthHeaders();
+    const response = await fetch(
+      `${API_BASE_URL}/admin/reminders/employee/${employeeId}/toggle-popup`,
+      {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ enabled }),
+      }
+    );
+
+    const result = await response.json();
+    console.log('🔔 Toggle Popup Response:', result);
+
+    if (result.success) {
+      return { success: true, message: result.message || `Popup ${enabled ? 'enabled' : 'disabled'} successfully` };
+    } else {
+      return { success: false, message: result.message || 'Failed to toggle popup' };
+    }
+  } catch (error) {
+    console.error('❌ Toggle popup error:', error);
     return { success: false, message: error.message };
   }
 };

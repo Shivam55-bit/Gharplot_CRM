@@ -439,14 +439,21 @@ const ReminderPopup = ({ visible, onClose, reminder, navigation }) => {
           {/* Title */}
           <View style={styles.titleSection}>
             <Text style={styles.reminderTitle}>
-              {reminder.title || `Enquiry Reminder: ${reminder.name}`}
+              {reminder.title || reminder.clientName || reminder.name || 'Reminder'}
             </Text>
+            {/* 🏷️ Show Edited tag for edited reminders */}
+            {(reminder.isEdited || reminder.source === 'edit_reminder') && (
+              <View style={styles.editedBadge}>
+                <Icon name="edit" size={12} color="#2563eb" />
+                <Text style={styles.editedBadgeText}>Edited</Text>
+              </View>
+            )}
           </View>
 
-          {/* Note */}
-          {reminder.note && (
+          {/* Note/Message */}
+          {(reminder.note || reminder.message || reminder.comment) && (
             <View style={styles.noteSection}>
-              <Text style={styles.noteText}>{reminder.note}</Text>
+              <Text style={styles.noteText}>{reminder.note || reminder.message || reminder.comment}</Text>
             </View>
           )}
 
@@ -473,9 +480,9 @@ const ReminderPopup = ({ visible, onClose, reminder, navigation }) => {
                   <Text style={styles.cardTitle}>Client Information</Text>
                 </View>
                 <View style={styles.cardContent}>
-                  <DetailRow label="Name:" value={reminder.name} />
-                  <DetailRow label="Phone:" value={reminder.phone || reminder.contactNumber} />
-                  <DetailRow label="Location:" value={reminder.location} />
+                  <DetailRow label="Name:" value={reminder.clientName || reminder.name || 'N/A'} />
+                  <DetailRow label="Phone:" value={reminder.phone || reminder.contactNumber || 'N/A'} />
+                  <DetailRow label="Location:" value={reminder.location || 'N/A'} />
                 </View>
               </View>
 
@@ -747,12 +754,32 @@ const styles = StyleSheet.create({
     backgroundColor: '#dbeafe',
     padding: 16,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
   },
   reminderTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#1e40af',
     textAlign: 'center',
+    flex: 1,
+  },
+  editedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#3b82f6',
+    gap: 4,
+  },
+  editedBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#2563eb',
   },
   noteSection: {
     backgroundColor: '#fef3c7',

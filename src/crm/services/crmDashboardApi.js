@@ -9,11 +9,29 @@ const API_BASE_URL = 'https://abc.bhoomitechzone.us';
 // Helper function to get auth headers
 const getAuthHeaders = async () => {
   try {
+    // Check all possible token storage keys
     const crmToken = await AsyncStorage.getItem('crm_auth_token');
     const adminToken = await AsyncStorage.getItem('adminToken');
+    const adminToken2 = await AsyncStorage.getItem('admin_token');
     const employeeToken = await AsyncStorage.getItem('employee_auth_token');
+    const employeeToken2 = await AsyncStorage.getItem('employee_token');
+    const authToken = await AsyncStorage.getItem('authToken');
     
-    const token = crmToken || adminToken || employeeToken;
+    const token = crmToken || adminToken || adminToken2 || employeeToken || employeeToken2 || authToken;
+    
+    console.log('🔐 Auth token check:', {
+      crmToken: crmToken ? 'exists' : 'null',
+      adminToken: adminToken ? 'exists' : 'null',
+      admin_token: adminToken2 ? 'exists' : 'null',
+      employeeToken: employeeToken ? 'exists' : 'null',
+      employee_token: employeeToken2 ? 'exists' : 'null',
+      authToken: authToken ? 'exists' : 'null',
+      selectedToken: token ? 'found' : 'NOT FOUND'
+    });
+    
+    if (!token) {
+      console.warn('⚠️ No auth token found in any storage key!');
+    }
     
     return {
       'Content-Type': 'application/json',

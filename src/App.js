@@ -38,9 +38,23 @@ const App = () => {
         console.log('🚀 Starting FCM setup in App.js...');
         
         // Import services dynamically to avoid require() issues
-        const { initializeFCM } = await import('./utils/fcmService');
+        const { initializeFCM, forceRefreshFCMToken } = await import('./utils/fcmService');
         const { addNotification } = await import('./utils/notificationManager');
         const { handleNotificationAction } = await import('./services/notificationService');
+
+        // Check if we need to refresh token (one-time after Firebase project change)
+        // Change version number to force refresh when Firebase project changes
+        const FCM_REFRESH_KEY = '@fcm_token_refreshed_v3_gharplot435ee';
+        const hasRefreshed = await AsyncStorage.getItem(FCM_REFRESH_KEY);
+        
+        if (!hasRefreshed) {
+          console.log('🔄 First run after Firebase change - forcing token refresh...');
+          const newToken = await forceRefreshFCMToken();
+          if (newToken) {
+            console.log('✅ Fresh FCM token obtained:', newToken.substring(0, 30) + '...');
+            await AsyncStorage.setItem(FCM_REFRESH_KEY, 'true');
+          }
+        }
 
         const result = await initializeFCM(
           // Callback for token refresh

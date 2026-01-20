@@ -27,8 +27,8 @@ import BoughtPropertyScreen from '../crm/crmscreens/Admin/BoughtPropertyScreen';
 import ServiceManagementScreen from '../crm/crmscreens/Admin/ServiceManagementScreen';
 import USPCategoriesScreen from '../crm/crmscreens/Admin/USPCategoriesScreen';
 import USPEmployeesScreen from '../crm/crmscreens/Admin/USPEmployeesScreen';
-import MyRemindersScreen from '../crm/crmscreens/Employee/MyReminders';
-import FollowUpsScreen from '../crm/crmscreens/Employee/FollowUps';
+import EmployeeRemindersScreen from '../crm/crmscreens/Employee/EmployeeReminders';
+import EmployeeFollowUpsScreen from '../crm/crmscreens/Employee/EmployeeFollowUps';
 // Edit Screens for Notifications
 import EditReminderScreen from '../screens/EditReminderScreen';
 import EditAlertScreen from '../screens/EditAlertScreen';
@@ -263,14 +263,14 @@ const AdminNavigator = ({ onLogout }) => {
       />
       <Stack.Screen
         name="MyReminders"
-        component={MyRemindersScreen}
+        component={EmployeeRemindersScreen}
         options={{
           headerShown: false,
         }}
       />
       <Stack.Screen
         name="FollowUps"
-        component={FollowUpsScreen}
+        component={EmployeeFollowUpsScreen}
         options={{
           headerShown: false,
         }}

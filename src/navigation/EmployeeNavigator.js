@@ -11,9 +11,9 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 
 // Employee Screens
 import DashboardEmployee from '../crm/crmscreens/Employee/DashboardEmployee';
-import MyLeads from '../screens/Employee/MyLeads';
-import MyReminders from '../screens/Employee/MyReminders';
-import FollowUps from '../screens/Employee/FollowUps';
+import EmployeeLeads from '../crm/crmscreens/Employee/EmployeeLeads';
+import EmployeeReminders from '../crm/crmscreens/Employee/EmployeeReminders';
+import EmployeeFollowUps from '../crm/crmscreens/Employee/EmployeeFollowUps';
 import EmployeeReminderAcceptScreen from '../screens/Employee/EmployeeReminderAcceptScreen';
 import EmployeeProfile from '../crm/crmscreens/Employee/EmployeeProfile';
 import CreateAlertScreen from '../crm/crmscreens/Employee/CreateAlertScreen';
@@ -67,8 +67,8 @@ const LeadsStack = () => (
   >
     <Stack.Screen 
       name="MyLeadsList" 
-      component={MyLeads}
-      options={{ title: 'My Leads' }}
+      component={EmployeeLeads}
+      options={{ title: 'My Leads', headerShown: false }}
     />
   </Stack.Navigator>
 );
@@ -88,7 +88,7 @@ const RemindersStack = () => (
   >
     <Stack.Screen 
       name="MyRemindersList" 
-      component={MyReminders}
+      component={EmployeeReminders}
       options={{ title: 'My Reminders' }}
     />
     <Stack.Screen 
@@ -114,8 +114,8 @@ const FollowUpsStack = () => (
   >
     <Stack.Screen 
       name="MyFollowUps" 
-      component={FollowUps}
-      options={{ title: 'Follow-ups' }}
+      component={EmployeeFollowUps}
+      options={{ title: 'Follow-ups', headerShown: false }}
     />
   </Stack.Navigator>
 );

@@ -18,6 +18,10 @@ import {
 } from 'react-native';
 import { updateReminder } from '../services/api';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { sendTokenToBackend, getFCMToken } from '../utils/fcmService';
+
+const CRM_BASE_URL = 'https://abc.bhoomitechzone.us';
 
 const EditReminderScreen = ({ route, navigation }) => {
   const { reminderId, clientName, originalMessage, enquiryId } = route.params || {};
@@ -33,6 +37,21 @@ const EditReminderScreen = ({ route, navigation }) => {
       Alert.alert('Error', 'Invalid reminder ID');
       navigation.goBack();
     }
+    
+    // 🔥 Ensure FCM token is synced to backend for notifications
+    const syncFCMToken = async () => {
+      try {
+        const userId = await AsyncStorage.getItem('userId') || await AsyncStorage.getItem('employeeId');
+        const token = await getFCMToken();
+        if (userId && token) {
+          await sendTokenToBackend(userId, token);
+          console.log('✅ FCM token synced for notifications');
+        }
+      } catch (error) {
+        console.warn('⚠️ FCM sync failed:', error);
+      }
+    };
+    syncFCMToken();
   }, [reminderId]);
 
   const handleDateChange = (event, selectedDate) => {
@@ -99,20 +118,110 @@ const EditReminderScreen = ({ route, navigation }) => {
     setLoading(true);
 
     try {
-      // Prepare data for API
-      const updateData = {
-        title: clientName,
+      // Get auth token - try multiple keys
+      const accessToken = await AsyncStorage.getItem('accessToken') ||
+                          await AsyncStorage.getItem('employeeToken') ||
+                          await AsyncStorage.getItem('adminToken') ||
+                          await AsyncStorage.getItem('employee_auth_token') ||
+                          await AsyncStorage.getItem('crm_auth_token') ||
+                          await AsyncStorage.getItem('userToken');
+      
+      if (!accessToken) {
+        Alert.alert('Session Expired', 'Please login again');
+        return;
+      }
+
+      // 🔥 Get employeeId for FCM notification
+      const employeeId = await AsyncStorage.getItem('employeeId') || await AsyncStorage.getItem('userId');
+      console.log('📱 Employee ID for reminder:', employeeId);
+
+      // Create new reminder via backend API
+      const reminderPayload = {
+        title: clientName || 'Reminder',
         comment: message.trim(),
+        note: message.trim(), // Backend accepts both
         reminderDateTime: scheduledDate.toISOString(),
+        isRepeating: false,
+        repeatType: 'daily',
+        clientName: clientName || '',
+        phone: route.params?.phone || '',
+        email: route.params?.email || '',
+        location: '',
+        employeeId: employeeId, // 🔥 Required for FCM notification
+        isEdited: true, // 🏷️ Mark as edited reminder
       };
 
-      // Call API to update reminder
-      const result = await updateReminder(reminderId, updateData);
+      // Only add enquiryId if it's a valid MongoDB ObjectId (24 char hex)
+      if (enquiryId && /^[0-9a-fA-F]{24}$/.test(enquiryId)) {
+        reminderPayload.enquiryId = enquiryId;
+      }
 
-      if (result) {
+      console.log('📤 Creating reminder:', reminderPayload);
+      console.log('🔑 Token:', accessToken?.substring(0, 20) + '...');
+
+      const response = await fetch(`${CRM_BASE_URL}/api/reminder/create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(reminderPayload),
+      });
+
+      console.log('📥 Response status:', response.status);
+      
+      const responseText = await response.text();
+      console.log('📥 Response:', responseText);
+      
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        console.error('JSON parse error:', e);
+        throw new Error('Server returned invalid response');
+      }
+
+      if (response.ok && data.success) {
+        // 🔥 Also save to local storage so it shows in Enquiry Details
+        try {
+          const localRemindersJson = await AsyncStorage.getItem('localReminders');
+          const localReminders = localRemindersJson ? JSON.parse(localRemindersJson) : [];
+          
+          const newLocalReminder = {
+            id: data.data?._id || `local_${Date.now()}`,
+            _id: data.data?._id || `local_${Date.now()}`,
+            clientName: clientName,
+            phone: route.params?.phone || '',
+            email: route.params?.email || '',
+            note: message.trim(),
+            comment: message.trim(),
+            message: message.trim(),
+            reminderDateTime: scheduledDate.toISOString(),
+            scheduledDate: scheduledDate.toISOString(),
+            status: 'pending',
+            enquiryId: enquiryId,
+            source: 'edit_reminder',
+            isEdited: true, // 🏷️ Mark as edited reminder
+            createdAt: new Date().toISOString(),
+          };
+          
+          localReminders.push(newLocalReminder);
+          await AsyncStorage.setItem('localReminders', JSON.stringify(localReminders));
+          console.log('✅ Reminder saved to local storage for Enquiry Details');
+          
+          // Also save to app_reminders for popup
+          const appRemindersJson = await AsyncStorage.getItem('app_reminders');
+          const appReminders = appRemindersJson ? JSON.parse(appRemindersJson) : [];
+          appReminders.push(newLocalReminder);
+          await AsyncStorage.setItem('app_reminders', JSON.stringify(appReminders));
+          console.log('✅ Reminder saved to app_reminders for popup');
+        } catch (localError) {
+          console.warn('⚠️ Could not save to local storage:', localError);
+        }
+        
         Alert.alert(
-          'Success',
-          `Reminder updated successfully!\n\nNew schedule: ${formatDateTime(scheduledDate)}`,
+          '✅ Success',
+          `Reminder scheduled successfully!\n\n📅 ${formatDateTime(scheduledDate)}`,
           [
             {
               text: 'OK',
@@ -121,11 +230,12 @@ const EditReminderScreen = ({ route, navigation }) => {
           ]
         );
       } else {
-        throw new Error('Failed to update reminder');
+        console.error('API Error:', data);
+        throw new Error(data.message || `Server error: ${response.status}`);
       }
     } catch (error) {
-      console.error('Error updating reminder:', error);
-      Alert.alert('Error', error.message || 'Failed to update reminder. Please try again.');
+      console.error('Error saving reminder:', error);
+      Alert.alert('Error', error.message || 'Failed to save reminder. Please try again.');
     } finally {
       setLoading(false);
     }

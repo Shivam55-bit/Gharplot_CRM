@@ -84,6 +84,39 @@ export const getStoredFCMToken = async () => {
 };
 
 /**
+ * Force refresh FCM token (useful when Firebase project changes)
+ * Deletes old token and gets a fresh one
+ * @returns {Promise<string|null>} New FCM token or null
+ */
+export const forceRefreshFCMToken = async () => {
+  try {
+    console.log('🔄 Force refreshing FCM token...');
+    
+    // Delete old token from Firebase
+    await messaging().deleteToken();
+    console.log('🗑️ Old FCM token deleted');
+    
+    // Clear from AsyncStorage
+    await AsyncStorage.removeItem(FCM_TOKEN_KEY);
+    console.log('🗑️ Stored token cleared');
+    
+    // Get fresh token
+    const newToken = await messaging().getToken();
+    
+    if (newToken) {
+      await AsyncStorage.setItem(FCM_TOKEN_KEY, newToken);
+      console.log('✅ New FCM Token:', newToken);
+      return newToken;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('❌ Error refreshing FCM token:', error);
+    return null;
+  }
+};
+
+/**
  * Setup foreground notification handler
  * Shows alert when notification is received while app is in foreground
  */
@@ -95,6 +128,18 @@ export const setupForegroundNotificationHandler = () => {
     const title = remoteMessage.notification?.title || remoteMessage.data?.title || '🔔 सूचना';
     const body = remoteMessage.notification?.body || remoteMessage.data?.body || remoteMessage.data?.message || '';
     const data = remoteMessage.data || {};
+    
+    // 🔥 Skip welcome/greeting notifications - don't show popup
+    if (
+      title?.toLowerCase().includes('welcome') ||
+      body?.toLowerCase().includes('welcome back') ||
+      body?.toLowerCase().includes('welcome to our platform') ||
+      data?.type === 'welcome' ||
+      data?.type === 'greeting'
+    ) {
+      console.log('⏭️ Skipping welcome notification - not showing popup');
+      return;
+    }
     const notificationType = data.type || data.notificationType || 'system';
 
     // Handle ALERT notifications - Navigate directly to EditAlertScreen
@@ -507,6 +552,7 @@ export const checkFCMConfiguration = async () => {
 
 /**
  * Send FCM token to backend for storage
+ * Saves to BOTH User and Employee models for complete coverage
  */
 export const sendTokenToBackend = async (userId, token) => {
   try {
@@ -521,36 +567,48 @@ export const sendTokenToBackend = async (userId, token) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
     
-    // Use your existing API structure
-    const response = await fetch('https://abc.bhoomitechzone.us/api/users/fcm-token', {
+    // 1️⃣ Save to User model
+    const userResponse = await fetch('https://abc.bhoomitechzone.us/api/fcm/save-token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // Add authorization header if needed
-        // 'Authorization': `Bearer ${userToken}`
       },
       body: JSON.stringify({
         userId: userId,
         fcmToken: token,
         platform: Platform.OS,
-        deviceInfo: {
-          os: Platform.OS,
-          version: Platform.Version
-        }
       }),
       signal: controller.signal
     });
     
+    if (userResponse.ok) {
+      console.log('✅ FCM token saved to User model');
+    }
+    
+    // 2️⃣ Save to Employee model (for CRM reminder notifications)
+    try {
+      const employeeResponse = await fetch('https://abc.bhoomitechzone.us/api/fcm/save-employee-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          employeeId: userId,
+          fcmToken: token,
+        }),
+      });
+      
+      if (employeeResponse.ok) {
+        console.log('✅ FCM token saved to Employee model');
+      }
+    } catch (empError) {
+      console.warn('⚠️ Employee token save failed (user might not be employee):', empError.message);
+    }
+    
     clearTimeout(timeoutId);
     
-    if (response.ok) {
-      console.log('✅ FCM token sent to backend successfully');
-      await AsyncStorage.setItem('fcm_token_synced', 'true');
-      return true;
-    } else {
-      console.warn(`⚠️ Failed to send FCM token to backend: ${response.status}`);
-      return false;
-    }
+    await AsyncStorage.setItem('fcm_token_synced', 'true');
+    return true;
     
   } catch (error) {
     if (error.name === 'AbortError') {

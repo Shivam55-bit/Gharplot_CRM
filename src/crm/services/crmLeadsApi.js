@@ -11,9 +11,12 @@ const getAuthHeaders = async () => {
   try {
     const crmToken = await AsyncStorage.getItem('crm_auth_token');
     const adminToken = await AsyncStorage.getItem('adminToken');
+    const adminToken2 = await AsyncStorage.getItem('admin_token');
     const employeeToken = await AsyncStorage.getItem('employee_auth_token');
+    const employeeToken2 = await AsyncStorage.getItem('employee_token');
+    const authToken = await AsyncStorage.getItem('authToken');
     
-    const token = crmToken || adminToken || employeeToken;
+    const token = crmToken || adminToken || adminToken2 || employeeToken || employeeToken2 || authToken;
     
     return {
       'Content-Type': 'application/json',

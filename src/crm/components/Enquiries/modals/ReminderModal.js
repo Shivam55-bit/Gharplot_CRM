@@ -16,12 +16,13 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createReminder, createReminderFromLead } from '../../../services/crmEnquiryApi';
+import { createReminder, createReminderFromLead, sendScheduledReminderNotification } from '../../../services/crmEnquiryApi';
 import { createReminderDateTime, extractClientInfo, convertTo24Hour } from '../../../services/reminderService';
 import ReminderNotificationService from '../../../../services/ReminderNotificationService';
 
 const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
   const [loading, setLoading] = useState(false);
+  const [showRepeatDropdown, setShowRepeatDropdown] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -32,7 +33,18 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
     minute: '00',
     period: 'AM',
     note: '',
+    repeatType: 'none',
   });
+
+  // Repeat Options
+  const REPEAT_OPTIONS = [
+    { label: 'No Repeat', value: 'none', icon: '❌' },
+    { label: 'Daily', value: 'daily', icon: '📅' },
+    { label: 'Weekly', value: 'weekly', icon: '📆' },
+    { label: 'Monthly', value: 'monthly', icon: '🗓️' },
+    { label: 'Yearly', value: 'yearly', icon: '🌐' },
+    { label: 'Working Days (Mon-Fri)', value: 'working_days', icon: '💼' },
+  ];
 
   // Populate form when enquiry changes
   React.useEffect(() => {
@@ -48,6 +60,7 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
         minute: '00',
         period: 'AM',
         note: '',
+        repeatType: 'none',
       });
     }
   }, [enquiry]);
@@ -115,10 +128,13 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
       const reminderData = {
         id: `reminder_${enquiry._id}_${Date.now()}`,
         clientName: formData.name,
+        email: formData.email,
+        phone: formData.phone,
         message: formData.note || `Follow up with ${formData.name} regarding property inquiry`,
-        scheduledDate: reminderDate,
+        scheduledDate: reminderDate.toISOString(),
         enquiryId: enquiry._id,
         enquiry: enquiry,
+        repeatType: formData.repeatType,
         // Enhanced navigation configuration for notification click
         targetScreen: 'EnquiryDetails', // Navigate to specific enquiry details
         navigationType: 'nested',
@@ -133,7 +149,18 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
         },
       };
 
-      // 🔔 Schedule notification using ReminderNotificationService
+      // 🔥 IMPORTANT: Send to backend for FCM scheduled notification
+      // This ensures notification works even when app is killed!
+      console.log('📤 Sending reminder to backend for FCM scheduling...');
+      const fcmResult = await sendScheduledReminderNotification(reminderData);
+      
+      if (fcmResult.success) {
+        console.log('✅ FCM scheduled notification sent to backend successfully');
+      } else {
+        console.log('⚠️ FCM scheduling failed, falling back to local notification');
+      }
+
+      // 🔔 Also schedule local notification as backup
       const result = await ReminderNotificationService.scheduleReminder(reminderData);
       
       if (result.success) {
@@ -153,6 +180,7 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
           priority: 'medium',
           source: 'local',
           triggered: false,
+          repeatType: formData.repeatType,
           createdAt: new Date().toISOString(),
           notificationId: reminderData.id, // Link to notification
         };
@@ -163,9 +191,12 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
         reminderList.push(localReminder);
         await AsyncStorage.setItem('localReminders', JSON.stringify(reminderList));
 
+        // Get repeat label for display
+        const repeatLabel = REPEAT_OPTIONS.find(opt => opt.value === formData.repeatType)?.label || 'No Repeat';
+
         Alert.alert(
           '✅ Reminder Set Successfully!',
-          `🔔 Notification scheduled for: ${formData.name}\n📅 Date & Time: ${reminderDate.toLocaleString('en-IN')}\n\n⚠️ You will receive a notification even if the app is closed or in background!`,
+          `🔔 Notification scheduled for: ${formData.name}\n📅 Date & Time: ${reminderDate.toLocaleString('en-IN')}\n🔄 Repeat: ${repeatLabel}\n\n✅ You will receive notification even if app is KILLED or in background via FCM!`,
           [{ 
             text: 'Perfect!', 
             onPress: handleClose,
@@ -199,7 +230,9 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
       minute: '00',
       period: 'AM',
       note: '',
+      repeatType: 'none',
     });
+    setShowRepeatDropdown(false);
     onClose();
   };
 
@@ -387,6 +420,58 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
                 textAlignVertical="top"
               />
             </View>
+
+            {/* Repeat Options Dropdown */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>🔄 Repeat Reminder</Text>
+              <TouchableOpacity
+                style={styles.repeatSelectButton}
+                onPress={() => setShowRepeatDropdown(!showRepeatDropdown)}
+              >
+                <Text style={styles.repeatSelectIcon}>
+                  {REPEAT_OPTIONS.find(opt => opt.value === formData.repeatType)?.icon || '❤️'}
+                </Text>
+                <Text style={styles.repeatSelectText}>
+                  {REPEAT_OPTIONS.find(opt => opt.value === formData.repeatType)?.label || 'Select Repeat'}
+                </Text>
+                <Text style={styles.repeatArrow}>{showRepeatDropdown ? '▲' : '▼'}</Text>
+              </TouchableOpacity>
+              
+              {showRepeatDropdown && (
+                <View style={styles.repeatDropdownContainer}>
+                  <ScrollView 
+                    style={styles.repeatDropdown} 
+                    nestedScrollEnabled={true}
+                    showsVerticalScrollIndicator={false}
+                  >
+                    {REPEAT_OPTIONS.map((option) => (
+                      <TouchableOpacity
+                        key={option.value}
+                        style={[
+                          styles.repeatDropdownItem,
+                          formData.repeatType === option.value && styles.repeatDropdownItemActive,
+                        ]}
+                        onPress={() => {
+                          handleInputChange('repeatType', option.value);
+                          setShowRepeatDropdown(false);
+                        }}
+                      >
+                        <Text style={styles.repeatIcon}>{option.icon}</Text>
+                        <Text style={[
+                          styles.repeatDropdownText,
+                          formData.repeatType === option.value && styles.repeatDropdownTextActive,
+                        ]}>
+                          {option.label}
+                        </Text>
+                        {formData.repeatType === option.value && (
+                          <Text style={styles.repeatCheckmark}>✓</Text>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+            </View>
           </ScrollView>
 
           {/* Footer */}
@@ -553,6 +638,69 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.5,
+  },
+  // Repeat Options Dropdown Styles
+  repeatSelectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+    gap: 10,
+  },
+  repeatSelectIcon: {
+    fontSize: 18,
+  },
+  repeatSelectText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#374151',
+  },
+  repeatArrow: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  repeatDropdownContainer: {
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    backgroundColor: '#ffffff',
+    overflow: 'hidden',
+  },
+  repeatDropdown: {
+    maxHeight: 150,
+  },
+  repeatDropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+    gap: 10,
+  },
+  repeatDropdownItemActive: {
+    backgroundColor: '#eff6ff',
+  },
+  repeatIcon: {
+    fontSize: 16,
+  },
+  repeatDropdownText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#374151',
+  },
+  repeatDropdownTextActive: {
+    color: '#3b82f6',
+    fontWeight: '600',
+  },
+  repeatCheckmark: {
+    fontSize: 14,
+    color: '#3b82f6',
+    fontWeight: '700',
   },
 });
 

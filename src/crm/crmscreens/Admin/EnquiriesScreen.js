@@ -1173,6 +1173,24 @@ const EnquiriesScreen = ({ navigation, route }) => {
                                   minute: '2-digit'
                                 })}
                               </Text>
+                              {/* 🏷️ Show Edited tag for reminders from EditReminderScreen */}
+                              {(reminder.isEdited || reminder.source === 'edit_reminder') && (
+                                <View style={{ 
+                                  paddingHorizontal: 6, 
+                                  paddingVertical: 2, 
+                                  borderRadius: 4,
+                                  backgroundColor: '#dbeafe',
+                                  marginRight: 6
+                                }}>
+                                  <Text style={{ 
+                                    fontSize: 9, 
+                                    color: '#2563eb', 
+                                    fontWeight: '600' 
+                                  }}>
+                                    ✏️ EDITED
+                                  </Text>
+                                </View>
+                              )}
                               <View style={{ 
                                 paddingHorizontal: 8, 
                                 paddingVertical: 2, 

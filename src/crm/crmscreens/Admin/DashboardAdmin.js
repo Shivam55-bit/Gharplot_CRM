@@ -77,6 +77,8 @@ const AdminDashboardScreen = ({ navigation, user }) => {
     await fetchDashboardData();
   };
 
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
   const handleLogout = () => {
     Alert.alert(
       'Logout',
@@ -88,22 +90,39 @@ const AdminDashboardScreen = ({ navigation, user }) => {
           style: 'destructive',
           onPress: async () => {
             try {
-              // Clear all auth tokens
+              // Set logging out flag to stop any ongoing API calls
+              setIsLoggingOut(true);
+              
+              // Clear all auth tokens and saved credentials
               await AsyncStorage.multiRemove([
                 'crm_auth_token',
                 'adminToken',
+                'admin_token',
+                'admin_email',
+                'admin_password',
                 'employee_auth_token',
+                'employee_token',
+                'employee_user',
+                'employee_profile',
+                'employee_permissions',
                 'authToken',
-                'userProfile'
+                'userProfile',
+                'userToken',
+                'userId',
+                'refreshToken',
+                'fcmToken',
               ]);
               
-              // Navigate to CRM login
+              console.log('✅ Admin logged out - all tokens cleared');
+              
+              // Navigate to Admin login (reset stack to prevent back navigation)
               navigation.reset({
                 index: 0,
-                routes: [{ name: 'CRMLogin' }],
+                routes: [{ name: 'AdminLogin' }],
               });
             } catch (error) {
               console.error('Logout error:', error);
+              setIsLoggingOut(false);
               Alert.alert('Error', 'Failed to logout properly');
             }
           }

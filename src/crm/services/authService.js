@@ -64,6 +64,24 @@ class AuthService {
   async storeUser(user) {
     try {
       await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
+      // 🔥 Store user ID for FCM token sync
+      if (user && user._id) {
+        await AsyncStorage.setItem('userId', user._id);
+        await AsyncStorage.setItem('employeeId', user._id);
+        console.log('✅ User/Employee ID stored:', user._id);
+        
+        // 🔥 Sync FCM token to Employee model for notifications
+        try {
+          const { getFCMToken, sendTokenToBackend } = require('../../../utils/fcmService');
+          const fcmToken = await getFCMToken();
+          if (fcmToken) {
+            await sendTokenToBackend(user._id, fcmToken);
+            console.log('✅ FCM token synced to Employee model');
+          }
+        } catch (fcmError) {
+          console.warn('⚠️ FCM sync failed:', fcmError.message);
+        }
+      }
     } catch (error) {
       console.error('Error storing user data:', error);
     }

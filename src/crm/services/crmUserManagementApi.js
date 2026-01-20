@@ -235,11 +235,11 @@ export const bulkDeleteUsers = async ({ userIds }) => {
 /**
  * Assign users to an employee
  */
-export const assignUsersToEmployee = async ({ userIds, employeeId }) => {
+export const assignUsersToEmployee = async ({ userIds, employeeId, priority = 'medium', notes = '' }) => {
   try {
     console.log('👥 assignUsersToEmployee - User IDs:', userIds, 'Employee ID:', employeeId);
     
-    const url = `${CRM_BASE_URL}/api/users/assign`;
+    const url = `${CRM_BASE_URL}/admin/user-leads/assign`;
     
     const headers = await getCRMAuthHeaders();
     const response = await fetch(url, {
@@ -248,6 +248,8 @@ export const assignUsersToEmployee = async ({ userIds, employeeId }) => {
       body: JSON.stringify({
         userIds,
         employeeId,
+        priority,
+        notes,
       }),
     });
 

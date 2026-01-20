@@ -182,15 +182,11 @@ const CreateAlertScreen = ({ navigation, route }) => {
               console.warn('⚠️ No FCM token available, notification may not work');
             }
             
-            // Combine date and time for scheduledDateTime
-            const [year, month, day] = dateStr.split('-').map(Number);
-            const [hours, minutes] = timeStr.split(':').map(Number);
-            const scheduledDateTime = new Date(year, month - 1, day, hours, minutes).toISOString();
-            
             // Get CRM auth headers for FCM scheduling request
             const headers = await getCRMAuthHeaders();
             
             // Call backend API to schedule FCM notification
+            // Backend expects: title, reason, date, time, repeatDaily, notificationType, fcmToken
             const fcmResponse = await fetch(`${BASE_URL}/api/alert/schedule-notification`, {
               method: 'POST',
               headers: {
@@ -198,16 +194,13 @@ const CreateAlertScreen = ({ navigation, route }) => {
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                alertId: alertId,
+                title: formData.title, // ✅ Added title field
                 reason: formData.reason,
                 date: dateStr,
                 time: timeStr,
-                scheduledDateTime: scheduledDateTime,
-                repeatFrequency: formData.repeatFrequency,
-                repeatMetadata: repeatMetadata,
                 repeatDaily: formData.repeatFrequency === 'daily',
                 notificationType: 'alert',
-                fcmToken: fcmToken, // Send FCM token to backend
+                fcmToken: fcmToken,
               }),
             });
             

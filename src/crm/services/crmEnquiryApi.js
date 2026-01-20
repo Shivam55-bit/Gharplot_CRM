@@ -4,6 +4,84 @@
  */
 import { CRM_BASE_URL, getCRMAuthHeaders, handleCRMResponse } from './crmAPI';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getFCMToken } from '../../utils/fcmService';
+
+/**
+ * Send scheduled FCM notification for reminder
+ * Backend will schedule and send FCM notification at the specified time
+ * This works even when app is killed/background!
+ */
+export const sendScheduledReminderNotification = async (reminderData) => {
+  try {
+    const headers = await getAuthHeaders();
+    
+    // Get FCM token for push notifications
+    const fcmToken = await getFCMToken();
+    
+    if (!fcmToken) {
+      console.warn('⚠️ No FCM token available for reminder notification');
+    }
+    
+    // Extract date and time from scheduledDate
+    const scheduledDate = new Date(reminderData.scheduledDate);
+    const dateStr = scheduledDate.toISOString().split('T')[0]; // YYYY-MM-DD
+    const hours = String(scheduledDate.getHours()).padStart(2, '0');
+    const minutes = String(scheduledDate.getMinutes()).padStart(2, '0');
+    const timeStr = `${hours}:${minutes}`; // HH:MM
+    
+    // Map repeatType to repeatDaily boolean
+    const repeatDaily = reminderData.repeatType === 'daily';
+    
+    // Backend API format: title, reason, date, time, repeatDaily, notificationType, fcmToken
+    const notificationPayload = {
+      title: `📌 Reminder: ${reminderData.clientName}`,
+      reason: reminderData.message || `Follow up with ${reminderData.clientName}`,
+      date: dateStr,
+      time: timeStr,
+      repeatDaily: repeatDaily,
+      notificationType: 'reminder',
+      fcmToken: fcmToken,
+      // Additional data for handling
+      data: {
+        reminderId: reminderData.id,
+        clientName: reminderData.clientName,
+        clientEmail: reminderData.email,
+        clientPhone: reminderData.phone,
+        enquiryId: reminderData.enquiryId,
+        repeatType: reminderData.repeatType || 'none',
+      }
+    };
+    
+    console.log('📤 Sending scheduled reminder to backend for FCM:', notificationPayload);
+    
+    // Use the same endpoint as alerts
+    const response = await fetch(`${CRM_BASE_URL}/api/alert/schedule-notification`, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(notificationPayload),
+    });
+    
+    // Check if response is JSON
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      const data = await response.json();
+      if (response.ok || data.success) {
+        console.log('✅ Scheduled reminder notification sent to backend successfully');
+        return { success: true, data };
+      } else {
+        console.warn('⚠️ Backend returned error:', data.message);
+        return { success: false, error: data.message || 'Failed to send notification' };
+      }
+    } else {
+      const errorText = await response.text();
+      console.warn('⚠️ Backend returned non-JSON response:', errorText.substring(0, 100));
+      return { success: false, error: 'Backend endpoint not available' };
+    }
+  } catch (error) {
+    console.warn('⚠️ Error sending scheduled reminder notification:', error.message);
+    return { success: false, error: error.message };
+  }
+};
 
 /**
  * Send FCM notification for new enquiry to backend
@@ -46,10 +124,14 @@ const sendEnquiryNotification = async (enquiryData) => {
 // Get Auth Token with priority order
 const getToken = async () => {
   const adminToken = await AsyncStorage.getItem('adminToken');
+  const adminToken2 = await AsyncStorage.getItem('admin_token');
   const employeeToken = await AsyncStorage.getItem('employeeToken');
+  const employeeToken2 = await AsyncStorage.getItem('employee_token');
+  const employeeAuthToken = await AsyncStorage.getItem('employee_auth_token');
+  const crmToken = await AsyncStorage.getItem('crm_auth_token');
   const genericToken = await AsyncStorage.getItem('token');
   
-  return adminToken || employeeToken || genericToken;
+  return adminToken || adminToken2 || employeeToken || employeeToken2 || employeeAuthToken || crmToken || genericToken;
 };
 
 // Common Headers
@@ -701,4 +783,5 @@ export default {
   createFollowUp,
   getEnquiryDetails,
   getEnquiryReminders,
+  sendScheduledReminderNotification,
 };

@@ -29,7 +29,14 @@ const DashboardEmployee = ({ navigation }) => {
     commercialProperty: 0,
     rentProperty: 0,
     reminders: 0,
+    pendingReminders: 0,
     leads: 0,
+    enquiryLeads: 0,
+    clientLeads: 0,
+    followUps: 0,
+    followUpsToday: 0,
+    followUpsThisWeek: 0,
+    followUpsThisMonth: 0,
   });
 
   // Fetch dashboard data
@@ -63,6 +70,8 @@ const DashboardEmployee = ({ navigation }) => {
     fetchDashboardData();
   }, []);
 
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
   const handleLogout = () => {
     Alert.alert(
       'Logout',
@@ -74,22 +83,39 @@ const DashboardEmployee = ({ navigation }) => {
           style: 'destructive',
           onPress: async () => {
             try {
-              // Clear all auth tokens
+              // Set logging out flag to stop any ongoing API calls
+              setIsLoggingOut(true);
+              
+              // Clear all auth tokens and saved credentials
               await AsyncStorage.multiRemove([
                 'crm_auth_token',
                 'adminToken',
+                'admin_token',
+                'admin_email',
+                'admin_password',
                 'employee_auth_token',
+                'employee_token',
+                'employee_user',
+                'employee_profile',
+                'employee_permissions',
                 'authToken',
-                'userProfile'
+                'userProfile',
+                'userToken',
+                'userId',
+                'refreshToken',
+                'fcmToken',
               ]);
               
-              // Navigate to employee login
+              console.log('✅ Employee logged out - all tokens cleared');
+              
+              // Navigate to Employee login (reset stack to prevent back navigation)
               navigation.reset({
                 index: 0,
                 routes: [{ name: 'EmployeeLogin' }],
               });
             } catch (error) {
               console.error('Logout error:', error);
+              setIsLoggingOut(false);
               Alert.alert('Error', 'Failed to logout properly');
             }
           }
@@ -190,11 +216,6 @@ const DashboardEmployee = ({ navigation }) => {
             <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
               <Icon name="log-out-outline" size={26} color="#fff" />
             </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => navigation.navigate('CreateAlert')} style={[styles.createAlertButton, { marginTop: 10 }]}> 
-              <Icon name="notifications-outline" size={14} color="#fff" style={{ marginRight: 8 }} />
-              <Text style={styles.createAlertText}>CREATE ALERT</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </LinearGradient>
@@ -221,49 +242,6 @@ const DashboardEmployee = ({ navigation }) => {
         {/* Stats Row */}
         <View style={styles.statsRow}>{statsCards.map(renderCard)}</View>
 
-        {/* Enquiry Section */}
-        <View style={styles.whiteCard}>
-          <View style={styles.sectionHeader}>
-            <Icon name="analytics" size={20} color="#3b82f6" />
-            <Text style={styles.sectionTitle}>Enquiry Overview</Text>
-          </View>
-
-          <View style={styles.enquiryRow}>
-            <View style={styles.circleBox}>
-              <Text style={styles.circleValue}>
-                {(dashboardData.totalProperty + dashboardData.boughtProperty).toString()}
-              </Text>
-              <Text style={styles.circleLabel}>Total</Text>
-            </View>
-
-            <View style={styles.enquiryList}>
-              <View style={styles.enquiryItem}>
-                <View style={[styles.dot, { backgroundColor: "#3b82f6" }]} />
-                <Text style={styles.enquiryText}>Available</Text>
-                <Text style={styles.enquiryValue}>{dashboardData.totalProperty}</Text>
-              </View>
-
-              <TouchableOpacity 
-                style={styles.enquiryItem}
-                onPress={() => {
-                  Alert.alert(
-                    'Bought Properties',
-                    `Total Bought Properties: ${dashboardData.boughtProperty}`,
-                    [
-                      { text: 'OK', style: 'default' }
-                    ]
-                  );
-                }}
-              >
-                <View style={[styles.dot, { backgroundColor: "#f59e0b" }]} />
-                <Text style={styles.enquiryText}>Bought</Text>
-                <Text style={styles.enquiryValue}>{dashboardData.boughtProperty}</Text>
-                <Icon name="chevron-forward" size={16} color="#9ca3af" style={{ marginLeft: 'auto' }} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-
         {/* Analytics Section */}
         <Text style={styles.sectionTitleMain}>Your Personal Analytics</Text>
 
@@ -276,7 +254,7 @@ const DashboardEmployee = ({ navigation }) => {
             </View>
 
             <Text style={styles.blueMiniText}>
-              {dashboardData.reminders > 0 ? `${dashboardData.reminders} pending` : 'No reminders available'}
+              {dashboardData.pendingReminders > 0 ? `${dashboardData.pendingReminders} pending` : 'No pending reminders'}
             </Text>
           </TouchableOpacity>
 
@@ -288,11 +266,11 @@ const DashboardEmployee = ({ navigation }) => {
             </View>
 
             <View style={styles.leadRow}>
-              <Text style={styles.leadLabel}>Active Leads</Text>
+              <Text style={styles.leadLabel}>Enquiry: {dashboardData.enquiryLeads} | Client: {dashboardData.clientLeads}</Text>
               <View style={[styles.leadBarFill, { width: dashboardData.leads > 0 ? "60%" : "0%" }]} />
             </View>
 
-            <Text style={styles.blueMiniText}>Active: {dashboardData.leads}</Text>
+            <Text style={styles.blueMiniText}>Total Active: {dashboardData.leads}</Text>
           </TouchableOpacity>
         </View>
 
@@ -318,27 +296,27 @@ const DashboardEmployee = ({ navigation }) => {
         <TouchableOpacity style={styles.followCard} onPress={() => navigation.navigate('FollowUps')}>
           <View style={styles.blueHeader}>
             <Icon name="calendar" color="#fff" size={18} />
-            <Text style={styles.blueTitle}>Follow-Ups</Text>
+            <Text style={styles.blueTitle}>Follow-Ups ({dashboardData.followUps})</Text>
           </View>
 
           <View style={styles.followRow}>
             <Text style={styles.followText}>Today</Text>
             <View style={styles.badgeRed}>
-              <Text style={styles.badgeText}>3</Text>
+              <Text style={styles.badgeText}>{dashboardData.followUpsToday}</Text>
             </View>
           </View>
 
           <View style={styles.followRow}>
             <Text style={styles.followText}>This Week</Text>
             <View style={styles.badgeYellow}>
-              <Text style={styles.badgeText}>4</Text>
+              <Text style={styles.badgeText}>{dashboardData.followUpsThisWeek}</Text>
             </View>
           </View>
 
           <View style={styles.followRow}>
             <Text style={styles.followText}>This Month</Text>
             <View style={styles.badgeBlue}>
-              <Text style={styles.badgeText}>2</Text>
+              <Text style={styles.badgeText}>{dashboardData.followUpsThisMonth}</Text>
             </View>
           </View>
         </TouchableOpacity>

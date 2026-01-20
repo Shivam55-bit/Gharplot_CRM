@@ -259,10 +259,29 @@ class AuthService {
       if (response.ok && data && data.success && data.data && data.data.token) {
         // Store employee token and data
         await AsyncStorage.setItem('employeeToken', data.data.token);
+        await AsyncStorage.setItem('accessToken', data.data.token);
         
         // Safely store employee data using helper
         if (data.data.employee) {
           await AsyncStorageHelper.safeSetJSON('employeeData', data.data.employee);
+          // 🔥 Store employee ID as userId for FCM token sync
+          if (data.data.employee._id) {
+            await AsyncStorage.setItem('userId', data.data.employee._id);
+            await AsyncStorage.setItem('employeeId', data.data.employee._id);
+            console.log('✅ Employee ID stored:', data.data.employee._id);
+            
+            // 🔥 Sync FCM token to Employee model for notifications
+            try {
+              const { getFCMToken, sendTokenToBackend } = require('../utils/fcmService');
+              const fcmToken = await getFCMToken();
+              if (fcmToken) {
+                await sendTokenToBackend(data.data.employee._id, fcmToken);
+                console.log('✅ FCM token synced to Employee model after login');
+              }
+            } catch (fcmError) {
+              console.warn('⚠️ FCM sync after login failed:', fcmError.message);
+            }
+          }
         }
         
         await AsyncStorage.setItem('userType', 'employee');

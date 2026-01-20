@@ -560,10 +560,41 @@ export async function sendFCMTokenToBackend(userId, fcmToken) {
  */
 export async function updateReminder(reminderId, data) {
     try {
-        const endpoint = `/api/reminder/update/${reminderId}`;
-        const response = await put(endpoint, data);
-        console.log('✅ Reminder updated via API:', response);
-        return response;
+        const url = cleanUrl(BASE_URL, `/api/reminder/update/${reminderId}`);
+        
+        // Get proper auth token (employee/admin)
+        const token = await AsyncStorage.getItem('accessToken') ||
+                      await AsyncStorage.getItem('employeeToken') ||
+                      await AsyncStorage.getItem('adminToken') ||
+                      await AsyncStorage.getItem('employee_auth_token') ||
+                      await AsyncStorage.getItem('userToken');
+        
+        if (!token) {
+            throw new Error('No authentication token found. Please login again.');
+        }
+        
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+        };
+        
+        console.log('📤 Updating reminder:', reminderId);
+        console.log('📝 Data:', data);
+        
+        const response = await fetchWithTimeout(url, {
+            method: 'PUT',
+            headers: headers,
+            body: JSON.stringify(data),
+        });
+
+        if (!response.ok) {
+            const parsed = await parseErrorResponse(response);
+            throw new Error(`HTTP error! Status: ${parsed.status}. Message: ${parsed.message}`);
+        }
+        
+        const result = await response.json();
+        console.log('✅ Reminder updated via API:', result);
+        return result;
     } catch (error) {
         console.error('❌ Failed to update reminder:', error);
         throw error;
