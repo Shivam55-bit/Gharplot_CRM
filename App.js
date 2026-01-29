@@ -5,6 +5,8 @@ import AppNavigator from './src/navigation/AppNavigator';
 import { initializeFCM } from './src/utils/fcmService';
 import { Alert, Linking } from 'react-native';
 import ReminderPopup from './src/crm/components/Reminders/ReminderPopup';
+import EmployeeNotificationPopup from './src/components/EmployeeNotificationPopup';
+import { setShowPopupCallback } from './src/services/EmployeePopupManager';
 import reminderManager from './src/crm/services/reminderManager';
 import ReminderNotificationService from './src/services/ReminderNotificationService';
 import AlertNotificationService from './src/services/AlertNotificationService';
@@ -26,9 +28,25 @@ const AppMain = () => {
   const [showReminderPopup, setShowReminderPopup] = useState(false);
   const [appError, setAppError] = useState(null);
   const appStateRef = useRef(AppState.currentState);
+  
+  // Employee Notification Popup State
+  const [employeePopupVisible, setEmployeePopupVisible] = useState(false);
+  const [employeePopupData, setEmployeePopupData] = useState(null);
+  
+  // Setup Employee Popup callback
+  useEffect(() => {
+    setShowPopupCallback((data) => {
+      console.log('📱 Showing Employee Notification Popup:', data);
+      setEmployeePopupData(data);
+      setEmployeePopupVisible(true);
+    });
+  }, []);
 
   // 🔥 CRITICAL: AppState listener to handle background -> foreground transition
   useEffect(() => {
+    // 🔥 Track if we already processed this transition
+    let isProcessingNavigation = false;
+    
     const handleAppStateChange = async (nextAppState) => {
       console.log('📱 AppState changed from', appStateRef.current, 'to', nextAppState);
       
@@ -36,51 +54,70 @@ const AppMain = () => {
       if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
         console.log('🎬 App came to FOREGROUND - Checking pending notifications');
         
-        // 🔥 IMMEDIATE CHECK - No delay!
+        // 🔥 Prevent multiple processing
+        if (isProcessingNavigation) {
+          console.log('⚠️ Already processing navigation, skipping...');
+          appStateRef.current = nextAppState;
+          return;
+        }
+        
+        isProcessingNavigation = true;
+        
         try {
           const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+          
           const pendingData = await AsyncStorage.getItem('pendingNotificationData');
           
           if (pendingData) {
+            // 🔥 IMMEDIATELY clear data to prevent duplicate processing
+            await AsyncStorage.removeItem('pendingNotificationData');
+            
             const data = JSON.parse(pendingData);
-            console.log('📨 Found pending notification:', JSON.stringify(data, null, 2));
+            console.log('📨 Found pending notification:', data.navigateTo);
             
             if (data.shouldNavigateImmediately && data.navigateTo && data.navigationParams) {
-              console.log('🚀🚀🚀 IMMEDIATE ALERT NAVIGATION - Processing now!');
+              console.log('🚀 SINGLE NAVIGATION - Processing now!');
               
-              // Clear the pending data first
-              await AsyncStorage.removeItem('pendingNotificationData');
-              
-              // 🔥 FORCE IMMEDIATE NAVIGATION with proper waiting
-              const navigateToAlert = () => {
-                if (navigationRef?.isReady && navigationRef.isReady()) {
-                  try {
-                    console.log('🎯 Current route:', navigationRef.getCurrentRoute()?.name);
-                    navigationRef.navigate(data.navigateTo, data.navigationParams);
-                    console.log('✅✅✅ ALERT NAVIGATION SUCCESS!');
-                    return true;
-                  } catch (navError) {
-                    console.error('❌ Navigate failed:', navError);
-                    return false;
+              // 🔥 Wait for navigation to be ready, then navigate ONCE
+              const waitAndNavigate = () => {
+                if (navigationRef && navigationRef.isReady && navigationRef.isReady()) {
+                  const currentRoute = navigationRef.getCurrentRoute();
+                  
+                  // Skip if already on target screen
+                  if (currentRoute?.name === data.navigateTo) {
+                    console.log('⚠️ Already on target screen');
+                    isProcessingNavigation = false;
+                    return;
                   }
+                  
+                  console.log('📤 Navigating to:', data.navigateTo);
+                  navigationRef.navigate(data.navigateTo, data.navigationParams);
+                  console.log('✅ Navigation done');
+                  
+                  // Reset after successful navigation
+                  setTimeout(() => { isProcessingNavigation = false; }, 3000);
+                } else {
+                  // Wait 500ms and try once more
+                  setTimeout(() => {
+                    if (navigationRef && navigationRef.isReady && navigationRef.isReady()) {
+                      navigationRef.navigate(data.navigateTo, data.navigationParams);
+                      console.log('✅ Delayed navigation done');
+                    }
+                    isProcessingNavigation = false;
+                  }, 500);
                 }
-                return false;
               };
               
-              // Try immediately
-              if (!navigateToAlert()) {
-                // If not ready, wait and retry
-                console.log('⏳ Navigation not ready, waiting...');
-                setTimeout(() => {
-                  if (!navigateToAlert()) {
-                    console.error('❌ Navigation failed even after delay');
-                  }
-                }, 300);
-              }
+              waitAndNavigate();
+            } else {
+              isProcessingNavigation = false;
             }
+          } else {
+            isProcessingNavigation = false;
           }
         } catch (error) {
           console.error('❌ AppState navigation error:', error);
+          isProcessingNavigation = false;
         }
       }
       
@@ -104,7 +141,7 @@ const AppMain = () => {
 
         // Initialize Reminder Manager with error handling
         try {
-          reminderManager.initialize((reminder) => {
+          await reminderManager.initialize((reminder) => {
             console.log('🔔 Reminder popup triggered for:', reminder.name);
             setCurrentReminder(reminder);
             setShowReminderPopup(true);
@@ -164,20 +201,36 @@ const AppMain = () => {
         // Setup notification listeners
         unsubscribeNotificationPress = setupNotificationListeners();
 
-        // 🎯 CRITICAL: Setup direct background notification tap handler for ALERTS
+        // 🎯 CRITICAL: Setup direct background notification tap handler
+        // 🔥 NOTE: Notifee already handles background events - FCM handler is BACKUP only
         const setupBackgroundTapHandler = () => {
           try {
             const messaging = require('@react-native-firebase/messaging').default;
+            const AsyncStorage = require('@react-native-async-storage/async-storage').default;
             
-            // Handle notification tap when app is in BACKGROUND
-            const unsubscribe = messaging().onNotificationOpenedApp(remoteMessage => {
-              console.log('🔔🔔 BACKGROUND TAP - Notification opened:', JSON.stringify(remoteMessage, null, 2));
+            // Handle notification tap when app is in BACKGROUND (Firebase FCM)
+            // 🔥 This is a BACKUP - Notifee's onBackgroundEvent should handle most cases
+            const unsubscribe = messaging().onNotificationOpenedApp(async remoteMessage => {
+              console.log('🔔🔔 BACKGROUND TAP (FCM) - Notification opened:', JSON.stringify(remoteMessage, null, 2));
               
               const notifType = remoteMessage.data?.type || remoteMessage.data?.notificationType;
               console.log('🎯 Notification Type:', notifType);
               
+              // 🔥 SKIP reminder/alert - Notifee handles these
+              if (notifType === 'reminder' || notifType === 'enquiry_reminder') {
+                console.log('⏭️ SKIPPING FCM handler for reminder - Notifee will handle');
+                return;
+              }
+              
+              // 🔥 Check if Notifee already stored this notification
+              const existingData = await AsyncStorage.getItem('pendingNotificationData');
+              if (existingData) {
+                console.log('⚠️ Notifee already stored data, skipping FCM handler');
+                return;
+              }
+              
               if (notifType === 'alert' || notifType === 'system_alert') {
-                console.log('🚀🚀🚀 ALERT DETECTED - Navigating to EditAlertScreen');
+                console.log('🚀🚀🚀 ALERT DETECTED (FCM BACKUP) - Storing for navigation');
                 
                 const params = {
                   alertId: remoteMessage.data.alertId?.replace('alert_', '') || remoteMessage.data.alertId || Date.now().toString(),
@@ -187,63 +240,23 @@ const AppMain = () => {
                   repeatDaily: remoteMessage.data.repeatDaily === 'true' || remoteMessage.data.repeatDaily === true
                 };
                 
-                console.log('📤📤 Background: Navigating to EditAlert with params:', params);
+                console.log('📤 Storing alert for navigation:', params);
                 
-                // 🔥 ULTIMATE FIX: Use InteractionManager to wait for app interactions to complete
-                const { InteractionManager } = require('react-native');
-                
-                InteractionManager.runAfterInteractions(() => {
-                  console.log('🎬 InteractionManager: App interactions complete, navigating now...');
-                  
-                  // Give minimal time for navigation to be fully ready
-                  setTimeout(() => {
-                    if (navigationRef?.current && navigationRef.isReady()) {
-                      try {
-                        console.log('🎯 Current route before navigation:', navigationRef.getCurrentRoute()?.name);
-                        
-                        // Direct navigate to EditAlert
-                        navigationRef.current.navigate('EditAlert', params);
-                        console.log('✅ SUCCESS! Navigated to EditAlert');
-                      } catch (error) {
-                        console.error('❌ Navigate failed:', error);
-                      }
-                    } else {
-                      console.error('❌ NavigationRef not ready after InteractionManager');
-                    }
-                  }, 500);
-                });
-              } else if (notifType === 'reminder' || notifType === 'enquiry_reminder') {
-                console.log('🚀 REMINDER detected - handling reminder navigation');
-                
-                const params = {
-                  reminderId: remoteMessage.data.reminderId || remoteMessage.messageId,
-                  clientName: remoteMessage.data.clientName || 'Client',
-                  originalMessage: remoteMessage.data.message || remoteMessage.notification?.body || '',
-                  enquiryId: remoteMessage.data.enquiryId,
+                // Store for immediate navigation when app comes to foreground
+                const notificationData = {
+                  id: remoteMessage.messageId,
+                  data: remoteMessage.data,
+                  timestamp: new Date().toISOString(),
+                  shouldNavigateImmediately: true,
+                  navigateTo: 'EditAlert',
+                  navigationParams: params
                 };
                 
-                console.log('📤 Navigating to EditReminder with params:', params);
-                
-                // Try NavigationService first for reminder too
-                try {
-                  const NavigationService = require('./src/services/NavigationService').default;
-                  NavigationService.navigate('EditReminder', params);
-                  console.log('✅ Reminder navigation success');
-                } catch (navError) {
-                  console.warn('⚠️ Reminder NavigationService failed, trying navigationRef:', navError);
-                  if (navigationRef?.current) {
-                    try {
-                      navigationRef.current.navigate('EditReminder', params);
-                      console.log('✅ Reminder navigationRef success');
-                    } catch (navRefError) {
-                      console.error('❌ Reminder navigation failed:', navRefError);
-                      setTimeout(() => {
-                        navigationRef.current?.navigate('EditReminder', params);
-                      }, 500);
-                    }
-                  }
-                }
+                AsyncStorage.setItem('pendingNotificationData', JSON.stringify(notificationData))
+                  .then(() => console.log('✅ Alert stored in AsyncStorage'))
+                  .catch(err => console.error('❌ Failed to store alert:', err));
               }
+              // 🔥 Reminder handling REMOVED - Notifee handles it to prevent duplicate
             });
             
             console.log('✅ Background tap handler registered successfully');
@@ -516,6 +529,20 @@ const AppMain = () => {
         reminder={currentReminder}
         navigation={navigationRef.current}
         onClose={handleReminderClose}
+      />
+      
+      {/* Employee Notification Popup for Admin */}
+      <EmployeeNotificationPopup
+        visible={employeePopupVisible}
+        type={employeePopupData?.type || 'reminder'}
+        employeeName={employeePopupData?.employeeName || 'Employee'}
+        title={employeePopupData?.title || ''}
+        clientName={employeePopupData?.clientName || ''}
+        reason={employeePopupData?.reason || ''}
+        onClose={() => {
+          setEmployeePopupVisible(false);
+          setEmployeePopupData(null);
+        }}
       />
     </>
   );

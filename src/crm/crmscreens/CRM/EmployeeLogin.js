@@ -17,6 +17,7 @@ import {
 import { useNavigation } from "@react-navigation/native";
 import Icon from "react-native-vector-icons/Ionicons";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getFCMToken } from '../../../utils/fcmService';
 
 const EmployeeLogin = () => {
   const navigation = useNavigation();
@@ -53,6 +54,11 @@ const EmployeeLogin = () => {
 
     setLoading(true);
     try {
+      // Get FCM token BEFORE login so we can send it with login request
+      console.log('📱 Getting FCM token for employee login...');
+      const fcmToken = await getFCMToken();
+      console.log('🔑 FCM Token:', fcmToken ? fcmToken.substring(0, 30) + '...' : 'NULL');
+
       const response = await fetch('https://abc.bhoomitechzone.us/api/employees/login', {
         method: 'POST',
         headers: {
@@ -61,6 +67,7 @@ const EmployeeLogin = () => {
         body: JSON.stringify({
           email: email.trim(),
           password: password.trim(),
+          fcmToken: fcmToken || '', // Send FCM token with login request
         }),
       });
 
@@ -69,7 +76,16 @@ const EmployeeLogin = () => {
       if (data.success) {
         // Store token and user data
         await AsyncStorage.setItem('employee_token', data.data.token);
+        await AsyncStorage.setItem('employeeToken', data.data.token); // Consistent key
         await AsyncStorage.setItem('employee_user', JSON.stringify(data.data.employee));
+        await AsyncStorage.setItem('userType', 'employee');
+        
+        // Store FCM token locally
+        if (fcmToken) {
+          await AsyncStorage.setItem('fcmToken', fcmToken);
+          await AsyncStorage.setItem('fcmTokenRegistered', 'true');
+          console.log('✅ FCM token sent with login and stored locally');
+        }
         
         setLoading(false);
         // Navigate to Employee App with bottom tabs

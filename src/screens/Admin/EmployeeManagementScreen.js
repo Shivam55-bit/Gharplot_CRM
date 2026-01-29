@@ -10,8 +10,11 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  Modal,
+  ScrollView,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   getAllEmployees,
   getEmployeeDashboardStats,
@@ -39,8 +42,61 @@ const EmployeeManagementScreen = ({ navigation }) => {
     limit: 20,
   });
 
+  const [remindersModalVisible, setRemindersModalVisible] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [employeeReminders, setEmployeeReminders] = useState([]);
+  const [remindersLoading, setRemindersLoading] = useState(false);
+
   // Load employees and stats on component mount
   useEffect(() => {
+    console.log('⚡ Component mounted');
+    
+    // Add test data FIRST to bypass API calls for testing
+    console.log('🧪 Setting TEST employee data');
+    const testEmployees = [
+      {
+        id: 'test-1',
+        name: 'Raj Kumar',
+        email: 'raj@example.com',
+        phone: '9876543210',
+        role: 'Sales Agent',
+        department: 'Sales',
+        status: 'Active',
+        joinDate: '01/01/2024',
+        avatar: null,
+        performance: 85,
+      },
+      {
+        id: 'test-2',
+        name: 'Priya Singh',
+        email: 'priya@example.com',
+        phone: '9876543211',
+        role: 'Support Agent',
+        department: 'Support',
+        status: 'Active',
+        joinDate: '01/15/2024',
+        avatar: null,
+        performance: 92,
+      },
+      {
+        id: 'test-3',
+        name: 'Amit Patel',
+        email: 'amit@example.com',
+        phone: '9876543212',
+        role: 'Manager',
+        department: 'Management',
+        status: 'Active',
+        joinDate: '12/01/2023',
+        avatar: null,
+        performance: 88,
+      }
+    ];
+    
+    setEmployees(testEmployees);
+    setLoading(false);
+    console.log('✅ Test data set successfully:', testEmployees.length, 'employees');
+    
+    // Then load real data from API
     loadEmployees();
     loadDashboardStats();
   }, []);
@@ -58,6 +114,12 @@ const EmployeeManagementScreen = ({ navigation }) => {
       };
 
       const { employees: fetchedEmployees, pagination: newPagination } = await getAllEmployees(params);
+      
+      console.log('📦 Fetched Employees:', fetchedEmployees);
+      
+      if (fetchedEmployees.length === 0) {
+        console.warn('⚠️ WARNING: No employees returned from API');
+      }
       
       setEmployees(fetchedEmployees.map(emp => ({
         id: emp._id || emp.id,
@@ -101,6 +163,59 @@ const EmployeeManagementScreen = ({ navigation }) => {
     }
   };
 
+  // Load reminders for selected employee
+  const loadEmployeeReminders = async (employeeId) => {
+    try {
+      setRemindersLoading(true);
+      
+      // Get auth token
+      const token = await AsyncStorage.getItem('adminToken') ||
+                   await AsyncStorage.getItem('crm_auth_token') ||
+                   await AsyncStorage.getItem('userToken');
+      
+      if (!token) {
+        Alert.alert('Error', 'No authentication token found');
+        return;
+      }
+
+      const CRM_BASE_URL = 'https://abc.bhoomitechzone.us';
+      
+      // Fetch reminders for this employee
+      const response = await fetch(`${CRM_BASE_URL}/api/reminder/employee/${employeeId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch reminders: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.success && data.data) {
+        setEmployeeReminders(data.data);
+      } else {
+        setEmployeeReminders([]);
+      }
+    } catch (error) {
+      console.error('❌ Load reminders error:', error);
+      Alert.alert('Error', 'Failed to load employee reminders');
+      setEmployeeReminders([]);
+    } finally {
+      setRemindersLoading(false);
+    }
+  };
+
+  // Handle view reminders
+  const handleViewReminders = async (employee) => {
+    setSelectedEmployee(employee);
+    setRemindersModalVisible(true);
+    await loadEmployeeReminders(employee.id);
+  };
+
   // Handle search
   const handleSearch = (text) => {
     setSearchText(text);
@@ -139,6 +254,10 @@ const EmployeeManagementScreen = ({ navigation }) => {
       `Name: ${employee.name}\nRole: ${employee.role}\nDepartment: ${employee.department}\nJoin Date: ${employee.joinDate}\nPerformance: ${employee.performance}%\nStatus: ${employee.status}`,
       [
         { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'View Reminders', 
+          onPress: () => handleViewReminders(employee),
+        },
         { 
           text: 'Edit', 
           onPress: () => handleEditEmployee(employee),
@@ -242,9 +361,9 @@ const EmployeeManagementScreen = ({ navigation }) => {
       </View>
       
       <View style={styles.cardActions}>
-        <TouchableOpacity style={styles.actionButton}>
-          <Icon name="create" size={18} color="#3b82f6" />
-          <Text style={styles.actionText}>Edit</Text>
+        <TouchableOpacity style={styles.actionButton} onPress={() => handleViewReminders(item)}>
+          <Icon name="list" size={18} color="#3b82f6" />
+          <Text style={styles.actionText}>Reminders</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.actionButton}>
           <Icon name="mail" size={18} color="#10b981" />
@@ -256,6 +375,149 @@ const EmployeeManagementScreen = ({ navigation }) => {
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
+  );
+
+  const renderReminderItem = ({ item }) => {
+    const reminderDate = new Date(item.reminderDateTime);
+    const reminderTime = reminderDate.toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+    const reminderDateStr = reminderDate.toLocaleDateString();
+    const isOverdue = new Date() > reminderDate;
+
+    return (
+      <View style={[styles.reminderItem, isOverdue && styles.overdueReminder]}>
+        <View style={styles.reminderHeader}>
+          <View style={styles.reminderTitleContainer}>
+            <Icon 
+              name={isOverdue ? "alert-circle" : "checkbox-marked-circle"} 
+              size={20} 
+              color={isOverdue ? "#ef4444" : "#3b82f6"} 
+            />
+            <View style={styles.reminderTextContent}>
+              <Text style={styles.reminderTitle}>{item.title}</Text>
+              <Text style={styles.reminderClient}>{item.clientName}</Text>
+            </View>
+          </View>
+          <View style={[styles.reminderStatusBadge, { 
+            backgroundColor: isOverdue ? "#fed7d7" : "#dbeafe" 
+          }]}>
+            <Text style={[styles.reminderStatusText, { 
+              color: isOverdue ? "#991b1b" : "#1e40af" 
+            }]}>
+              {isOverdue ? 'OVERDUE' : 'PENDING'}
+            </Text>
+          </View>
+        </View>
+        
+        <View style={styles.reminderDetails}>
+          <View style={styles.reminderDetailItem}>
+            <Icon name="call" size={14} color="#6b7280" />
+            <Text style={styles.reminderDetailText}>{item.phone}</Text>
+          </View>
+          <View style={styles.reminderDetailItem}>
+            <Icon name="mail" size={14} color="#6b7280" />
+            <Text style={styles.reminderDetailText} numberOfLines={1}>{item.email}</Text>
+          </View>
+          <View style={styles.reminderDetailItem}>
+            <Icon name="calendar" size={14} color="#6b7280" />
+            <Text style={styles.reminderDetailText}>{reminderDateStr} at {reminderTime}</Text>
+          </View>
+        </View>
+
+        {item.note && (
+          <View style={styles.reminderNote}>
+            <Text style={styles.reminderNoteText}>{item.note}</Text>
+          </View>
+        )}
+
+        <View style={styles.reminderStats}>
+          <View style={styles.reminderStat}>
+            <Text style={styles.reminderStatLabel}>Triggered</Text>
+            <Text style={styles.reminderStatValue}>{item.triggerCount || 0}x</Text>
+          </View>
+          <View style={styles.reminderStat}>
+            <Text style={styles.reminderStatLabel}>Snoozed</Text>
+            <Text style={styles.reminderStatValue}>{item.snoozeCount || 0}x</Text>
+          </View>
+          <View style={styles.reminderStat}>
+            <Text style={styles.reminderStatLabel}>Status</Text>
+            <Text style={styles.reminderStatValue}>{item.status}</Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  const renderRemindersModal = () => (
+    <Modal
+      visible={remindersModalVisible}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setRemindersModalVisible(false)}
+    >
+      <View style={styles.modalContainer}>
+        <View style={styles.modalContent}>
+          {/* Modal Header */}
+          <View style={styles.modalHeader}>
+            <View style={styles.modalTitleContainer}>
+              <Icon name="alarm-multiple" size={28} color="#3b82f6" />
+              <View style={styles.modalTitleText}>
+                <Text style={styles.modalTitle}>{selectedEmployee?.name || 'Employee'}</Text>
+                <Text style={styles.modalSubtitle}>
+                  {employeeReminders?.length || 0} reminders set
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.modalCloseButton}
+              onPress={() => setRemindersModalVisible(false)}
+            >
+              <Icon name="close" size={24} color="#374151" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Modal Body */}
+          {remindersLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#3b82f6" />
+              <Text style={styles.loadingText}>Loading reminders...</Text>
+            </View>
+          ) : employeeReminders && employeeReminders.length > 0 ? (
+            <ScrollView 
+              style={styles.remindersScrollContainer}
+              showsVerticalScrollIndicator={true}
+            >
+              <FlatList
+                data={employeeReminders}
+                keyExtractor={(item, index) => item._id || index.toString()}
+                renderItem={renderReminderItem}
+                scrollEnabled={false}
+              />
+            </ScrollView>
+          ) : (
+            <View style={styles.emptyContainer}>
+              <Icon name="inbox" size={64} color="#d1d5db" />
+              <Text style={styles.emptyTitle}>No Reminders</Text>
+              <Text style={styles.emptyText}>
+                {selectedEmployee?.name || 'This employee'} hasn't set any reminders yet
+              </Text>
+            </View>
+          )}
+
+          {/* Modal Footer */}
+          <View style={styles.modalFooter}>
+            <TouchableOpacity
+              style={styles.footerButton}
+              onPress={() => setRemindersModalVisible(false)}
+            >
+              <Text style={styles.footerButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 
   return (
@@ -274,6 +536,12 @@ const EmployeeManagementScreen = ({ navigation }) => {
       </View>
 
       <View style={styles.content}>
+        <View style={{ padding: 10, backgroundColor: '#fff3cd', borderRadius: 8, marginBottom: 10 }}>
+          <Text style={{ color: '#000', fontSize: 14, fontWeight: 'bold' }}>
+            🧪 DEBUG: {employees.length} employees loaded | Loading: {loading.toString()}
+          </Text>
+        </View>
+
         <View style={styles.searchContainer}>
           <Icon name="search" size={20} color="#6b7280" style={styles.searchIcon} />
           <TextInput
@@ -358,6 +626,8 @@ const EmployeeManagementScreen = ({ navigation }) => {
           />
         )}
       </View>
+
+      {renderRemindersModal()}
     </SafeAreaView>
   );
 };
@@ -637,6 +907,177 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     textAlign: 'center',
     paddingHorizontal: 20,
+  },
+  // Modal Styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '90%',
+    paddingBottom: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  modalTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  modalTitleText: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 4,
+  },
+  modalCloseButton: {
+    padding: 8,
+  },
+  remindersScrollContainer: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  reminderItem: {
+    backgroundColor: '#f9fafb',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: '#3b82f6',
+  },
+  overdueReminder: {
+    backgroundColor: '#fef2f2',
+    borderLeftColor: '#ef4444',
+  },
+  reminderHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  reminderTitleContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  reminderTextContent: {
+    marginLeft: 10,
+    flex: 1,
+  },
+  reminderTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  reminderClient: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  reminderStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  reminderStatusText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  reminderDetails: {
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  reminderDetailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  reminderDetailText: {
+    marginLeft: 8,
+    fontSize: 12,
+    color: '#374151',
+    flex: 1,
+  },
+  reminderNote: {
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#f59e0b',
+  },
+  reminderNoteText: {
+    fontSize: 12,
+    color: '#374151',
+    fontStyle: 'italic',
+  },
+  reminderStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  reminderStat: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  reminderStatLabel: {
+    fontSize: 11,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  reminderStatValue: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  modalFooter: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  footerButton: {
+    backgroundColor: '#3b82f6',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  footerButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  emptyTitle: {
+    marginTop: 16,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#374151',
   },
 });
 

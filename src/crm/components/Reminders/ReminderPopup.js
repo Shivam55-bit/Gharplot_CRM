@@ -259,6 +259,33 @@ const ReminderPopup = ({ visible, onClose, reminder, navigation }) => {
     onClose('');
   };
 
+  // Handle "Later" button - Stop showing this reminder until next scheduled time
+  const handleLater = async () => {
+    try {
+      console.log('⏸️ Later pressed - Stopping reminder popup');
+      
+      // Import reminderManager to mark this reminder as checked
+      let reminderManager;
+      try {
+        reminderManager = (await import('../../services/reminderManager')).default;
+      } catch (importError) {
+        reminderManager = (await import('../../../crm/services/reminderManager')).default;
+      }
+      
+      if (reminderManager && reminder.id) {
+        // Add to checked reminders so it won't show again
+        reminderManager.checkedReminders.add(reminder.id);
+        await reminderManager.saveCheckedReminders();
+        console.log('✅ Reminder marked as checked - Will not show again until next scheduled time');
+      }
+      
+      onClose('later');
+    } catch (error) {
+      console.error('Error handling later:', error);
+      onClose('later');
+    }
+  };
+
   const handleViewProfile = () => {
     // Navigate to enquiry detail screen
     if (reminder && navigation) {
@@ -648,16 +675,16 @@ const ReminderPopup = ({ visible, onClose, reminder, navigation }) => {
             </View>
           </ScrollView>
 
-          {/* ✅ ENHANCED: Footer Actions with View Profile, Repeat and Dismiss */}
+          {/* ✅ ENHANCED: Footer Actions with Later, View Profile, Call */}
           <View style={styles.footer}>
-            <TouchableOpacity style={styles.dismissButton} onPress={handleDismiss}>
-              <Icon name="close" size={20} color="#ffffff" />
-              <Text style={styles.dismissButtonText}>Dismiss</Text>
+            <TouchableOpacity style={styles.laterButton} onPress={handleLater}>
+              <Icon name="schedule" size={20} color="#ffffff" />
+              <Text style={styles.laterButtonText}>Later</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.viewProfileButton} onPress={handleViewProfile}>
               <Icon name="person" size={20} color="#ffffff" />
-              <Text style={styles.viewProfileButtonText}>View Profile</Text>
+              <Text style={styles.viewProfileButtonText}>View</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.callButton} onPress={handleCall}>
@@ -671,7 +698,7 @@ const ReminderPopup = ({ visible, onClose, reminder, navigation }) => {
               disabled={!response.trim()}
             >
               <Icon name="check-circle" size={20} color="#ffffff" />
-              <Text style={styles.completeButtonText}>Complete</Text>
+              <Text style={styles.completeButtonText}>Done</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -979,6 +1006,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  laterButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f59e0b',
+    paddingVertical: 14,
+    borderRadius: 8,
+    gap: 6,
+  },
+  laterButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   viewProfileButton: {
     flex: 1,
     flexDirection: 'row',
@@ -987,11 +1029,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#3b82f6',
     paddingVertical: 14,
     borderRadius: 8,
-    gap: 8,
+    gap: 6,
   },
   viewProfileButtonText: {
     color: '#ffffff',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
   },
   completeButton: {
@@ -1002,11 +1044,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#ec4899',
     paddingVertical: 14,
     borderRadius: 8,
-    gap: 8,
+    gap: 6,
   },
   completeButtonText: {
     color: '#ffffff',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
   },
   buttonDisabled: {

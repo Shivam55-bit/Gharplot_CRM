@@ -74,7 +74,7 @@ export const getFirstImageUrl = (photosAndVideo) => {
 
 /**
  * Formats an image URL, handles Base64, and constructs a full URL from server paths.
- * FIX: This now correctly handles "uploads/..." paths using BASE_URL.
+ * For property images, uses the correct base URL (abc.ridealmobility.com)
  * @param {string} imageData - A URL, a raw Base64 string, or a server file path (e.g., "uploads/image.jpeg").
  * @returns {string} A displayable image URI.
  */
@@ -102,9 +102,11 @@ export const formatImageUrl = (imageData) => {
         return imageData;
     }
     
-    // 2. If it's a server file path (like "uploads/123.jpeg" or "/uploads/123.jpeg"), prepend BASE_URL.
+    // 2. If it's a server file path (like "uploads/123.jpeg" or "/uploads/123.jpeg")
+    // Use the correct property image base URL (abc.ridealmobility.com)
     if (/^\/?uploads\//.test(imageData)) {
-        const baseUrlClean = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
+        const propertyImageBaseUrl = 'https://abc.ridealmobility.com';
+        const baseUrlClean = propertyImageBaseUrl.endsWith('/') ? propertyImageBaseUrl.slice(0, -1) : propertyImageBaseUrl;
         // remove leading slash from imageData so we don't double\/join
         const cleanPath = imageData.replace(/^\/+/, '');
         const fullUrl = `${baseUrlClean}/${cleanPath}`;

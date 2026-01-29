@@ -6,7 +6,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
 
 const REMINDERS_KEY = 'app_reminders';
-const CHECK_INTERVAL = 5000; // ✅ ENHANCED: Check every 5 seconds for better accuracy
+const CHECKED_REMINDERS_KEY = 'checked_reminders'; // Persist checked reminders
+const CHECK_INTERVAL = 30000; // Check every 30 seconds (reduced from 5 to avoid spam)
 const CRM_BASE_URL = 'https://abc.bhoomitechzone.us';
 
 class ReminderManager {
@@ -21,11 +22,43 @@ class ReminderManager {
    * Initialize reminder manager
    * @param {Function} onReminderTrigger - Callback when reminder time matches
    */
-  initialize(onReminderTrigger) {
+  async initialize(onReminderTrigger) {
     this.reminderCallback = onReminderTrigger;
     this.isRunning = true;
+    
+    // Load previously checked reminders from storage
+    await this.loadCheckedReminders();
+    
     this.startChecking();
-    console.log('✅ Enhanced Reminder Manager initialized with 5-second check interval');
+    console.log('✅ Reminder Manager initialized with 30-second check interval');
+  }
+  
+  /**
+   * Load checked reminders from AsyncStorage
+   */
+  async loadCheckedReminders() {
+    try {
+      const checked = await AsyncStorage.getItem(CHECKED_REMINDERS_KEY);
+      if (checked) {
+        const checkedArray = JSON.parse(checked);
+        this.checkedReminders = new Set(checkedArray);
+        console.log(`📋 Loaded ${this.checkedReminders.size} previously checked reminders`);
+      }
+    } catch (error) {
+      console.error('Error loading checked reminders:', error);
+    }
+  }
+  
+  /**
+   * Save checked reminders to AsyncStorage
+   */
+  async saveCheckedReminders() {
+    try {
+      const checkedArray = Array.from(this.checkedReminders);
+      await AsyncStorage.setItem(CHECKED_REMINDERS_KEY, JSON.stringify(checkedArray));
+    } catch (error) {
+      console.error('Error saving checked reminders:', error);
+    }
   }
 
   /**
@@ -39,14 +72,14 @@ class ReminderManager {
     // Check immediately
     this.checkReminders();
 
-    // Then check every 5 seconds for better accuracy
+    // Then check every 30 seconds (reduced frequency)
     this.checkInterval = setInterval(() => {
       if (this.isRunning) {
         this.checkReminders();
       }
     }, CHECK_INTERVAL);
 
-    console.log('🔄 Enhanced reminder checking started (5-second intervals)');
+    console.log('🔄 Reminder checking started (30-second intervals)');
   }
 
   /**
@@ -179,7 +212,7 @@ class ReminderManager {
   }
 
   /**
-   * ✅ ENHANCED: Check if any reminder time has arrived with better precision
+   * ✅ FIXED: Check if any reminder time has arrived - Only trigger ONCE
    */
   async checkReminders() {
     try {
@@ -190,37 +223,32 @@ class ReminderManager {
         return; // No reminders to check
       }
 
-      console.log(`🔍 Checking ${pendingReminders.length} pending reminders...`);
-
+      // Silent check - don't log every time
       for (const reminder of pendingReminders) {
         const reminderTime = new Date(reminder.reminderDateTime || reminder.reminderTime);
         
-        // Skip if already triggered
-        if (this.checkedReminders.has(reminder.id)) {
+        // Skip if already triggered (check both memory and triggered flag)
+        if (this.checkedReminders.has(reminder.id) || reminder.triggered === true) {
           continue;
         }
         
-        // Check if reminder time has arrived (within 30 seconds window for reliability)
+        // Check if reminder time has arrived (within 60 seconds window)
         const timeDiff = now.getTime() - reminderTime.getTime();
-        const isDue = timeDiff >= 0 && timeDiff <= 30000; // Within 30 seconds
+        const isDue = timeDiff >= 0 && timeDiff <= 60000; // Within 60 seconds
 
         if (isDue) {
           console.log('🔔 REMINDER DUE - Triggering popup!');
           console.log('  📋 Title:', reminder.title || reminder.name);
           console.log('  📅 Scheduled:', reminderTime.toLocaleString());
-          console.log('  🕐 Current:', now.toLocaleString());
-          console.log('  ⏱️ Difference:', Math.round(timeDiff / 1000), 'seconds');
           
-          // Mark as checked to prevent duplicate triggers
+          // Mark as checked IMMEDIATELY to prevent duplicates
           this.checkedReminders.add(reminder.id);
+          await this.saveCheckedReminders(); // Persist to storage
           
           await this.triggerReminder(reminder);
-        } else {
-          // Log upcoming reminders for debugging
-          const futureTime = reminderTime.getTime() - now.getTime();
-          if (futureTime > 0 && futureTime <= 300000) { // Within 5 minutes
-            console.log(`⏰ Upcoming: ${reminder.title || reminder.name} in ${Math.round(futureTime / 1000)}s`);
-          }
+          
+          // Only trigger one reminder at a time
+          break;
         }
       }
     } catch (error) {
@@ -380,11 +408,26 @@ class ReminderManager {
   }
 
   /**
-   * ✅ ENHANCED: Clear checked reminders set (for testing)
+   * ✅ ENHANCED: Clear checked reminders set (for testing or reset)
    */
-  resetCheckedReminders() {
+  async resetCheckedReminders() {
     this.checkedReminders.clear();
-    console.log('🔄 Checked reminders set cleared');
+    await AsyncStorage.removeItem(CHECKED_REMINDERS_KEY);
+    console.log('🔄 Checked reminders cleared from memory and storage');
+  }
+  
+  /**
+   * ✅ NEW: Clear all reminders - useful for debugging
+   */
+  async clearAllReminders() {
+    try {
+      await AsyncStorage.removeItem(REMINDERS_KEY);
+      await AsyncStorage.removeItem(CHECKED_REMINDERS_KEY);
+      this.checkedReminders.clear();
+      console.log('🧹 All reminders cleared from storage');
+    } catch (error) {
+      console.error('❌ Error clearing reminders:', error);
+    }
   }
 }
 

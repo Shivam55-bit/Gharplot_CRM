@@ -157,6 +157,36 @@ const PropertyListingsScreen = ({ navigation }) => {
   const [filterType, setFilterType] = useState('All');
   const [properties] = useState(PROPERTIES_DATA);
 
+  // Helper function to get correct image URL based on property source
+  const getPropertyImageUrl = (imageData, isPostedByAdmin) => {
+    if (!imageData || typeof imageData !== 'string') {
+      return null; // Will use placeholder
+    }
+
+    // If already a complete URL, return as-is
+    if (imageData.startsWith('http://') || imageData.startsWith('https://')) {
+      return imageData;
+    }
+
+    // For relative paths (uploads/...), use appropriate base URL
+    if (imageData.startsWith('uploads/') || imageData.startsWith('/uploads/')) {
+      // Admin properties use .us domain
+      if (isPostedByAdmin) {
+        const baseUrl = 'https://abc.bhoomitechzone.us';
+        const cleanPath = imageData.replace(/^\/+/, '');
+        return `${baseUrl}/${cleanPath}`;
+      }
+      // User properties use .com domain
+      else {
+        const baseUrl = 'https://abc.ridealmobility.com';
+        const cleanPath = imageData.replace(/^\/+/, '');
+        return `${baseUrl}/${cleanPath}`;
+      }
+    }
+
+    return null;
+  };
+
   const filteredProperties = properties.filter(property => {
     const matchesSearch = property.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          property.location.toLowerCase().includes(searchQuery.toLowerCase());
@@ -190,9 +220,17 @@ const PropertyListingsScreen = ({ navigation }) => {
       )}
 
       <View style={styles.imageContainer}>
-        <View style={styles.imagePlaceholder}>
-          <MaterialCommunityIcons name="home-city" size={48} color="#9CA3AF" />
-        </View>
+        {item.image && getPropertyImageUrl(item.image, item.isPostedByAdmin) ? (
+          <Image 
+            source={{ uri: getPropertyImageUrl(item.image, item.isPostedByAdmin) }}
+            style={styles.propertyImage}
+            onError={() => console.warn('Failed to load image:', item.image)}
+          />
+        ) : (
+          <View style={styles.imagePlaceholder}>
+            <MaterialCommunityIcons name="home-city" size={48} color="#9CA3AF" />
+          </View>
+        )}
         <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
           <Text style={styles.statusText}>{item.status}</Text>
         </View>
@@ -507,6 +545,11 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     position: 'relative',
+  },
+  propertyImage: {
+    width: '100%',
+    height: 180,
+    resizeMode: 'cover',
   },
   imagePlaceholder: {
     width: '100%',

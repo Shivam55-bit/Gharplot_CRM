@@ -15,7 +15,7 @@ import {
   ActivityIndicator,
   ScrollView,
   Platform,
-  Switch,
+  Modal,
 } from 'react-native';
 import { updateAlert, BASE_URL } from '../services/api';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -24,15 +24,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import AlertNotificationService from '../services/AlertNotificationService';
 
 const EditAlertScreen = ({ route, navigation }) => {
-  const { alertId, originalTitle, originalReason, originalDate, originalTime, repeatDaily } = route.params || {};
+  const { alertId, originalTitle, originalReason, originalDate, originalTime, repeatDaily, repeatFrequency: origRepeatFreq, customIntervalMinutes: origCustomMins } = route.params || {};
   
   const [loading, setLoading] = useState(false);
   const [title, setTitle] = useState(originalTitle || '');
   const [reason, setReason] = useState(originalReason || '');
   const [scheduledDate, setScheduledDate] = useState(new Date());
-  const [repeat, setRepeat] = useState(repeatDaily === 'true' || repeatDaily === true);
+  const [repeatFrequency, setRepeatFrequency] = useState(origRepeatFreq || (repeatDaily === 'true' || repeatDaily === true ? 'daily' : 'none'));
+  const [customIntervalMinutes, setCustomIntervalMinutes] = useState(origCustomMins || 60);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [showRepeatModal, setShowRepeatModal] = useState(false);
+  const [showCustomInput, setShowCustomInput] = useState(false);
 
   // 🔥 Cleanup pickers on unmount to prevent errors
   useEffect(() => {
@@ -133,6 +136,50 @@ const EditAlertScreen = ({ route, navigation }) => {
     return `${day}/${month}/${year} at ${hours}:${minutes} ${ampm}`;
   };
 
+  // Get readable repeat label
+  const getRepeatLabel = () => {
+    if (repeatFrequency === 'custom') {
+      const mins = customIntervalMinutes;
+      if (mins >= 60) {
+        const hours = Math.floor(mins / 60);
+        const remainingMins = mins % 60;
+        return remainingMins > 0 ? `Every ${hours}h ${remainingMins}m` : `Every ${hours} hour${hours > 1 ? 's' : ''}`;
+      }
+      return `Every ${mins} minute${mins > 1 ? 's' : ''}`;
+    }
+    const labels = {
+      none: 'Does not repeat',
+      daily: 'Daily',
+      weekly: 'Weekly',
+      monthly: 'Monthly',
+      yearly: 'Yearly'
+    };
+    return labels[repeatFrequency] || 'Does not repeat';
+  };
+
+  // Handle repeat option selection
+  const handleRepeatSelect = (frequency) => {
+    setRepeatFrequency(frequency);
+    if (frequency === 'custom') {
+      setShowCustomInput(true);
+    } else {
+      setShowCustomInput(false);
+      setShowRepeatModal(false);
+    }
+  };
+
+  // Handle custom interval change
+  const handleCustomIntervalChange = (value) => {
+    const mins = parseInt(value) || 0;
+    setCustomIntervalMinutes(mins > 0 ? mins : 1);
+  };
+
+  // Confirm custom interval and close modal
+  const confirmCustomInterval = () => {
+    setShowCustomInput(false);
+    setShowRepeatModal(false);
+  };
+
   const handleSave = async () => {
     if (!title.trim()) {
       Alert.alert('Validation Error', 'Please enter alert title');
@@ -160,12 +207,24 @@ const EditAlertScreen = ({ route, navigation }) => {
       const hours = scheduledDate.getHours().toString().padStart(2, '0');
       const minutes = scheduledDate.getMinutes().toString().padStart(2, '0');
 
+      // Build repeatMetadata for weekly/monthly/yearly alerts
+      let repeatMetadata = null;
+      if (repeatFrequency === 'weekly') {
+        repeatMetadata = { dayOfWeek: scheduledDate.getDay() };
+      } else if (repeatFrequency === 'monthly') {
+        repeatMetadata = { dayOfMonth: scheduledDate.getDate() };
+      } else if (repeatFrequency === 'yearly') {
+        repeatMetadata = { monthDay: `${month}-${day}` };
+      }
+
       const updateData = {
         title: title.trim(),
         reason: reason.trim(),
         date: `${year}-${month}-${day}`,
         time: `${hours}:${minutes}`,
-        repeatDaily: repeat,
+        repeatFrequency: repeatFrequency, // Use repeatFrequency as backend expects
+        repeatMetadata: repeatMetadata, // Store day/month info for weekly/monthly/yearly
+        repeatDaily: repeatFrequency === 'daily', // Map to repeatDaily for backward compatibility
         isActive: true, // Ensure alert stays active
       };
 
@@ -215,7 +274,7 @@ const EditAlertScreen = ({ route, navigation }) => {
                 date: updateData.date,
                 time: updateData.time,
                 scheduledDateTime: scheduledDateTime,
-                repeatDaily: repeat,
+                repeatDaily: repeatFrequency === 'daily',
                 notificationType: 'alert',
                 fcmToken: fcmToken,
               }),
@@ -257,7 +316,7 @@ const EditAlertScreen = ({ route, navigation }) => {
             time: updateData.time,
             title: title.trim(),
             reason: reason.trim(),
-            repeatDaily: repeat,
+            repeatDaily: repeatFrequency === 'daily',
           });
           
           if (scheduleResult.success) {
@@ -271,7 +330,7 @@ const EditAlertScreen = ({ route, navigation }) => {
         
         Alert.alert(
           '✅ Success',
-          `Alert updated successfully!\n\n📅 New schedule: ${formatDateTime(scheduledDate)}${repeat ? '\n🔄 (Repeats daily)' : ''}\n\n🔔 You will receive notification at the scheduled time`,
+          `Alert updated successfully!\n\n📅 New schedule: ${formatDateTime(scheduledDate)}${repeatFrequency === 'daily' ? '\n🔄 (Repeats daily)' : ''}\n\n🔔 You will receive notification at the scheduled time`,
           [
             {
               text: 'OK',
@@ -377,18 +436,17 @@ const EditAlertScreen = ({ route, navigation }) => {
           </TouchableOpacity>
         </View>
 
-        {/* Repeat Daily Switch */}
-        <View style={styles.switchContainer}>
-          <View>
-            <Text style={styles.label}>Repeat Daily</Text>
-            <Text style={styles.switchSubtext}>Alert will trigger every day at this time</Text>
-          </View>
-          <Switch
-            value={repeat}
-            onValueChange={setRepeat}
-            trackColor={{ false: '#ccc', true: '#4CAF50' }}
-            thumbColor={repeat ? '#fff' : '#f4f3f4'}
-          />
+        {/* Repeat Frequency Selector */}
+        <View style={styles.fieldContainer}>
+          <Text style={styles.label}>Repeat</Text>
+          <TouchableOpacity
+            style={styles.dateButton}
+            onPress={() => setShowRepeatModal(true)}
+          >
+            <Text style={styles.dateButtonText}>
+              {getRepeatLabel()}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Scheduled For Display */}
@@ -396,7 +454,7 @@ const EditAlertScreen = ({ route, navigation }) => {
           <Text style={styles.infoLabel}>Alert will be scheduled for:</Text>
           <Text style={styles.infoValue}>
             {formatDateTime(scheduledDate)}
-            {repeat && '\n(Repeats daily)'}
+            {repeatFrequency !== 'none' && `\n(${getRepeatLabel()})`}
           </Text>
         </View>
 
@@ -444,6 +502,119 @@ const EditAlertScreen = ({ route, navigation }) => {
             is24Hour={false}
           />
         )}
+
+        {/* Repeat Frequency Modal */}
+        <Modal
+          visible={showRepeatModal}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowRepeatModal(false)}
+        >
+          <TouchableOpacity 
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => !showCustomInput && setShowRepeatModal(false)}
+          >
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Repeat Frequency</Text>
+              
+              <ScrollView 
+                style={styles.repeatOptionsScroll}
+                showsVerticalScrollIndicator={true}
+                nestedScrollEnabled={true}
+              >
+                <TouchableOpacity 
+                  style={[styles.repeatOption, repeatFrequency === 'none' && styles.repeatOptionSelected]}
+                  onPress={() => handleRepeatSelect('none')}
+                >
+                  <Text style={[styles.repeatOptionText, repeatFrequency === 'none' && styles.repeatOptionTextSelected]}>
+                    Does not repeat
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.repeatOption, repeatFrequency === 'daily' && styles.repeatOptionSelected]}
+                  onPress={() => handleRepeatSelect('daily')}
+                >
+                  <Text style={[styles.repeatOptionText, repeatFrequency === 'daily' && styles.repeatOptionTextSelected]}>
+                    Daily
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.repeatOption, repeatFrequency === 'weekly' && styles.repeatOptionSelected]}
+                  onPress={() => handleRepeatSelect('weekly')}
+                >
+                  <Text style={[styles.repeatOptionText, repeatFrequency === 'weekly' && styles.repeatOptionTextSelected]}>
+                    Weekly
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.repeatOption, repeatFrequency === 'monthly' && styles.repeatOptionSelected]}
+                  onPress={() => handleRepeatSelect('monthly')}
+                >
+                  <Text style={[styles.repeatOptionText, repeatFrequency === 'monthly' && styles.repeatOptionTextSelected]}>
+                    Monthly
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.repeatOption, repeatFrequency === 'yearly' && styles.repeatOptionSelected]}
+                  onPress={() => handleRepeatSelect('yearly')}
+                >
+                  <Text style={[styles.repeatOptionText, repeatFrequency === 'yearly' && styles.repeatOptionTextSelected]}>
+                    Yearly
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.repeatOption, repeatFrequency === 'custom' && styles.repeatOptionSelected]}
+                  onPress={() => handleRepeatSelect('custom')}
+                >
+                  <Text style={[styles.repeatOptionText, repeatFrequency === 'custom' && styles.repeatOptionTextSelected]}>
+                    Custom
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Custom Interval Input */}
+                {showCustomInput && (
+                  <View style={styles.customIntervalContainer}>
+                    <Text style={styles.customIntervalLabel}>Set interval (in minutes):</Text>
+                    <View style={styles.customIntervalRow}>
+                      <TextInput
+                        style={styles.customIntervalInput}
+                        keyboardType="numeric"
+                        value={String(customIntervalMinutes)}
+                        onChangeText={handleCustomIntervalChange}
+                        placeholder="60"
+                      />
+                      <Text style={styles.customIntervalUnit}>minutes</Text>
+                    </View>
+                    <Text style={styles.customIntervalHint}>
+                      Tip: 60 = 1 hour, 120 = 2 hours, 1440 = 1 day
+                    </Text>
+                    <TouchableOpacity 
+                      style={styles.customConfirmButton}
+                      onPress={confirmCustomInterval}
+                    >
+                      <Text style={styles.customConfirmText}>Confirm</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </ScrollView>
+
+              {!showCustomInput && (
+                <TouchableOpacity 
+                  style={styles.modalCloseButton}
+                  onPress={() => setShowRepeatModal(false)}
+                >
+                  <Text style={styles.modalCloseText}>Close</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </TouchableOpacity>
+        </Modal>
       </View>
     </ScrollView>
   );
@@ -570,6 +741,121 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#fff',
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 30,
+    maxHeight: '80%',
+  },
+  repeatOptionsScroll: {
+    maxHeight: 400,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  repeatOption: {
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 8,
+    backgroundColor: '#f9fafb',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  repeatOptionSelected: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#3b82f6',
+  },
+  repeatOptionText: {
+    fontSize: 15,
+    color: '#374151',
+    fontWeight: '500',
+  },
+  repeatOptionTextSelected: {
+    color: '#1e40af',
+    fontWeight: '600',
+  },
+  modalCloseButton: {
+    backgroundColor: '#6b7280',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  modalCloseText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // Custom interval styles
+  customIntervalContainer: {
+    marginTop: 16,
+    padding: 16,
+    backgroundColor: '#f0f9ff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#0ea5e9',
+  },
+  customIntervalLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0369a1',
+    marginBottom: 12,
+  },
+  customIntervalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  customIntervalInput: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#0ea5e9',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#0369a1',
+    textAlign: 'center',
+  },
+  customIntervalUnit: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  customIntervalHint: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+  customConfirmButton: {
+    backgroundColor: '#0ea5e9',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  customConfirmText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

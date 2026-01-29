@@ -51,6 +51,7 @@ import AdminLogin from '../crm/crmscreens/CRM/AdminLogin';
 import EmployeeLogin from '../crm/crmscreens/CRM/EmployeeLogin';
 import DashboardAdmin from '../crm/crmscreens/Admin/DashboardAdmin';
 import EnquiriesScreen from '../crm/crmscreens/Admin/EnquiriesScreen';
+import FollowUpDetails from '../crm/crmscreens/Employee/FollowUpDetails';
 
 // --- NAVIGATION ---
 import BottomTabNavigation from '../navigation/BottomTabNavigation';
@@ -171,6 +172,13 @@ const AppNavigator = React.forwardRef((props, ref) => {
         <Stack.Screen name="EmployeeLogin" component={EmployeeLogin} />
         <Stack.Screen name="AdminApp" component={AdminNavigator} />
         <Stack.Screen name="EmployeeApp" component={EmployeeBottomTabNavigation} />
+        
+        {/* Follow-Up Details Screen */}
+        <Stack.Screen 
+          name="FollowUpDetails" 
+          component={FollowUpDetails}
+          options={{ headerShown: false }}
+        />
         
         {/* Direct CRM Screens for Notifications */}
         <Stack.Screen name="Enquiries" component={EnquiriesScreen} />

@@ -282,7 +282,7 @@ const EmployeeAlertsScreen = ({ navigation }) => {
         <FlatList
           data={filteredAlerts}
           renderItem={renderAlertRow}
-          keyExtractor={item => item.id}
+          keyExtractor={item => item._id || item.id || Math.random().toString()}
           scrollEnabled={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           ListEmptyComponent={<Text style={styles.emptyText}>No alerts found</Text>}

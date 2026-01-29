@@ -24,7 +24,7 @@ import { sendTokenToBackend, getFCMToken } from '../utils/fcmService';
 const CRM_BASE_URL = 'https://abc.bhoomitechzone.us';
 
 const EditReminderScreen = ({ route, navigation }) => {
-  const { reminderId, clientName, originalMessage, enquiryId } = route.params || {};
+  const { reminderId, clientName, originalMessage, enquiryId, fromNotification } = route.params || {};
   
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(originalMessage || '');
@@ -36,6 +36,14 @@ const EditReminderScreen = ({ route, navigation }) => {
     if (!reminderId) {
       Alert.alert('Error', 'Invalid reminder ID');
       navigation.goBack();
+    }
+    
+    // 🔥 Log notification click for debugging
+    if (fromNotification) {
+      console.log('🔔 EditReminder opened from notification click');
+      console.log('📋 Reminder ID:', reminderId);
+      console.log('👤 Client Name:', clientName);
+      console.log('📝 Message:', originalMessage);
     }
     
     // 🔥 Ensure FCM token is synced to backend for notifications
@@ -52,7 +60,7 @@ const EditReminderScreen = ({ route, navigation }) => {
       }
     };
     syncFCMToken();
-  }, [reminderId]);
+  }, [reminderId, fromNotification]);
 
   const handleDateChange = (event, selectedDate) => {
     setShowDatePicker(false);
@@ -257,6 +265,14 @@ const EditReminderScreen = ({ route, navigation }) => {
       <View style={styles.content}>
         <Text style={styles.title}>Edit Reminder</Text>
         <Text style={styles.subtitle}>Update reminder details and reschedule</Text>
+
+        {/* 🔥 Show message when notification is clicked */}
+        {fromNotification && (
+          <View style={[styles.infoBox, { backgroundColor: '#D4EDDA', borderColor: '#28A745', borderWidth: 2 }]}>
+            <Text style={[styles.infoLabel, { color: '#155724' }]}>✅ Reminder Notification Acknowledged</Text>
+            <Text style={{ color: '#155724', marginTop: 5 }}>You can now continue with your tasks</Text>
+          </View>
+        )}
 
         {/* Client Name (Read-only) */}
         <View style={styles.fieldContainer}>

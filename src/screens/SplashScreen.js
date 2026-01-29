@@ -91,16 +91,13 @@ const SplashScreen = ({ navigation }) => {
               navigation.replace('EditAlert', params);
               shouldDoAutoLogin = false; // 🛑 STOP auto-login
             }
-            // REMINDER NOTIFICATION - Navigate to EditReminderScreen
+            // REMINDER NOTIFICATION - SKIP navigation here, AppState will handle when app is ready
+            // This prevents duplicate navigation which causes screen to auto-close
             else if (notificationType === 'reminder' || notificationType === 'enquiry_reminder') {
-              console.log('🎯 REMINDER: Navigating to EditReminderScreen from killed state');
-              navigation.replace('EditReminder', {
-                reminderId: notificationData.reminderId || notificationData.id,
-                clientName: notificationData.clientName || 'Client',
-                originalMessage: notificationData.message || notificationData.body || '',
-                enquiryId: notificationData.enquiryId,
-              });
-              shouldDoAutoLogin = false; // 🛑 STOP auto-login
+              console.log('⏭️ REMINDER: Skipping SplashScreen navigation - AppState will handle');
+              // Don't navigate here - pendingNotificationData is already stored
+              // AppState handler in App.js will navigate when ready
+              shouldDoAutoLogin = true; // Let normal flow continue
             }
           } else {
             console.log('⚠️ User not authenticated, proceeding to login');

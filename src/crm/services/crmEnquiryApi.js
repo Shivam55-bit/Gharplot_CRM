@@ -488,13 +488,70 @@ export const unassignEnquiry = async (enquiryId, enquiryType) => {
  */
 export const createReminder = async (reminderData) => {
   try {
-    const response = await fetch(`${CRM_BASE_URL}/employee/reminders/create`, {
+    // Transform data to match new API format
+    const transformedData = {
+      title: reminderData.title || `Follow up with ${reminderData.clientName || reminderData.name}`,
+      clientName: reminderData.clientName || reminderData.name,
+      email: reminderData.email,
+      phone: reminderData.phone,
+      location: reminderData.location,
+      reminderDateTime: reminderData.reminderDateTime || reminderData.scheduledDate,
+      note: reminderData.note || reminderData.comment || reminderData.message,
+      isRepeating: reminderData.isRepeating || (reminderData.repeatType && reminderData.repeatType !== 'none') || false
+    };
+
+    const response = await fetch(`${CRM_BASE_URL}/api/reminder/create`, {
       method: 'POST',
       headers: await getAuthHeaders(),
-      body: JSON.stringify(reminderData),
+      body: JSON.stringify(transformedData),
     });
     
     const data = await response.json();
+    
+    // If reminder created successfully, check if employee has popupEnabled for admin notifications
+    if (data.success !== false) {
+      try {
+        console.log('🔍 Checking if employee has popupEnabled...');
+        // Check if current employee has popupEnabled
+        const employeeProfile = await getCurrentEmployeeProfile();
+
+        if (employeeProfile) {
+          // Check both possible field names - backend uses adminReminderPopupEnabled
+          const isPopupEnabled = 
+            employeeProfile.adminReminderPopupEnabled === true ||
+            employeeProfile.popupEnabled === true ||
+            employeeProfile.adminPopupEnabled === true;
+          
+          console.log('👤 Employee profile:', {
+            id: employeeProfile._id || employeeProfile.id,
+            name: employeeProfile.name,
+            adminReminderPopupEnabled: employeeProfile.adminReminderPopupEnabled,
+            popupEnabled: employeeProfile.popupEnabled,
+            adminPopupEnabled: employeeProfile.adminPopupEnabled,
+            finalValue: isPopupEnabled
+          });
+
+          if (isPopupEnabled) {
+            console.log('🔔 Employee has popup access enabled, sending notification to admin...');
+            // Send additional notification to admin
+            const adminResult = await sendReminderToAdmin(reminderData);
+            if (adminResult.success) {
+              console.log('✅ Admin notification sent successfully');
+            } else {
+              console.warn('⚠️ Failed to send admin notification');
+            }
+          } else {
+            console.log('🚫 Employee popupEnabled is false or not set, skipping admin notification');
+          }
+        } else {
+          console.warn('⚠️ Could not fetch employee profile, skipping admin notification check');
+        }
+      } catch (popupError) {
+        console.warn('⚠️ Failed to check popupEnabled or send admin notification:', popupError);
+        // Don't fail the reminder creation if admin notification fails
+      }
+    }
+    
     return {
       success: data.success !== false,
       message: data.message || 'Reminder created successfully',
@@ -507,6 +564,237 @@ export const createReminder = async (reminderData) => {
       message: error.message || 'Failed to create reminder',
       data: null
     };
+  }
+};
+
+/**
+ * Get current employee profile to check popupEnabled
+ */
+const getCurrentEmployeeProfile = async () => {
+  try {
+    // Try employee-specific endpoint first
+    const empResponse = await fetch(`${CRM_BASE_URL}/employee/profile`, {
+      method: 'GET',
+      headers: await getAuthHeaders(),
+    });
+
+    if (empResponse.ok) {
+      const empData = await empResponse.json();
+      if (empData.success) {
+        console.log('✅ Got employee profile:', empData.data);
+        return empData.data || empData;
+      }
+    }
+
+    // Fallback: try general employee endpoint
+    const empResponse2 = await fetch(`${CRM_BASE_URL}/employee/me`, {
+      method: 'GET',
+      headers: await getAuthHeaders(),
+    });
+
+    if (empResponse2.ok) {
+      const empData2 = await empResponse2.json();
+      if (empData2.success) {
+        console.log('✅ Got employee profile from /me:', empData2.data);
+        return empData2.data || empData2;
+      }
+    }
+
+    // Last fallback: try admin endpoint (might work if employee has some admin access)
+    const adminResponse = await fetch(`${CRM_BASE_URL}/admin/employees/me`, {
+      method: 'GET',
+      headers: await getAuthHeaders(),
+    });
+
+    if (adminResponse.ok) {
+      const adminData = await adminResponse.json();
+      if (adminData.success) {
+        console.log('✅ Got employee profile from admin endpoint:', adminData.data);
+        return adminData.data || adminData;
+      }
+    }
+
+    console.warn('⚠️ Could not fetch employee profile from any endpoint');
+    return null;
+  } catch (error) {
+    console.error('❌ Error fetching employee profile:', error);
+    return null;
+  }
+};
+
+/**
+ * Send reminder notification to admin when employee has popupEnabled
+ */
+const sendReminderToAdmin = async (reminderData) => {
+  try {
+    console.log('📤 Sending admin reminder notification for employee reminder:', reminderData);
+
+    // Get employee profile to include name
+    const employeeProfile = await getCurrentEmployeeProfile();
+    const employeeName = employeeProfile?.name || 'Employee';
+    const employeeId = employeeProfile?._id || employeeProfile?.id || '';
+
+    // Use the /admin/notifications endpoint with createAdminNotification API
+    // This endpoint is specifically designed for sending FCM notifications to admin
+    const notificationPayload = {
+      title: `📋 ${employeeName} - Reminder: ${reminderData.clientName || 'Client'}`,
+      message: `${employeeName} set reminder: ${reminderData.title || 'Follow up'}`,
+      scheduledDate: reminderData.reminderDateTime || reminderData.scheduledDate,
+      clientName: reminderData.clientName,
+      phone: reminderData.phone,
+      email: reminderData.email,
+      enquiryId: reminderData.enquiryId,
+      reminderTitle: reminderData.title,
+      reminderNote: reminderData.note || reminderData.message,
+      notificationType: 'employee_reminder_to_admin',
+      repeatType: reminderData.repeatType || 'none',
+      employeeName: employeeName,
+      employeeId: employeeId,
+      // Add FCM payload for push notification delivery
+      fcmPayload: {
+        notification: {
+          title: `📋 ${employeeName} - Reminder`,
+          body: `Client: ${reminderData.clientName || 'Client'} | ${reminderData.title || 'Follow up'}`,
+        },
+        data: {
+          type: 'employee_reminder_to_admin',
+          employeeName: employeeName,
+          employeeId: String(employeeId),
+          enquiryId: String(reminderData.enquiryId || ''),
+          clientName: reminderData.clientName || '',
+          reminderTitle: reminderData.title || '',
+          reminderNote: reminderData.note || reminderData.message || '',
+        },
+      },
+    };
+
+    console.log('📤 Admin notification payload:', notificationPayload);
+
+    // Use the dedicated /admin/notifications endpoint for admin FCM notifications
+    const response = await fetch(`${CRM_BASE_URL}/admin/notifications`, {
+      method: 'POST',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify(notificationPayload),
+    });
+
+    // Check if response is JSON
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      const data = await response.json();
+      if (response.ok || data.success) {
+        console.log('✅ Admin reminder notification sent successfully via /admin/notifications endpoint');
+        return { success: true, data };
+      } else {
+        console.warn('⚠️ Backend returned error for admin notification:', data.message);
+        return { success: false, error: data.message || 'Failed to send admin notification' };
+      }
+    } else {
+      const errorText = await response.text();
+      console.warn('⚠️ Backend returned non-JSON response for admin notification:', errorText.substring(0, 100));
+      return { success: false, error: 'Backend endpoint not available' };
+    }
+  } catch (error) {
+    console.warn('⚠️ Error sending admin notification:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+/**
+ * Send alert notification to admin when employee has popupEnabled
+ * This is exported so it can be used from CreateAlertScreen
+ */
+export const sendAlertToAdmin = async (alertData) => {
+  try {
+    console.log('📤 Sending admin alert notification for employee alert:', alertData);
+
+    // First check if employee has popup access enabled
+    const employeeProfile = await getCurrentEmployeeProfile();
+    
+    if (!employeeProfile) {
+      console.warn('⚠️ Could not fetch employee profile, skipping admin notification');
+      return { success: false, error: 'Could not fetch employee profile' };
+    }
+
+    const employeeName = employeeProfile.name || 'Employee';
+    const employeeId = employeeProfile._id || employeeProfile.id || '';
+
+    // Check both possible field names - backend uses adminReminderPopupEnabled
+    const isPopupEnabled = 
+      employeeProfile.adminReminderPopupEnabled === true ||
+      employeeProfile.popupEnabled === true ||
+      employeeProfile.adminPopupEnabled === true;
+    
+    console.log('👤 Employee popup status:', {
+      name: employeeName,
+      adminReminderPopupEnabled: employeeProfile.adminReminderPopupEnabled,
+      popupEnabled: employeeProfile.popupEnabled,
+      isPopupEnabled: isPopupEnabled
+    });
+
+    if (!isPopupEnabled) {
+      console.log('🚫 Employee popup access not enabled, skipping admin notification');
+      return { success: false, error: 'Popup access not enabled' };
+    }
+
+    console.log('🔔 Employee has popup access enabled, sending notification to admin...');
+
+    // Use the /admin/notifications endpoint for admin FCM notifications
+    const notificationPayload = {
+      title: `🔔 ${employeeName} - Alert: ${alertData.title || 'Alert'}`,
+      message: `${employeeName} created alert: ${alertData.reason || alertData.title || 'New alert'}`,
+      scheduledDate: alertData.date,
+      scheduledTime: alertData.time,
+      alertTitle: alertData.title,
+      alertReason: alertData.reason,
+      notificationType: 'employee_alert_to_admin',
+      repeatFrequency: alertData.repeatFrequency || 'none',
+      employeeName: employeeName,
+      employeeId: employeeId,
+      // Add FCM payload for push notification delivery
+      fcmPayload: {
+        notification: {
+          title: `🔔 ${employeeName} - Alert`,
+          body: `${alertData.title || 'Alert'} | ${alertData.reason || 'New alert'}`,
+        },
+        data: {
+          type: 'employee_alert_to_admin',
+          employeeName: employeeName,
+          employeeId: String(employeeId),
+          alertTitle: alertData.title || '',
+          alertReason: alertData.reason || '',
+          scheduledDate: alertData.date || '',
+          scheduledTime: alertData.time || '',
+        },
+      },
+    };
+
+    console.log('📤 Admin alert notification payload:', notificationPayload);
+
+    const response = await fetch(`${CRM_BASE_URL}/admin/notifications`, {
+      method: 'POST',
+      headers: await getAuthHeaders(),
+      body: JSON.stringify(notificationPayload),
+    });
+
+    // Check if response is JSON
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      const data = await response.json();
+      if (response.ok || data.success) {
+        console.log('✅ Admin alert notification sent successfully');
+        return { success: true, data };
+      } else {
+        console.warn('⚠️ Backend returned error for admin alert notification:', data.message);
+        return { success: false, error: data.message || 'Failed to send admin notification' };
+      }
+    } else {
+      const errorText = await response.text();
+      console.warn('⚠️ Backend returned non-JSON response for admin alert notification:', errorText.substring(0, 100));
+      return { success: false, error: 'Backend endpoint not available' };
+    }
+  } catch (error) {
+    console.warn('⚠️ Error sending admin alert notification:', error);
+    return { success: false, error: error.message };
   }
 };
 
@@ -543,13 +831,20 @@ export const createReminderFromLead = async (reminderData) => {
  */
 export const createFollowUp = async (followUpData) => {
   try {
-    const response = await fetch(`${CRM_BASE_URL}/employee/follow-ups/create`, {
+    console.log('📤 Creating follow-up with data:', followUpData);
+    
+    // Use the simpler createFollowUpFromLead endpoint instead
+    const response = await fetch(`${CRM_BASE_URL}/api/follow-ups/create-from-lead`, {
       method: 'POST',
       headers: await getAuthHeaders(),
       body: JSON.stringify(followUpData),
     });
     
     const data = await response.json();
+    console.log('📥 Follow-up response:', data);
+    console.log('📥 Response status:', response.status);
+    console.log('📥 Response success:', data.success);
+    
     return {
       success: data.success !== false,
       message: data.message || 'Follow-up created successfully',

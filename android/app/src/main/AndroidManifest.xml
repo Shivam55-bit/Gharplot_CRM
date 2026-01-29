@@ -437,6 +437,15 @@
         tools:replace="android:resource" />
 
       <!-- ✅ CRITICAL: Firebase Messaging Service for BACKGROUND notifications -->
+      <service
+        android:name="io.invertase.firebase.messaging.ReactNativeFirebaseMessagingService"
+        android:exported="false">
+        <intent-filter>
+          <action android:name="com.google.firebase.MESSAGING_EVENT" />
+        </intent-filter>
+      </service>
+
+      <!-- ✅ CRITICAL: Firebase Messaging Service for BACKGROUND notifications -->
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"

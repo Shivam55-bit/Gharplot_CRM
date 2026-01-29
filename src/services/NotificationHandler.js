@@ -8,6 +8,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import NavigationService from './NavigationService';
 
 class NotificationHandler {
+  // 🔥 Navigation lock to prevent duplicate navigation
+  static isNavigating = false;
+  static lastNavigationTime = 0;
+  static NAVIGATION_COOLDOWN = 3000; // 3 seconds cooldown
+
   /**
    * Setup notification event listeners for both foreground and background
    * @param {Object} navigationRef - React Navigation ref
@@ -17,24 +22,117 @@ class NotificationHandler {
     console.log('🔔 Setting up notification event listeners');
 
     // Handle notification press in FOREGROUND
-    const unsubscribeForeground = notifee.onForegroundEvent(({ type, detail }) => {
+    const unsubscribeForeground = notifee.onForegroundEvent(async ({ type, detail }) => {
       console.log('📱 Foreground Event Type:', type);
       console.log('📱 Notification Detail:', detail);
 
+      // 🔥 Check if navigation is locked (prevent duplicate)
+      const now = Date.now();
+      if (this.isNavigating || (now - this.lastNavigationTime) < this.NAVIGATION_COOLDOWN) {
+        console.log('⚠️ Navigation locked or cooldown active, skipping foreground event');
+        return;
+      }
+
+      // 🔥 Check if already handled by background event
+      const alreadyNavigated = await AsyncStorage.getItem('notificationNavigationDone');
+      if (alreadyNavigated === 'true') {
+        console.log('⚠️ Already navigated from background event, skipping foreground');
+        await AsyncStorage.removeItem('notificationNavigationDone');
+        return;
+      }
+
       // Type 1 = PRESS, Type 2 = ACTION_PRESS
       if (type === 1) {
-        // Handle notification body press
+        const notifType = detail.notification?.data?.type;
+        
+        // 🔥 For ALERT notifications - Navigate IMMEDIATELY in foreground
+        if (notifType === 'alert' || notifType === 'system_alert' || notifType === 'employee_alert_to_admin') {
+          console.log('🚀 ALERT notification pressed in FOREGROUND - Navigating immediately');
+          
+          // 🔥 Lock navigation
+          this.isNavigating = true;
+          this.lastNavigationTime = now;
+          
+          const alertId = detail.notification?.data?.alertId;
+          const cleanAlertId = alertId ? alertId.replace('alert_', '') : Date.now().toString();
+          
+          const params = {
+            alertId: cleanAlertId,
+            originalTitle: detail.notification?.data?.alertTitle || detail.notification?.data?.title || detail.notification?.title || '',
+            originalReason: detail.notification?.data?.alertReason || detail.notification?.data?.reason || detail.notification?.body || '',
+            originalDate: detail.notification?.data?.scheduledDate || detail.notification?.data?.date,
+            originalTime: detail.notification?.data?.scheduledTime || detail.notification?.data?.time,
+            repeatDaily: detail.notification?.data?.repeatDaily === 'true' || detail.notification?.data?.repeatDaily === true
+          };
+          
+          console.log('📤 Foreground alert navigation params:', params);
+          
+          // Navigate directly using NavigationService
+          setTimeout(() => {
+            NavigationService.navigate('EditAlert', params);
+            console.log('✅ Alert navigation completed');
+          }, 100);
+          
+          // Unlock after delay
+          setTimeout(() => { this.isNavigating = false; }, this.NAVIGATION_COOLDOWN);
+          return;
+        }
+        
+        // 🔥 For reminder - SKIP foreground navigation, let AppState handler do it
+        if (notifType === 'reminder' || notifType === 'enquiry_reminder') {
+          console.log('⏭️ SKIPPING foreground navigation for reminder - AppState will handle');
+          return;
+        }
+        
+        // 🔥 Lock navigation
+        this.isNavigating = true;
+        this.lastNavigationTime = now;
+        
+        // Handle notification body press for OTHER notification types only
         this.handleNotificationPress(detail.notification, navigationRef);
+        
+        // Unlock after delay
+        setTimeout(() => { this.isNavigating = false; }, this.NAVIGATION_COOLDOWN);
       } else if (type === 2) {
         // Handle action button press (Edit, View, etc.)
         const actionId = detail.pressAction?.id;
         console.log('🎯 Action pressed:', actionId);
         
-        if (actionId === 'edit_reminder' || actionId === 'edit_alert') {
-          this.handleEditAction(detail.notification, navigationRef, actionId);
-        } else {
-          this.handleNotificationPress(detail.notification, navigationRef);
+        // 🔥 For reminder actions - SKIP foreground, let AppState handle
+        if (actionId === 'edit_reminder') {
+          console.log('⏭️ SKIPPING foreground action for reminder edit - AppState will handle');
+          return;
         }
+        
+        // 🔥 For alert action - Navigate immediately
+        if (actionId === 'edit_alert') {
+          console.log('🚀 ALERT action pressed - Navigating immediately');
+          const alertId = detail.notification?.data?.alertId;
+          const cleanAlertId = alertId ? alertId.replace('alert_', '') : Date.now().toString();
+          
+          const params = {
+            alertId: cleanAlertId,
+            originalTitle: detail.notification?.data?.title || detail.notification?.title || '',
+            originalReason: detail.notification?.data?.reason || detail.notification?.body || '',
+            originalDate: detail.notification?.data?.date,
+            originalTime: detail.notification?.data?.time,
+            repeatDaily: detail.notification?.data?.repeatDaily === 'true' || detail.notification?.data?.repeatDaily === true
+          };
+          
+          setTimeout(() => {
+            NavigationService.navigate('EditAlert', params);
+          }, 100);
+          return;
+        }
+        
+        // 🔥 Lock navigation
+        this.isNavigating = true;
+        this.lastNavigationTime = now;
+        
+        this.handleNotificationPress(detail.notification, navigationRef);
+        
+        // Unlock after delay
+        setTimeout(() => { this.isNavigating = false; }, this.NAVIGATION_COOLDOWN);
       }
     });
 
@@ -46,10 +144,10 @@ class NotificationHandler {
       // Type 1 = PRESS, Type 2 = ACTION_PRESS
       if (type === 1) {
         // 🔥 CRITICAL: Navigate immediately for ALERT notifications
-        const notifType = detail.notification?.data?.type;
+        const notifType = detail.notification?.data?.type || detail.notification?.data?.notificationType;
         console.log('🎯 Background notification type:', notifType);
         
-        if (notifType === 'alert' || notifType === 'system_alert') {
+        if (notifType === 'alert' || notifType === 'system_alert' || notifType === 'employee_alert_to_admin') {
           console.log('🚀🚀 ALERT detected in background - Preparing navigation');
           
           const alertId = detail.notification?.data?.alertId;
@@ -57,10 +155,10 @@ class NotificationHandler {
           
           const params = {
             alertId: cleanAlertId,
-            originalTitle: detail.notification?.data?.title || detail.notification?.title || '',
-            originalReason: detail.notification?.data?.reason || detail.notification?.body || '',
-            originalDate: detail.notification?.data?.date,
-            originalTime: detail.notification?.data?.time,
+            originalTitle: detail.notification?.data?.alertTitle || detail.notification?.data?.title || detail.notification?.title || '',
+            originalReason: detail.notification?.data?.alertReason || detail.notification?.data?.reason || detail.notification?.body || '',
+            originalDate: detail.notification?.data?.scheduledDate || detail.notification?.data?.date,
+            originalTime: detail.notification?.data?.scheduledTime || detail.notification?.data?.time,
             repeatDaily: detail.notification?.data?.repeatDaily === 'true' || detail.notification?.data?.repeatDaily === true
           };
           
@@ -82,6 +180,37 @@ class NotificationHandler {
             JSON.stringify(notificationData)
           );
           console.log('✅ Alert notification stored for IMMEDIATE navigation');
+          return;
+        } else if (notifType === 'reminder' || notifType === 'enquiry_reminder') {
+          // 🔥 CRITICAL: Same handling for REMINDER notifications in background
+          console.log('🚀🚀 REMINDER detected in background - Preparing navigation');
+          
+          const params = {
+            reminderId: detail.notification?.data?.reminderId || detail.notification?.id,
+            clientName: detail.notification?.data?.clientName || 'Client',
+            originalMessage: detail.notification?.data?.message || detail.notification?.body || '',
+            enquiryId: detail.notification?.data?.enquiryId,
+            fromNotification: true
+          };
+          
+          console.log('📤 Background: Storing reminder navigation params:', params);
+          
+          // 🔥 Store with immediate flag for AppState handler
+          const notificationData = {
+            id: detail.notification?.id,
+            data: detail.notification?.data,
+            body: detail.notification?.body,
+            timestamp: new Date().toISOString(),
+            shouldNavigateImmediately: true,
+            navigateTo: 'EditReminder',
+            navigationParams: params
+          };
+          
+          await require('@react-native-async-storage/async-storage').default.setItem(
+            'pendingNotificationData',
+            JSON.stringify(notificationData)
+          );
+          console.log('✅ Reminder notification stored for IMMEDIATE navigation');
           return;
         }
         
@@ -134,11 +263,8 @@ class NotificationHandler {
 
         console.log('📤 Navigating to EditReminderScreen with:', editParams);
         
-        if (navigationRef?.current) {
-          navigationRef.current.navigate('EditReminder', editParams);
-        } else {
-          NavigationService.navigate('EditReminder', editParams);
-        }
+        // 🔥 Use NavigationService navigateNested to stay in Admin stack
+        NavigationService.navigateNested('AdminApp', 'EditReminder', editParams);
       } else if (actionId === 'edit_alert') {
         // Navigate to EditAlertScreen
         const editParams = {
@@ -151,11 +277,8 @@ class NotificationHandler {
 
         console.log('📤 Navigating to EditAlertScreen with:', editParams);
         
-        if (navigationRef?.current) {
-          navigationRef.current.navigate('EditAlert', editParams);
-        } else {
-          NavigationService.navigate('EditAlert', editParams);
-        }
+        // 🔥 Use NavigationService navigateNested to stay in Admin stack
+        NavigationService.navigateNested('AdminApp', 'EditAlert', editParams);
       }
     } catch (error) {
       console.error('❌ Error handling edit action:', error);
@@ -179,43 +302,33 @@ class NotificationHandler {
 
       console.log('📱 Notification Data:', notificationData);
 
-      const { type } = notificationData;
+      const type = notificationData.type || notificationData.notificationType;
 
-      // Check if this is a reminder or alert notification - navigate to edit screen
-      if (type === 'reminder' || type === 'enquiry_reminder') {
-        console.log('✅ Reminder notification - Navigating to EditReminderScreen');
-        this.handleEditAction(notification, navigationRef, 'edit_reminder');
+      // Check if this is a reminder or alert notification - SKIP navigation here
+      // AppState handler will navigate when app comes to foreground from background
+      if (type === 'reminder' || type === 'enquiry_reminder' || type === 'employee_reminder_to_admin') {
+        console.log('⏭️ Reminder notification detected - SKIPPING navigation (AppState will handle)');
+        // DO NOT navigate here - this prevents duplicate navigation
         return;
       }
 
-      if (type === 'alert' || type === 'system_alert') {
-        console.log('✅ Alert notification - Navigating to EditAlertScreen');
+      if (type === 'alert' || type === 'system_alert' || type === 'employee_alert_to_admin') {
+        console.log('🚀 Alert notification - Navigating to EditAlert');
         
-        // Extract alert parameters
-        const alertParams = {
-          alertId: notificationData.alertId?.replace('alert_', '') || notification.id?.replace('alert_', ''),
-          originalTitle: notificationData.title || notification.title || '',
-          originalReason: notificationData.reason || notification.body || '',
-          originalDate: notificationData.date,
-          originalTime: notificationData.time,
+        const alertId = notificationData.alertId;
+        const cleanAlertId = alertId ? alertId.replace('alert_', '') : Date.now().toString();
+        
+        const params = {
+          alertId: cleanAlertId,
+          originalTitle: notificationData.alertTitle || notificationData.title || notification?.title || '',
+          originalReason: notificationData.alertReason || notificationData.reason || notification?.body || '',
+          originalDate: notificationData.scheduledDate || notificationData.date,
+          originalTime: notificationData.scheduledTime || notificationData.time,
           repeatDaily: notificationData.repeatDaily === 'true' || notificationData.repeatDaily === true
         };
         
-        console.log('📤 Navigating to EditAlert with params:', alertParams);
-        
-        // Try direct navigation first
-        try {
-          if (navigationRef?.current) {
-            navigationRef.current.navigate('EditAlert', alertParams);
-            console.log('✅ Direct navigation to EditAlert successful');
-          } else {
-            NavigationService.navigate('EditAlert', alertParams);
-            console.log('✅ NavigationService navigation to EditAlert successful');
-          }
-        } catch (navError) {
-          console.error('❌ Navigation failed:', navError);
-          this.handleEditAction(notification, navigationRef, 'edit_alert');
-        }
+        console.log('📤 Alert navigation params:', params);
+        NavigationService.navigate('EditAlert', params);
         return;
       }
 
@@ -340,6 +453,12 @@ class NotificationHandler {
       const pendingData = await this.getPendingNotificationData();
       if (pendingData) {
         console.log('⏳ Processing pending notification');
+        
+        // 🔥 SKIP EditReminder navigation here - AppState handler will do it
+        if (pendingData.navigateTo === 'EditReminder') {
+          console.log('⏭️ SKIPPING EditReminder in processPendingNotification - AppState will handle');
+          return;
+        }
         
         // 🔥 CRITICAL: Check for immediate navigation flag (Alert notifications)
         if (pendingData.shouldNavigateImmediately && pendingData.navigateTo && pendingData.navigationParams) {

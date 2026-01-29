@@ -59,24 +59,60 @@ const BuyScreen = ({ navigation }) => {
       setLoading(true);
       try {
         const res = await getAllOtherProperties();
+        console.log('🏠 BuyScreen - API Response:', { 
+          dataType: typeof res, 
+          isArray: Array.isArray(res), 
+          length: res?.length,
+          firstItem: res?.[0] 
+        });
+        
         if (mounted && Array.isArray(res) && res.length > 0) {
-          const mapped = res.map((p, idx) => ({
-            id: p._id || p.id || String(idx),
-            name: p.description || p.title || "Property",
-            location: p.propertyLocation || "Unknown",
-            price: typeof p.price === "number" ? p.price : Number(p.price) || null,
-            priceText: p.priceText || null,
-            beds: p.beds || "-",
-            baths: p.baths || "-",
-            sqft: p.areaDetails || p.area || "-",
-            image: formatImageUrl(p.photosAndVideo?.[0] || null),
-            raw: p,
-          }));
+          const mapped = res.map((p, idx) => {
+            // Log the raw property data to see all available fields
+            console.log(`Property ${idx}:`, {
+              description: p.description,
+              title: p.title,
+              propertyLocation: p.propertyLocation,
+              location: p.location,
+              price: p.price,
+              beds: p.beds,
+              bedrooms: p.bedrooms,
+              baths: p.baths,
+              bathrooms: p.bathrooms,
+              areaDetails: p.areaDetails,
+              area: p.area,
+              photosAndVideo: p.photosAndVideo?.length,
+              isPostedByAdmin: p.isPostedByAdmin,
+              residentialType: p.residentialType,
+              commercialType: p.commercialType,
+            });
+            
+            return {
+              id: p._id || p.id || String(idx),
+              name: p.description || p.title || "Property",
+              location: p.propertyLocation || p.location || "Unknown",
+              price: typeof p.price === "number" ? p.price : Number(p.price) || null,
+              priceText: p.priceText || null,
+              beds: p.beds || p.bedrooms || "-",
+              baths: p.baths || p.bathrooms || "-",
+              sqft: p.areaDetails || p.area || "-",
+              image: formatImageUrl(p.photosAndVideo?.[0] || null),
+              raw: p,
+            };
+          });
+          console.log('✅ BuyScreen - Mapped Properties:', mapped.length, 'items');
+          console.log('📊 First mapped property:', mapped[0]);
           setPropertiesList(mapped);
           setFilteredProperties(mapped);
+        } else {
+          console.log('⚠️ BuyScreen - No properties received or empty array');
+          setPropertiesList([]);
+          setFilteredProperties([]);
         }
       } catch (e) {
-        console.warn("Failed to load buy properties:", e.message || e);
+        console.error('❌ Failed to load buy properties:', e.message || e);
+        setPropertiesList([]);
+        setFilteredProperties([]);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -167,15 +203,59 @@ const BuyScreen = ({ navigation }) => {
     }
   };
 
+  // Helper function to get correct image URL based on property source
+  const getPropertyImageUrl = (imageData, isPostedByAdmin) => {
+    if (!imageData || typeof imageData !== 'string') return null;
+    
+    // If it's already a complete URL, return it
+    if (imageData.startsWith('http://') || imageData.startsWith('https://')) return imageData;
+    
+    // Handle uploads path
+    if (imageData.startsWith('uploads/') || imageData.startsWith('/uploads/')) {
+      if (isPostedByAdmin) {
+        const baseUrl = 'https://abc.bhoomitechzone.us';
+        const cleanPath = imageData.replace(/^\/+/, '');
+        return `${baseUrl}/${cleanPath}`;
+      } else {
+        const baseUrl = 'https://abc.ridealmobility.com';
+        const cleanPath = imageData.replace(/^\/+/, '');
+        return `${baseUrl}/${cleanPath}`;
+      }
+    }
+    
+    return null;
+  };
+
   // --- Property Card ---
   const renderProperty = ({ item }) => {
-    // Prepare media items for MediaCard
-    const mediaItems = item.photosAndVideo && item.photosAndVideo.length > 0 
-      ? item.photosAndVideo.map(media => ({
-          uri: formatImageUrl(media.uri || media) || media.uri || media,
-          type: media.type || (media.uri?.includes('.mp4') || media.uri?.includes('.mov') || media.uri?.includes('.avi') ? 'video' : 'image')
-        }))
+    // Get correct image URL based on property source
+    const firstImagePath = item.raw?.photosAndVideo?.[0];
+    const propertyImageUrl = getPropertyImageUrl(firstImagePath, item.raw?.isPostedByAdmin);
+    
+    // Prepare media items for MediaCard with correct domain routing
+    const mediaItems = item.raw?.photosAndVideo && item.raw.photosAndVideo.length > 0 
+      ? item.raw.photosAndVideo.map(media => {
+          // Try custom URL routing first, then formatImageUrl, then use as-is
+          const imageUrl = getPropertyImageUrl(media.uri || media, item.raw?.isPostedByAdmin) || 
+                          formatImageUrl(media.uri || media) || 
+                          (typeof media === 'string' ? media : media.uri);
+          return {
+            uri: imageUrl,
+            type: media.type || (typeof media === 'string' && (media.includes('.mp4') || media.includes('.mov') || media.includes('.avi')) ? 'video' : 'image')
+          };
+        })
       : item.image ? [{ uri: item.image, type: 'image' }] : [];
+
+    console.log('📱 BuyScreen - Rendering property:', {
+      name: item.name,
+      location: item.location,
+      mediaItemsCount: mediaItems.length,
+      mediaItems: mediaItems,
+      itemImage: item.image,
+      rawPhotos: item.raw?.photosAndVideo?.length,
+      firstImagePath: firstImagePath,
+      propertyImageUrl: propertyImageUrl
+    });
 
     return (
       <TouchableOpacity

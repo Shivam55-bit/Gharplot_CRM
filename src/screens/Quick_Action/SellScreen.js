@@ -80,7 +80,7 @@ const SAMPLE_LISTINGS = [
 ];
 
 const SellScreen = ({ navigation }) => {
-  const [filter, setFilter] = useState("All");
+  const [filter, setFilter] = useState("Sell");
   const [showStats, setShowStats] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [listings, setListings] = useState([]);
@@ -93,9 +93,36 @@ const SellScreen = ({ navigation }) => {
     setError(null);
     try {
       const res = await getMySellProperties();
+      console.log('🏠 SellScreen - API Response:', { 
+        dataType: typeof res, 
+        isArray: Array.isArray(res), 
+        length: res?.length,
+        firstItem: res?.[0] 
+      });
+      
+      if (Array.isArray(res) && res.length > 0) {
+        // Log each property's details
+        res.forEach((p, idx) => {
+          console.log(`Property ${idx}:`, {
+            description: p.description,
+            title: p.title,
+            purpose: p.purpose,
+            purposeType: p.purposeType,
+            propertyType: p.propertyType,
+            propertyLocation: p.propertyLocation,
+            location: p.location,
+            price: p.price,
+            photosAndVideo: p.photosAndVideo?.length,
+            status: p.status,
+            views: p.views,
+          });
+        });
+      }
+      
       setListings(res || []);
+      console.log('✅ SellScreen - Loaded', res?.length || 0, 'properties');
     } catch (err) {
-      console.error('Failed to load my sell properties:', err);
+      console.error('❌ Failed to load my sell properties:', err);
       setError('Could not load your listings.');
     } finally {
       setIsLoading(false);
@@ -112,8 +139,36 @@ const SellScreen = ({ navigation }) => {
   );
 
   const filteredListings = (listings || []).filter((item) => {
-    const purpose = item.purpose || (item.purposeType || '').toString();
-    const matchesFilter = filter === "All" || purpose === filter;
+    // Check multiple possible field names for purpose
+    const purpose = item.purpose || item.purposeType || item.propertyPurpose || '';
+    
+    // Normalize purpose and filter for comparison (remove extra spaces)
+    const normalizedPurpose = purpose.trim();
+    const normalizedFilter = filter.trim();
+    
+    // Create variations for matching (handle "Rent/Lease" vs "Rent / Lease")
+    const purposeVariations = [
+      normalizedPurpose,
+      normalizedPurpose.replace(/\s*\/\s*/g, '/'), // "Rent / Lease" -> "Rent/Lease"
+      normalizedPurpose.replace(/\//g, ' / '), // "Rent/Lease" -> "Rent / Lease"
+    ];
+    
+    const filterVariations = [
+      normalizedFilter,
+      normalizedFilter.replace(/\s*\/\s*/g, '/'), // "Rent / Lease" -> "Rent/Lease"
+      normalizedFilter.replace(/\//g, ' / '), // "Rent/Lease" -> "Rent / Lease"
+    ];
+    
+    console.log(`🔍 Filtering - Item:`, { 
+      desc: item.description, 
+      purpose: normalizedPurpose,
+      filter: normalizedFilter,
+      purposeVariations,
+      filterVariations,
+      matchesFilter: normalizedFilter === "All" || purposeVariations.some(pv => filterVariations.includes(pv))
+    });
+    
+    const matchesFilter = normalizedFilter === "All" || purposeVariations.some(pv => filterVariations.includes(pv));
     const q = searchQuery.trim().toLowerCase();
     const hay = `${item.subPropertyType || ''} ${item.propertyType || ''} ${item.propertyLocation || item.location || ''} ${item.description || ''}`.toLowerCase();
     const matchesSearch = q === "" || hay.includes(q);
@@ -144,14 +199,55 @@ const SellScreen = ({ navigation }) => {
     }
   };
 
+  // Helper function to get correct image URL based on property source
+  const getPropertyImageUrl = (imageData, isPostedByAdmin) => {
+    if (!imageData || typeof imageData !== 'string') return null;
+    
+    // If it's already a complete URL, return it
+    if (imageData.startsWith('http://') || imageData.startsWith('https://')) return imageData;
+    
+    // Handle uploads path
+    if (imageData.startsWith('uploads/') || imageData.startsWith('/uploads/')) {
+      if (isPostedByAdmin) {
+        const baseUrl = 'https://abc.bhoomitechzone.us';
+        const cleanPath = imageData.replace(/^\/+/, '');
+        return `${baseUrl}/${cleanPath}`;
+      } else {
+        const baseUrl = 'https://abc.ridealmobility.com';
+        const cleanPath = imageData.replace(/^\/+/, '');
+        return `${baseUrl}/${cleanPath}`;
+      }
+    }
+    
+    return null;
+  };
+
   const renderListing = ({ item }) => {
-    // Prepare media items for MediaCard
+    console.log('📱 SellScreen - Rendering property:', {
+      description: item.description,
+      purpose: item.purpose,
+      price: item.price,
+      location: item.propertyLocation || item.location,
+      status: item.status,
+    });
+    
+    // Get correct image URL based on property source
+    const propertyImageUrl = getPropertyImageUrl(item.photosAndVideo?.[0], item.isPostedByAdmin);
+    
+    // Prepare media items for MediaCard with correct domain routing
     const mediaItems = item.photosAndVideo && item.photosAndVideo.length > 0 
-      ? item.photosAndVideo.map(media => ({
-          uri: formatImageUrl(media.uri || media) || media.uri || media,
-          type: media.type || (media.uri?.includes('.mp4') || media.uri?.includes('.mov') || media.uri?.includes('.avi') ? 'video' : 'image')
-        }))
-      : item.image ? [{ uri: formatImageUrl(item.image) || item.image, type: 'image' }] : [];
+      ? item.photosAndVideo.map(media => {
+          const imageUrl = getPropertyImageUrl(media.uri || media, item.isPostedByAdmin) || 
+                          formatImageUrl(media.uri || media) || 
+                          media.uri || 
+                          media;
+          return {
+            uri: imageUrl,
+            type: media.type || (media.uri?.includes('.mp4') || media.uri?.includes('.mov') || media.uri?.includes('.avi') ? 'video' : 'image')
+          };
+        })
+      : propertyImageUrl ? [{ uri: propertyImageUrl, type: 'image' }] : 
+      item.image ? [{ uri: formatImageUrl(item.image) || item.image, type: 'image' }] : [];
 
     return (
       <Pressable

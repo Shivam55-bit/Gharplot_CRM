@@ -45,7 +45,7 @@ import {
     getSavedPropertiesIds,
     getFirstImageUrl
 } from '../services/homeApi';
-import { toggleSaveProperty, removeSavedProperty, getMySellProperties } from '../services/propertyapi';
+import { toggleSaveProperty, removeSavedProperty, getMySellProperties, getRecentFeaturedProperties } from '../services/propertyapi';
 import { getCurrentUserProfile } from '../services/userapi';
 
 // Theme & Layout Constants
@@ -234,11 +234,26 @@ const Homescreen = ({ navigation }) => {
         setIsAllPropertiesLoading(true);
         setAllPropertiesError(null);
         try {
-            console.log('🏘️ Loading all properties');
-            const properties = await getAllProperties();
-            const validProperties = Array.isArray(properties) ? properties : [];
-            setAllProperties(validProperties);
-            console.log(`✅ Loaded ${validProperties.length} properties`);
+            console.log('🏘️ Loading all properties from API (limit: 50)...');
+            
+            // Fetch all properties from API with limit of 50
+            let allPropertiesData = await getRecentFeaturedProperties(50);
+            
+            // Filter out properties without images (empty photosAndVideo)
+            allPropertiesData = allPropertiesData.filter(property => {
+                const hasImage = property.photosAndVideo && 
+                                 Array.isArray(property.photosAndVideo) && 
+                                 property.photosAndVideo.length > 0;
+                
+                if (!hasImage) {
+                    console.log('⏭️ Skipping property without images in all properties:', property._id, property.description);
+                }
+                return hasImage;
+            });
+            
+            // Set the all properties
+            setAllProperties(allPropertiesData);
+            console.log(`✅ All Properties API loaded ${allPropertiesData.length} properties (filtered for images)`);
         } catch (error) {
             console.error('❌ Error loading all properties:', error);
             setAllPropertiesError('Could not load properties. Tap to retry.');
@@ -264,19 +279,31 @@ const Homescreen = ({ navigation }) => {
     const loadFeaturedProperties = async () => {
         try {
             setFeaturedError(null);
-            console.log('🏠 Loading featured properties (anti-blink version)');
+            console.log('🏠 Loading featured properties from API...');
             
-            const properties = await getRecentProperties(50); // Get more properties, but display only 15
-            const validProperties = Array.isArray(properties) ? properties : [];
+            // Fetch recent properties from API
+            let recentProperties = await getRecentFeaturedProperties();
             
-            // Batch state updates to prevent multiple re-renders
-            setFeaturedProperties(validProperties);
+            // Filter out properties without images (empty photosAndVideo)
+            recentProperties = recentProperties.filter(property => {
+                const hasImage = property.photosAndVideo && 
+                                 Array.isArray(property.photosAndVideo) && 
+                                 property.photosAndVideo.length > 0;
+                
+                if (!hasImage) {
+                    console.log('⏭️ Skipping property without images:', property._id, property.description);
+                }
+                return hasImage;
+            });
+            
+            // Set the featured properties
+            setFeaturedProperties(recentProperties);
             setIsFeaturedLoading(false);
-            console.log(`✅ Featured loaded: ${validProperties.length} properties (displaying 15)`);
+            console.log(`✅ Featured API loaded ${recentProperties.length} properties (filtered for images)`);
         } catch (e) {
             console.error("Featured Properties Error:", e);
             setFeaturedError("Could not load recent properties. Tap to retry.");
-            setFeaturedProperties([]); // Set empty array on error
+            setFeaturedProperties([]);
             setIsFeaturedLoading(false);
         }
         
@@ -804,6 +831,37 @@ const Homescreen = ({ navigation }) => {
 
     // Distance-based filtering removed
 
+    // Helper function to get correct image URL based on property source
+    const getPropertyImageUrl = (imageData, isPostedByAdmin) => {
+        if (!imageData || typeof imageData !== 'string') {
+            return FALLBACK_IMAGE_URI;
+        }
+
+        // If already a complete URL, return as-is
+        if (imageData.startsWith('http://') || imageData.startsWith('https://')) {
+            return imageData;
+        }
+
+        // For relative paths (uploads/...), use appropriate base URL
+        if (imageData.startsWith('uploads/') || imageData.startsWith('/uploads/')) {
+            // Admin properties use .us domain
+            if (isPostedByAdmin) {
+                const baseUrl = 'https://abc.bhoomitechzone.us';
+                const cleanPath = imageData.replace(/^\/+/, '');
+                return `${baseUrl}/${cleanPath}`;
+            }
+            // User properties use .com domain
+            else {
+                const baseUrl = 'https://abc.ridealmobility.com';
+                const cleanPath = imageData.replace(/^\/+/, '');
+                return `${baseUrl}/${cleanPath}`;
+            }
+        }
+
+        // Fallback to formatImageUrl for other cases
+        return formatImageUrl(imageData);
+    };
+
     // Memoize featured properties - Include user's local properties at the top
     const processedFeaturedProperties = useMemo(() => {
         console.log('🖼️ Processing featured properties (STABLE) with local properties');
@@ -817,23 +875,25 @@ const Homescreen = ({ navigation }) => {
             allProperties = [...localProperties];
         }
         
-        // Add server properties (excluding user's own server properties)
+        // Add server properties (INCLUDING user's own server properties now)
         if (featuredProperties && featuredProperties.length > 0) {
-            const serverProperties = featuredProperties
-                .filter(item => {
-                    // Filter out properties posted by the current user (server properties only)
-                    const propertyOwnerId = item?.userId || item?.ownerId || item?.postedBy?._id || item?.postedBy || item?.user?._id || item?.user;
-                    const isOwnProperty = currentUserId && propertyOwnerId && currentUserId === String(propertyOwnerId);
-                    
-                    if (isOwnProperty) {
-                        console.log('🚫 Hiding own server property from featured:', item._id);
-                    }
-                    
-                    return !isOwnProperty; // Exclude own server properties
-                });
+            console.log(`📊 Adding ${featuredProperties.length} featured properties from server`);
+            
+            const serverProperties = featuredProperties.map(item => {
+                const propertyOwnerId = item?.userId || item?.ownerId || item?.postedBy?._id || item?.postedBy || item?.user?._id || item?.user;
+                const isOwnProperty = currentUserId && propertyOwnerId && currentUserId === String(propertyOwnerId);
+                
+                if (isOwnProperty) {
+                    console.log('✅ Including own server property in featured:', item._id, item.description);
+                }
+                
+                return item;
+            });
             
             allProperties = [...allProperties, ...serverProperties];
         }
+        
+        console.log(`🎯 Total featured properties to display: ${allProperties.length}`);
         
         // Process all properties for display
         return allProperties.map((item, index) => {
@@ -846,14 +906,12 @@ const Homescreen = ({ navigation }) => {
                     isUserProperty: true
                 };
             } else {
-                // For server properties, process images as before
+                // For server properties, check if posted by admin and use correct base URL
                 const firstImage = getFirstImageUrl(item.photosAndVideo);
-                let imageUrl;
-                if (firstImage && typeof firstImage === 'string' && firstImage.startsWith('file://')) {
-                    imageUrl = firstImage;
-                } else {
-                    imageUrl = formatImageUrl(firstImage) || FALLBACK_IMAGE_URI;
-                }
+                const isPostedByAdmin = item?.isPostedByAdmin || false;
+                const imageUrl = getPropertyImageUrl(firstImage, isPostedByAdmin) || FALLBACK_IMAGE_URI;
+                
+                console.log(`📸 Property ${item._id}: isAdmin=${isPostedByAdmin}, image=${firstImage}`);
                 
                 return {
                     ...item,
@@ -1019,32 +1077,23 @@ const Homescreen = ({ navigation }) => {
             return [];
         }
         
-        const processed = allProperties
-            .filter(item => {
-                // Filter out properties posted by the current user
-                const propertyOwnerId = item?.userId || item?.ownerId || item?.postedBy?._id || item?.postedBy || item?.user?._id || item?.user;
-                const isOwnProperty = currentUserId && propertyOwnerId && currentUserId === String(propertyOwnerId);
-                
-                if (isOwnProperty) {
-                    console.log('🚫 Hiding own property:', item._id);
-                    return false;
-                }
-                return true;
-            })
-            .map((item, index) => {
-                const firstImage = getFirstImageUrl(item.photosAndVideo);
-                const imageUrl = formatImageUrl(firstImage) || FALLBACK_IMAGE_URI;
-                
-                return {
-                    ...item,
-                    processedImageUrl: imageUrl,
-                    stableKey: `all_${item._id || index}`
-                };
-            });
+        const processed = allProperties.map((item, index) => {
+            const firstImage = getFirstImageUrl(item.photosAndVideo);
+            const isPostedByAdmin = item?.isPostedByAdmin || false;
+            const imageUrl = getPropertyImageUrl(firstImage, isPostedByAdmin) || FALLBACK_IMAGE_URI;
+            
+            console.log(`📸 All Properties - Property ${item._id}: isAdmin=${isPostedByAdmin}, image=${firstImage}`);
+            
+            return {
+                ...item,
+                processedImageUrl: imageUrl,
+                stableKey: `all_${item._id || index}`
+            };
+        });
         
         console.log('🎯 All Properties:', processed.length);
         return processed;
-    }, [allProperties, currentUserId]);
+    }, [allProperties]);
 
     // Render All Properties Content
     const renderAllPropertiesContent = () => {
@@ -1111,17 +1160,35 @@ const Homescreen = ({ navigation }) => {
                             activeOpacity={0.9}
                         >
                             {/* Property Image */}
-                            <Image
-                                source={{ uri: imageUri }}
-                                style={styles.nearbyImage}
-                                resizeMode="cover"
-                                onError={() => {
-                                    console.warn('Failed to load image:', imageUri);
-                                }}
-                                onLoad={() => {
-                                    // console.log('Successfully loaded image:', imageUri);
-                                }}
-                            />
+                            <View style={styles.imageContainer}>
+                                <Image
+                                    source={{ uri: imageUri }}
+                                    style={styles.nearbyImage}
+                                    resizeMode="cover"
+                                    onError={() => {
+                                        console.warn('Failed to load image:', imageUri);
+                                    }}
+                                    onLoad={() => {
+                                        // console.log('Successfully loaded image:', imageUri);
+                                    }}
+                                />
+
+                                {/* Favorite Icon - Top Right */}
+                                <TouchableOpacity 
+                                    onPress={(e) => {
+                                        e.stopPropagation();
+                                        toggleFavorite(item._id);
+                                    }} 
+                                    style={styles.favoriteIconOverlay}
+                                    activeOpacity={0.7}
+                                >
+                                    <Icon
+                                        name={favorites.includes(item._id) ? "heart" : "heart-outline"}
+                                        size={22}
+                                        color={favorites.includes(item._id) ? "#EF4444" : "#FFFFFF"}
+                                    />
+                                </TouchableOpacity>
+                            </View>
 
                             {/* Property Details */}
                             <View style={styles.nearbyInfo}>
@@ -1779,6 +1846,23 @@ const styles = StyleSheet.create({
         borderTopRightRadius: 16,
         resizeMode: 'cover',
         backgroundColor: '#E5E7EB',
+    },
+    imageContainer: {
+        position: 'relative',
+        width: '100%',
+        height: 120,
+    },
+    favoriteIconOverlay: {
+        position: 'absolute',
+        top: 8,
+        right: 8,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 10,
     },
     nearbyInfo: {
         padding: 12,

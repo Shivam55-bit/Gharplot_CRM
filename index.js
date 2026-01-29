@@ -14,8 +14,11 @@ import './src/utils/hmrConfig';
 import './src/utils/workletsErrorHandler';
 
 import App from './App';
-// Import app name from app.json - use the correct 'name' property
-const appName = 'Gharplot'; // Directly use the app name that matches MainActivity.kt
+
+// ============================================
+// APP REGISTRATION (MUST match MainActivity.kt)
+// ============================================
+const appName = 'Gharplot'; // Must match getMainComponentName() in MainActivity.kt
 
 // ============================================
 // FCM BACKGROUND HANDLER

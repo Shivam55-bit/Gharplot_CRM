@@ -25,6 +25,31 @@ import { toggleSaveProperty, getSavedProperties, removeSavedProperty } from '../
 // Fallback image URL when a property has no photo link
 const DEFAULT_IMAGE_URL = 'https://via.placeholder.com/180x180.png?text=No+Image';
 
+// Helper function to get correct image URL based on property source
+const getPropertyImageUrl = (imageData, isPostedByAdmin) => {
+    if (!imageData) return DEFAULT_IMAGE_URL;
+    
+    // Extract the image path
+    const imagePath = typeof imageData === 'string' ? imageData : (imageData.uri || imageData);
+    
+    if (!imagePath) return DEFAULT_IMAGE_URL;
+    
+    // If it's already a full URL, use it directly
+    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+        return imagePath;
+    }
+    
+    // Route to correct domain based on property source
+    const domain = isPostedByAdmin 
+        ? 'https://abc.bhoomitechzone.us' 
+        : 'https://abc.ridealmobility.com';
+    
+    // Remove leading slash if present
+    const cleanPath = imagePath.startsWith('/') ? imagePath.substring(1) : imagePath;
+    
+    return `${domain}/${cleanPath}`;
+};
+
 const SavedScreen = ({ navigation }) => {
     const [search, setSearch] = useState("");
     // removed comparison feature state (not needed anymore)
@@ -67,8 +92,8 @@ const SavedScreen = ({ navigation }) => {
                             : (p.photosAndVideo[0].url || p.photosAndVideo[0]);
 
                         if (rawPath) {
-                            // Assumes formatImageUrl correctly prepends the base domain
-                            imageUrl = formatImageUrl(rawPath);
+                            // Use domain routing helper based on isPostedByAdmin flag
+                            imageUrl = getPropertyImageUrl(rawPath, p.isPostedByAdmin);
                         }
                     } else if (p.images && p.images[0]) {
                         // Fallback for an 'images' array if it exists
@@ -76,7 +101,7 @@ const SavedScreen = ({ navigation }) => {
                             ? p.images[0] 
                             : (p.images[0].url || p.images[0]);
                         if (rawPath) {
-                            imageUrl = formatImageUrl(rawPath);
+                            imageUrl = getPropertyImageUrl(rawPath, p.isPostedByAdmin);
                         }
                     }
 
@@ -89,6 +114,8 @@ const SavedScreen = ({ navigation }) => {
                         image: { uri: imageUrl },
                         tag: primaryType,
                         isSaved: true,
+                        raw: p, // Keep raw property for later use
+                        isPostedByAdmin: p.isPostedByAdmin || false, // Check if posted by admin/user
                     };
                 });
                 setProperties(mapped);
@@ -169,6 +196,18 @@ const SavedScreen = ({ navigation }) => {
         );
     }, [loadSaved]);
 
+    // Handle property card click
+    const handlePropertyPress = (item) => {
+        // Check if property is posted by user (not admin)
+        if (item.isPostedByAdmin) {
+            // If posted by admin or other users, navigate to inquiry form first
+            navigation.navigate('PropertyInquiryFormScreen', { property: item.raw || item });
+        } else {
+            // If posted by user themselves, show property details directly
+            navigation.navigate('PropertyDetailsScreen', { property: item.raw || item });
+        }
+    };
+
     // comparison handlers removed
 
     const filteredProperties = properties.filter(item => 
@@ -178,7 +217,11 @@ const SavedScreen = ({ navigation }) => {
     );
 
     const renderItem = ({ item }) => (
-        <View style={styles.cardRow}>
+        <TouchableOpacity 
+            style={styles.cardRow}
+            onPress={() => handlePropertyPress(item)}
+            activeOpacity={0.7}
+        >
             <Image
                 source={item.image}
                 style={styles.imageRow}
@@ -195,13 +238,20 @@ const SavedScreen = ({ navigation }) => {
 
                     <View style={{ alignItems: 'flex-end' }}>
                         <Text style={styles.priceTextRow}>{typeof item.price === 'number' ? formatPrice(item.price) : item.price}</Text>
-                        <TouchableOpacity style={styles.deleteCircle} onPress={() => handleRemoveProperty(item.id)} disabled={loadingId === item.id}>
+                        <TouchableOpacity 
+                            style={styles.deleteCircle} 
+                            onPress={(e) => {
+                                e.stopPropagation();
+                                handleRemoveProperty(item.id);
+                            }} 
+                            disabled={loadingId === item.id}
+                        >
                             {loadingId === item.id ? <ActivityIndicator size="small" color="#fff" /> : <Icon name="trash-outline" size={16} color="#fff" />}
                         </TouchableOpacity>
                     </View>
                 </View>
             </View>
-        </View>
+        </TouchableOpacity>
     );
 
     const renderEmpty = () => (

@@ -17,6 +17,7 @@ import {
 import { useNavigation } from "@react-navigation/native";
 import Icon from "react-native-vector-icons/Ionicons";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getFCMToken } from '../../../utils/fcmService';
 
 const AdminLogin = () => {
   const navigation = useNavigation();
@@ -92,6 +93,11 @@ const AdminLogin = () => {
 
     setLoading(true);
     try {
+      // Get FCM token BEFORE login so we can send it with login request
+      console.log('📱 Getting FCM token for login...');
+      const fcmToken = await getFCMToken();
+      console.log('🔑 FCM Token:', fcmToken ? fcmToken.substring(0, 30) + '...' : 'NULL');
+
       const response = await fetch('https://abc.bhoomitechzone.us/admin/login', {
         method: 'POST',
         headers: {
@@ -100,6 +106,7 @@ const AdminLogin = () => {
         body: JSON.stringify({
           email: email.trim(),
           password: password.trim(),
+          fcmToken: fcmToken || '', // Send FCM token with login request
         }),
       });
 
@@ -134,12 +141,25 @@ const AdminLogin = () => {
         if (user) {
           await AsyncStorage.setItem('admin_user', JSON.stringify(user));
           await AsyncStorage.setItem('adminData', JSON.stringify(user)); // Also store with consistent key
+          // Store admin ID for FCM token registration
+          if (user.id || user._id) {
+            await AsyncStorage.setItem('adminId', user.id || user._id);
+          }
         }
         
         // Save credentials for auto-login
         await AsyncStorage.setItem('admin_email', email.trim());
         await AsyncStorage.setItem('admin_password', password.trim());
         console.log('✅ Admin credentials saved for auto-login');
+        
+        // FCM token is already sent with login request above
+        // Store FCM token locally for reference
+        const fcmToken = await getFCMToken();
+        if (fcmToken) {
+          await AsyncStorage.setItem('fcmToken', fcmToken);
+          await AsyncStorage.setItem('fcmTokenRegistered', 'true');
+          console.log('✅ FCM token sent with login and stored locally');
+        }
         
         setLoading(false);
         // Navigate directly without showing alert

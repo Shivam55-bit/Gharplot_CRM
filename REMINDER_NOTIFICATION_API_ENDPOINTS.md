@@ -90,20 +90,18 @@ curl -X GET "https://abc.bhoomitechzone.us/employee/reminders/stats" \
 Create a new reminder for employee.
 
 ```bash
-curl -X POST "https://abc.bhoomitechzone.us/employee/reminders/create" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "Follow up with client",
-    "description": "Call client regarding property inquiry",
-    "reminderDate": "2026-01-10T10:30:00.000Z",
-    "enquiryId": "enquiry_123",
-    "clientInfo": {
-      "name": "John Doe",
-      "phone": "9876543210",
-      "email": "john@example.com",
-      "location": "Mumbai"
-    }
+curl --location 'https://abc.bhoomitechzone.us/api/reminder/create' \
+--header 'Authorization: Bearer YOUR_TOKEN' \
+--header 'Content-Type: application/json' \
+--data-raw '{
+    "title": "Follow up with John Doe",
+    "clientName": "John Doe",
+    "email": "john@example.com",
+    "phone": "9876543210",
+    "location": "New York",
+    "reminderDateTime": "2026-01-30T10:30:00.000Z",
+    "note": "Call back regarding pricing",
+    "isRepeating": false
   }'
 ```
 
@@ -111,15 +109,13 @@ curl -X POST "https://abc.bhoomitechzone.us/employee/reminders/create" \
 ```json
 {
   "title": "string (required)",
-  "description": "string (optional)",
-  "reminderDate": "ISO date string (required)",
-  "enquiryId": "string (optional)",
-  "clientInfo": {
-    "name": "string",
-    "phone": "string",
-    "email": "string",
-    "location": "string"
-  }
+  "clientName": "string (required)",
+  "email": "string (optional)",
+  "phone": "string (required)",
+  "location": "string (optional)",
+  "reminderDateTime": "ISO date string (required)",
+  "note": "string (optional)",
+  "isRepeating": "boolean (optional, default: false)"
 }
 ```
 

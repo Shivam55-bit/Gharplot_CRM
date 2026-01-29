@@ -355,11 +355,11 @@ const AdminDashboardScreen = ({ navigation, user }) => {
         </View>
 
         {/* Leads Section */}
-        <Text style={styles.sectionTitleMain}>Lead Analytics</Text>
+        {/* <Text style={styles.sectionTitleMain}>Lead Analytics</Text> */}
 
         <View style={styles.analyticsGrid}>
           {/* Hot Leads */}
-          <TouchableOpacity style={[styles.blueCard, {backgroundColor: '#ef4444'}]} onPress={() => navigation.navigate('Operations', { screen: 'AllLeads' })}>
+          {/* <TouchableOpacity style={[styles.blueCard, {backgroundColor: '#ef4444'}]} onPress={() => navigation.navigate('Operations', { screen: 'AllLeads' })}>
             <View style={styles.blueHeader}>
               <Icon name="flame" color="#fff" size={18} />
               <Text style={styles.blueTitle}>Hot Leads ({dashboardData.leads.hot})</Text>
@@ -368,10 +368,10 @@ const AdminDashboardScreen = ({ navigation, user }) => {
             <Text style={styles.blueMiniText}>
               {dashboardData.leads.hot > 0 ? `${dashboardData.leads.hot} active` : 'No hot leads'}
             </Text>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
 
           {/* Warm Leads */}
-          <TouchableOpacity style={[styles.blueCard, {backgroundColor: '#f59e0b'}]} onPress={() => navigation.navigate('Operations', { screen: 'AllLeads' })}>
+          {/* <TouchableOpacity style={[styles.blueCard, {backgroundColor: '#f59e0b'}]} onPress={() => navigation.navigate('Operations', { screen: 'AllLeads' })}>
             <View style={styles.blueHeader}>
               <Icon name="trending-up" color="#fff" size={18} />
               <Text style={styles.blueTitle}>Warm ({dashboardData.leads.warm})</Text>
@@ -383,7 +383,7 @@ const AdminDashboardScreen = ({ navigation, user }) => {
             </View>
 
             <Text style={styles.blueMiniText}>Active: {dashboardData.leads.warm}</Text>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
 
         {/* Management Section */}

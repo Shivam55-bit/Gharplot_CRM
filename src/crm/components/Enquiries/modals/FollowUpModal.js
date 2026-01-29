@@ -19,9 +19,7 @@ import { createFollowUp } from '../../../services/crmEnquiryApi';
 const FollowUpModal = ({ visible, onClose, enquiry, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    caseStatus: 'Open',
     priority: 'Medium',
-    actionTaken: 'Other',
     nextFollowUpDate: new Date().toISOString().split('T')[0],
     initialComment: '',
   });
@@ -67,24 +65,34 @@ const FollowUpModal = ({ visible, onClose, enquiry, onSuccess }) => {
     setLoading(true);
 
     try {
+      // Convert leadType to backend format
+      const backendLeadType = enquiry.leadType === 'client' ? 'UserLeadAssignment' : 'LeadAssignment';
+      
+      const finalLeadId = enquiry._id || enquiry.leadId || enquiry.assignmentId;
+      
       const followUpData = {
-        leadId: enquiry._id,
-        enquiryType: enquiry.enquiryType || (enquiry.source === 'client' ? 'Inquiry' : 'ManualInquiry'),
+        leadId: finalLeadId,
+        leadType: backendLeadType,
         clientName: enquiry.clientName,
-        phone: enquiry.contactNumber,
-        email: enquiry.email,
-        propertyType: enquiry.propertyType,
-        location: enquiry.propertyLocation,
-        caseStatus: formData.caseStatus,
+        clientEmail: enquiry.email || enquiry.clientEmail,
+        clientPhone: enquiry.phone || enquiry.contactNumber || enquiry.clientPhone,
+        followUpDate: new Date(formData.nextFollowUpDate).toISOString(),
+        notes: formData.initialComment,
         priority: formData.priority.toLowerCase(),
-        actionTaken: formData.actionTaken,
-        nextFollowUpDate: new Date(formData.nextFollowUpDate).toISOString(),
-        initialComment: formData.initialComment,
-        status: 'pending',
-        source: enquiry.source || 'manual',
       };
+      
+      console.log('📤 Follow-up data being sent:', {
+        leadId: finalLeadId,
+        leadType: backendLeadType,
+        enquiry: enquiry,
+        followUpData: followUpData
+      });
 
       const result = await createFollowUp(followUpData);
+      
+      console.log('📥 Follow-up response:', result);
+      console.log('📥 Response success:', result.success);
+      console.log('📥 Response message:', result.message);
 
       if (result.success) {
         Alert.alert('Success', 'Follow-up created successfully!', [
@@ -92,10 +100,14 @@ const FollowUpModal = ({ visible, onClose, enquiry, onSuccess }) => {
         ]);
         onSuccess && onSuccess();
       } else {
-        Alert.alert('Error', result.message || 'Failed to create follow-up');
+        const errorMsg = result.message || 'Failed to create follow-up';
+        console.error('❌ Follow-up error:', errorMsg);
+        console.error('❌ Full response:', result);
+        Alert.alert('Error', errorMsg);
       }
     } catch (error) {
       console.error('Follow-up creation error:', error);
+      console.error('❌ Error details:', error.message);
       Alert.alert('Error', 'Failed to create follow-up. Please try again.');
     } finally {
       setLoading(false);
@@ -104,9 +116,7 @@ const FollowUpModal = ({ visible, onClose, enquiry, onSuccess }) => {
 
   const handleClose = () => {
     setFormData({
-      caseStatus: 'Open',
       priority: 'Medium',
-      actionTaken: 'Other',
       nextFollowUpDate: new Date().toISOString().split('T')[0],
       initialComment: '',
     });
@@ -188,33 +198,8 @@ const FollowUpModal = ({ visible, onClose, enquiry, onSuccess }) => {
                 <Text style={styles.sectionTitle}>Follow-up Details</Text>
               </View>
 
-              {/* Case Status, Priority, Action Taken Row */}
+              {/* Priority and Next Follow-up Date Row */}
               <View style={styles.formRow}>
-                <View style={styles.formField}>
-                  <Text style={styles.formLabel}>Case Status <Text style={styles.required}>*</Text></Text>
-                  <ScrollView style={styles.dropdownScroll} nestedScrollEnabled={true}>
-                    <View style={styles.dropdown}>
-                      {caseStatuses.map((status) => (
-                        <TouchableOpacity
-                          key={status}
-                          style={[
-                            styles.dropdownOption,
-                            formData.caseStatus === status && styles.dropdownOptionActive,
-                          ]}
-                          onPress={() => handleInputChange('caseStatus', status)}
-                        >
-                          <Text style={[
-                            styles.dropdownText,
-                            formData.caseStatus === status && styles.dropdownTextActive,
-                          ]}>
-                            {status}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </ScrollView>
-                </View>
-
                 <View style={styles.formField}>
                   <Text style={styles.formLabel}>Priority</Text>
                   <ScrollView style={styles.dropdownScroll} nestedScrollEnabled={true}>
@@ -233,34 +218,6 @@ const FollowUpModal = ({ visible, onClose, enquiry, onSuccess }) => {
                             formData.priority === priority && styles.dropdownTextActive,
                           ]}>
                             {priority}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </ScrollView>
-                </View>
-              </View>
-
-              {/* Action Taken and Next Follow-up Date Row */}
-              <View style={styles.formRow}>
-                <View style={styles.formField}>
-                  <Text style={styles.formLabel}>Action Taken</Text>
-                  <ScrollView style={styles.dropdownScroll} nestedScrollEnabled={true}>
-                    <View style={styles.dropdown}>
-                      {actionTypes.map((action) => (
-                        <TouchableOpacity
-                          key={action}
-                          style={[
-                            styles.dropdownOption,
-                            formData.actionTaken === action && styles.dropdownOptionActive,
-                          ]}
-                          onPress={() => handleInputChange('actionTaken', action)}
-                        >
-                          <Text style={[
-                            styles.dropdownText,
-                            formData.actionTaken === action && styles.dropdownTextActive,
-                          ]}>
-                            {action}
                           </Text>
                         </TouchableOpacity>
                       ))}

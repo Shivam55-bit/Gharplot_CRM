@@ -382,6 +382,65 @@ export const updateProperty = async (propertyId, data = {}, files = []) => {
     }
 };
 
+/**
+ * GET: Fetch recently added properties across the platform
+ * cURL: GET https://abc.ridealmobility.com/api/properties/recent/all?limit=50
+ * Returns recently added properties with full details
+ * @param {number} limit - Maximum number of properties to fetch (default: 15 for featured, 50 for all)
+ * @returns {Promise<Array<object>>} An array of recent property objects
+ */
+export const getRecentFeaturedProperties = async (limit = 15) => {
+    try {
+        const token = await AsyncStorage.getItem('userToken');
+        
+        if (!token) {
+            console.log('[propertyapi] No token found for featured properties - returning empty');
+            return [];
+        }
+
+        const url = `https://abc.ridealmobility.com/api/properties/recent/all?limit=${limit}`;
+        
+        console.log('[propertyapi] Fetching recent featured properties from:', url);
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+
+        if (!response.ok) {
+            console.error('[propertyapi] Failed to fetch recent properties:', response.status, response.statusText);
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log(`[propertyapi] getRecentFeaturedProperties response: ${data.properties?.length || 0} properties`);
+        
+        // Extract properties array from response
+        if (data && Array.isArray(data.properties)) {
+            console.log(`✅ Fetched ${data.properties.length} recent properties`);
+            return data.properties;
+        }
+        
+        // Fallback for different response structure
+        if (Array.isArray(data)) {
+            return data;
+        }
+        
+        if (data && Array.isArray(data.data)) {
+            return data.data;
+        }
+        
+        console.warn('[propertyapi] Unexpected response structure, returning empty array');
+        return [];
+    } catch (error) {
+        console.error('[propertyapi] Error fetching recent properties:', error);
+        throw error;
+    }
+};
+
 // Function to fetch nearby properties
 export const fetchNearbyProperties = async (lat, lng, distance) => {
     const url = `https://abc.ridealmobility.com/property/nearby?lat=${lat}&lng=${lng}&distance=${distance}`;

@@ -42,9 +42,23 @@ const EmployeeFollowUps = ({ navigation }) => {
 
   // Modal States
   const [showResultModal, setShowResultModal] = useState(false);
+  const [showCommentModal, setShowCommentModal] = useState(false);
   const [selectedFollowUp, setSelectedFollowUp] = useState(null);
   const [resultText, setResultText] = useState('');
+  const [commentText, setCommentText] = useState('');
+  const [selectedActionTaken, setSelectedActionTaken] = useState('other');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Action Types for comments
+  const ACTION_TYPES = [
+    { label: 'Call', value: 'call' },
+    { label: 'Email', value: 'email' },
+    { label: 'Meeting', value: 'meeting' },
+    { label: 'Site Visit', value: 'site_visit' },
+    { label: 'Document Sent', value: 'document_sent' },
+    { label: 'Follow-up Scheduled', value: 'follow_up_scheduled' },
+    { label: 'Other', value: 'other' },
+  ];
 
   // Filter Options
   const FILTER_OPTIONS = [
@@ -177,6 +191,48 @@ const EmployeeFollowUps = ({ navigation }) => {
   };
 
   // ============================================
+  // ADD COMMENT TO FOLLOW-UP
+  // ============================================
+  const handleAddComment = (followUp) => {
+    setSelectedFollowUp(followUp);
+    setCommentText('');
+    setSelectedActionTaken('other');
+    setShowCommentModal(true);
+  };
+
+  const submitAddComment = async () => {
+    if (!commentText.trim()) {
+      Alert.alert('Required', 'Please enter a comment');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      
+      const response = await addFollowUpComment(selectedFollowUp._id, {
+        text: commentText.trim(),
+        actionTaken: selectedActionTaken,
+      });
+
+      if (response.success) {
+        setShowCommentModal(false);
+        setSelectedFollowUp(null);
+        setCommentText('');
+        setSelectedActionTaken('other');
+        loadFollowUps();
+        Alert.alert('Success', 'Comment added successfully');
+      } else {
+        Alert.alert('Error', response.message || 'Failed to add comment');
+      }
+    } catch (error) {
+      console.error('Error adding comment:', error);
+      Alert.alert('Error', error.message || 'Failed to add comment');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ============================================
   // MARK NOT INTERESTED
   // ============================================
   const handleMarkNotInterested = async (followUpId, title) => {
@@ -244,6 +300,19 @@ const EmployeeFollowUps = ({ navigation }) => {
   // ============================================
   // HELPER FUNCTIONS
   // ============================================
+  const getActionTypeColor = (actionType) => {
+    const colors = {
+      call: '#3B82F6',
+      email: '#8B5CF6',
+      meeting: '#EC4899',
+      site_visit: '#F59E0B',
+      document_sent: '#10B981',
+      follow_up_scheduled: '#6366F1',
+      other: '#6B7280',
+    };
+    return colors[actionType] || '#6B7280';
+  };
+
   const getStatusColor = (status) => {
     const colors = {
       open: '#10B981',
@@ -335,11 +404,42 @@ const EmployeeFollowUps = ({ navigation }) => {
           </View>
         </View>
 
-        {/* Comment */}
-        {item.comment && (
-          <View style={styles.commentSection}>
-            <Icon name="comment-text-outline" size={14} color="#6B7280" />
-            <Text style={styles.commentText} numberOfLines={2}>{item.comment}</Text>
+        {/* Comments */}
+        {item.comments && item.comments.length > 0 && (
+          <View style={styles.commentsContainer}>
+            {item.comments.slice(-2).reverse().map((comment, idx) => (
+              <View key={idx} style={styles.commentBubble}>
+                <View style={styles.commentHeader}>
+                  <Text style={styles.commentAuthor}>
+                    {comment.commentByName || 'Unknown'}
+                  </Text>
+                  <View style={[styles.actionBadge, { backgroundColor: getActionTypeColor(comment.actionTaken) }]}>
+                    <Icon 
+                      name={comment.actionTaken === 'call' ? 'phone' : 
+                            comment.actionTaken === 'email' ? 'email' :
+                            comment.actionTaken === 'meeting' ? 'calendar-check' :
+                            comment.actionTaken === 'site_visit' ? 'map-marker-check' :
+                            comment.actionTaken === 'document_sent' ? 'file-document-outline' :
+                            comment.actionTaken === 'follow_up_scheduled' ? 'clock-outline' : 'dots-horizontal'} 
+                      size={12} 
+                      color="#fff" 
+                    />
+                    <Text style={styles.actionBadgeText}>{comment.actionTaken?.replace('_', ' ').toUpperCase()}</Text>
+                  </View>
+                </View>
+                <Text style={styles.commentBodyText} numberOfLines={2}>
+                  {comment.text}
+                </Text>
+                <Text style={styles.commentTime}>
+                  {formatDate(comment.commentDate)}
+                </Text>
+              </View>
+            ))}
+            {item.comments.length > 2 && (
+              <Text style={styles.moreComments}>
+                +{item.comments.length - 2} more comment{item.comments.length - 2 > 1 ? 's' : ''}
+              </Text>
+            )}
           </View>
         )}
 
@@ -390,24 +490,50 @@ const EmployeeFollowUps = ({ navigation }) => {
             <TouchableOpacity
               style={[styles.actionButton, styles.closeButton]}
               onPress={() => handleCloseFollowUp(item)}
+              activeOpacity={0.8}
             >
-              <Icon name="check-circle" size={18} color="#fff" />
+              <Icon name="check-circle" size={16} color="#fff" />
               <Text style={styles.actionButtonText}>Close</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.actionButton, styles.notInterestedButton]}
-              onPress={() => handleMarkNotInterested(item._id, clientName)}
+              style={[styles.actionButton, styles.commentButton]}
+              onPress={() => handleAddComment(item)}
+              activeOpacity={0.8}
             >
-              <Icon name="close-circle" size={18} color="#fff" />
-              <Text style={styles.actionButtonText}>Not Interested</Text>
+              <Icon name="comment-plus" size={16} color="#fff" />
+              <Text style={styles.actionButtonText}>Comment</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionButton, styles.rejectButton]}
+              onPress={() => handleMarkNotInterested(item._id, clientName)}
+              activeOpacity={0.8}
+            >
+              <Icon name="close-circle" size={16} color="#fff" />
+              <Text style={styles.actionButtonText}>Reject</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.actionButton, styles.deleteButton]}
               onPress={() => handleDeleteFollowUp(item._id, clientName)}
+              activeOpacity={0.8}
             >
-              <Icon name="delete" size={18} color="#fff" />
+              <Icon name="trash-can-outline" size={16} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Comment Button (For closed follow-ups too) */}
+        {item.caseStatus !== 'open' && (
+          <View style={styles.actionsRow}>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.commentButton, { flex: 1 }]}
+              onPress={() => handleAddComment(item)}
+              activeOpacity={0.8}
+            >
+              <Icon name="comment-plus" size={16} color="#fff" />
+              <Text style={styles.actionButtonText}>Add Note</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -501,6 +627,126 @@ const EmployeeFollowUps = ({ navigation }) => {
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
                 <Text style={styles.submitButtonText}>Close Follow-up</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  // ============================================
+  // RENDER COMMENT MODAL
+  // ============================================
+  const renderCommentModal = () => (
+    <Modal
+      visible={showCommentModal}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={() => setShowCommentModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          {/* Header */}
+          <View style={styles.commentModalHeader}>
+            <View style={styles.commentHeaderLeft}>
+              <View style={styles.commentIconBg}>
+                <Icon name="comment-plus-outline" size={22} color="#fff" />
+              </View>
+              <View style={styles.commentHeaderText}>
+                <Text style={styles.commentModalTitle}>Add Comment</Text>
+                <Text style={styles.commentModalSubtitle}>{selectedFollowUp?.leadData?.clientName || 'Follow-up'}</Text>
+              </View>
+            </View>
+            <TouchableOpacity 
+              style={styles.commentCloseBtn}
+              onPress={() => setShowCommentModal(false)}
+            >
+              <Icon name="close" size={24} color="#6B7280" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Divider */}
+          <View style={styles.commentDivider} />
+          
+          {/* Action Taken Dropdown */}
+          <View style={styles.commentSection}>
+            <Text style={styles.commentSectionLabel}>
+              <Text style={styles.commentRequired}>*</Text> Action Taken
+            </Text>
+            <View style={styles.dropdownContainer}>
+              <TouchableOpacity 
+                style={styles.dropdownButton}
+                onPress={() => {
+                  const nextIndex = (ACTION_TYPES.findIndex(a => a.value === selectedActionTaken) + 1) % ACTION_TYPES.length;
+                  setSelectedActionTaken(ACTION_TYPES[nextIndex].value);
+                }}
+              >
+                <View style={styles.actionIconContainer}>
+                  <Icon 
+                    name={selectedActionTaken === 'call' ? 'phone' : 
+                          selectedActionTaken === 'email' ? 'email' :
+                          selectedActionTaken === 'meeting' ? 'calendar-check' :
+                          selectedActionTaken === 'site_visit' ? 'map-marker-check' :
+                          selectedActionTaken === 'document_sent' ? 'file-document-outline' :
+                          selectedActionTaken === 'follow_up_scheduled' ? 'clock-outline' : 'dots-horizontal'} 
+                    size={18} 
+                    color="#4F46E5" 
+                  />
+                </View>
+                <Text style={styles.dropdownButtonText}>
+                  {ACTION_TYPES.find(a => a.value === selectedActionTaken)?.label || 'Select Action'}
+                </Text>
+                <Icon name="chevron-down" size={20} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Comment Input */}
+          <View style={styles.commentSection}>
+            <Text style={styles.commentSectionLabel}>
+              <Text style={styles.commentRequired}>*</Text> Comment
+            </Text>
+            <TextInput
+              style={styles.commentModalInput}
+              placeholder="Add your comment or note..."
+              placeholderTextColor="#9CA3AF"
+              value={commentText}
+              onChangeText={setCommentText}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
+            <Text style={styles.commentCharCount}>
+              {commentText.length} characters
+            </Text>
+          </View>
+
+          {/* Action Buttons */}
+          <View style={styles.commentModalActions}>
+            <TouchableOpacity 
+              style={[styles.commentModalButton, styles.commentCancelButton]}
+              onPress={() => setShowCommentModal(false)}
+            >
+              <Text style={styles.commentCancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[
+                styles.commentModalButton, 
+                styles.commentSubmitButton,
+                (!commentText.trim() || isSubmitting) && styles.commentDisabledButton
+              ]}
+              onPress={submitAddComment}
+              disabled={!commentText.trim() || isSubmitting}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Icon name="check-circle" size={20} color="#fff" />
+                  <Text style={styles.commentSubmitButtonText}>Add Comment</Text>
+                </>
               )}
             </TouchableOpacity>
           </View>
@@ -643,6 +889,9 @@ const EmployeeFollowUps = ({ navigation }) => {
 
       {/* Result Modal */}
       {renderResultModal()}
+
+      {/* Comment Modal */}
+      {renderCommentModal()}
     </View>
   );
 };
@@ -898,6 +1147,60 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   
+  // Comments Container
+  commentsContainer: {
+    marginBottom: 12,
+    backgroundColor: '#F0F9FF',
+    borderRadius: 12,
+    padding: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#3B82F6',
+  },
+  commentBubble: {
+    marginBottom: 10,
+  },
+  commentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  commentAuthor: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  actionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 4,
+  },
+  actionBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
+    textTransform: 'uppercase',
+  },
+  commentBodyText: {
+    fontSize: 13,
+    color: '#374151',
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  commentTime: {
+    fontSize: 11,
+    color: '#9CA3AF',
+  },
+  moreComments: {
+    fontSize: 12,
+    color: '#6366F1',
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  
   // Meta Row
   metaRow: {
     flexDirection: 'row',
@@ -953,8 +1256,11 @@ const styles = StyleSheet.create({
   // Actions Row
   actionsRow: {
     flexDirection: 'row',
-    marginTop: 4,
+    marginTop: 12,
     gap: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
   },
   actionButton: {
     flex: 1,
@@ -964,24 +1270,29 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 10,
     gap: 6,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
   },
   closeButton: {
     backgroundColor: '#10B981',
-    flex: 2,
   },
-  notInterestedButton: {
-    backgroundColor: '#F59E0B',
-    flex: 2,
+  commentButton: {
+    backgroundColor: '#3B82F6',
+  },
+  rejectButton: {
+    backgroundColor: '#EF4444',
   },
   deleteButton: {
-    backgroundColor: '#EF4444',
-    flex: 1,
-    maxWidth: 50,
+    backgroundColor: '#6B7280',
   },
   actionButtonText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: '#fff',
+    letterSpacing: 0.2,
   },
   
   // Result Section
@@ -1100,35 +1411,177 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     marginBottom: 20,
   },
-  modalActions: {
-    flexDirection: 'row',
-    gap: 12,
+  
+  // Comment Input
+  commentInput: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 15,
+    color: '#1F2937',
+    minHeight: 100,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 16,
   },
-  modalButton: {
+  commentLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  
+  // Comment Modal Styles
+  commentModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 0,
+  },
+  commentHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
-    paddingVertical: 14,
+  },
+  commentIconBg: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#F59E0B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  commentHeaderText: {
+    flex: 1,
+  },
+  commentModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  commentModalSubtitle: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  commentCloseBtn: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+  },
+  commentDivider: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 16,
+  },
+  commentSection: {
+    marginBottom: 16,
+  },
+  commentSectionLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 10,
+  },
+  commentRequired: {
+    color: '#EF4444',
+    fontSize: 16,
+  },
+  commentModalInput: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 14,
+    color: '#1F2937',
+    minHeight: 110,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    fontFamily: 'System',
+  },
+  commentCharCount: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 6,
+    textAlign: 'right',
+  },
+  
+  // Dropdown Styles
+  dropdownSection: {
+    marginBottom: 16,
+  },
+  dropdownLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  dropdownContainer: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#F8FAFC',
+  },
+  dropdownButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  actionIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#EEF2FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dropdownButtonText: {
+    fontSize: 15,
+    color: '#1F2937',
+    fontWeight: '500',
+    flex: 1,
+  },
+  
+  // Comment Modal Actions
+  commentModalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 20,
+  },
+  commentModalButton: {
+    flex: 1,
+    paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cancelButton: {
-    backgroundColor: '#F1F5F9',
+  commentCancelButton: {
+    backgroundColor: '#F3F4F6',
   },
-  cancelButtonText: {
-    fontSize: 15,
+  commentCancelButtonText: {
+    fontSize: 14,
     fontWeight: '600',
     color: '#6B7280',
   },
-  submitButton: {
+  commentSubmitButton: {
     backgroundColor: '#10B981',
+    flexDirection: 'row',
+    gap: 8,
   },
-  submitButtonText: {
-    fontSize: 15,
+  commentSubmitButtonText: {
+    fontSize: 14,
     fontWeight: '700',
     color: '#fff',
   },
-  disabledButton: {
-    opacity: 0.7,
+  commentDisabledButton: {
+    opacity: 0.6,
   },
 });
 

@@ -209,28 +209,51 @@ const EmployeeReminders = ({ navigation }) => {
           text: 'Complete',
           onPress: async () => {
             try {
-              let token = await AsyncStorage.getItem('employee_token');
+              let token = await AsyncStorage.getItem('employeeToken');
+              if (!token) token = await AsyncStorage.getItem('employee_auth_token');
+              if (!token) token = await AsyncStorage.getItem('employee_token');
+              if (!token) token = await AsyncStorage.getItem('adminToken');
               if (!token) token = await AsyncStorage.getItem('admin_token');
               
-              const result = await fetch(`${API_BASE_URL}/api/reminder/complete/${reminder._id}`, {
+              if (!token) {
+                Alert.alert('Error', 'No authentication token found');
+                return;
+              }
+              
+              const url = `${API_BASE_URL}/employee/reminders/${reminder._id}/complete`;
+              const payload = { status: 'completed' };
+              console.log('📤 Complete reminder URL:', url);
+              console.log('📤 Payload:', payload);
+              
+              const result = await fetch(url, {
                 method: 'PUT',
                 headers: {
                   'Content-Type': 'application/json',
-                  'Authorization': token ? `Bearer ${token}` : '',
+                  'Authorization': `Bearer ${token}`,
                 },
-                body: JSON.stringify({ comment: 'Completed' }),
+                body: JSON.stringify(payload),
               });
               
-              const data = await result.json();
-              if (data.success) {
+              console.log('📡 Response status:', result.status);
+              
+              if (!result.ok) {
+                const errorText = await result.text();
+                console.error('❌ Error response:', errorText);
+                try {
+                  const errorData = JSON.parse(errorText);
+                  Alert.alert('Error', errorData.message || 'Failed to complete reminder');
+                } catch (e) {
+                  Alert.alert('Error', errorText || 'Failed to complete reminder');
+                }
+              } else {
+                const data = await result.json();
+                console.log('✅ Success:', data);
                 Alert.alert('Success', 'Reminder marked as completed');
                 fetchReminders(false);
-              } else {
-                Alert.alert('Error', data.message || 'Failed to complete reminder');
               }
             } catch (error) {
               console.error('❌ Complete reminder error:', error);
-              Alert.alert('Error', 'Failed to complete reminder');
+              Alert.alert('Error', error.message || 'Failed to complete reminder');
             }
           }
         }
@@ -254,28 +277,52 @@ const EmployeeReminders = ({ navigation }) => {
 
   const snoozeReminder = async (reminderId, minutes) => {
     try {
-      let token = await AsyncStorage.getItem('employee_token');
+      let token = await AsyncStorage.getItem('employeeToken');
+      if (!token) token = await AsyncStorage.getItem('employee_auth_token');
+      if (!token) token = await AsyncStorage.getItem('employee_token');
+      if (!token) token = await AsyncStorage.getItem('adminToken');
       if (!token) token = await AsyncStorage.getItem('admin_token');
       
-      const response = await fetch(`${API_BASE_URL}/api/reminder/snooze/${reminderId}`, {
+      if (!token) {
+        Alert.alert('Error', 'No authentication token found');
+        return;
+      }
+      
+      const url = `${API_BASE_URL}/employee/reminders/snooze/${reminderId}`;
+      const payload = { snoozeMinutes: minutes };
+      
+      console.log('📤 Snooze reminder URL:', url);
+      console.log('📦 Payload:', payload);
+      
+      const response = await fetch(url, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': token ? `Bearer ${token}` : '',
+          'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ snoozeMinutes: minutes }),
+        body: JSON.stringify(payload),
       });
       
-      const result = await response.json();
-      if (result.success) {
+      console.log('📡 Response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Error response:', errorText);
+        try {
+          const errorData = JSON.parse(errorText);
+          Alert.alert('Error', errorData.message || 'Failed to snooze reminder');
+        } catch (e) {
+          Alert.alert('Error', errorText || 'Failed to snooze reminder');
+        }
+      } else {
+        const data = await response.json();
+        console.log('✅ Success:', data);
         Alert.alert('Success', `Reminder snoozed for ${minutes} minutes`);
         fetchReminders(false);
-      } else {
-        Alert.alert('Error', result.message || 'Failed to snooze reminder');
       }
     } catch (error) {
       console.error('❌ Snooze reminder error:', error);
-      Alert.alert('Error', 'Failed to snooze reminder');
+      Alert.alert('Error', error.message || 'Failed to snooze reminder');
     }
   };
 
@@ -291,27 +338,48 @@ const EmployeeReminders = ({ navigation }) => {
           style: 'destructive',
           onPress: async () => {
             try {
-              let token = await AsyncStorage.getItem('employee_token');
+              let token = await AsyncStorage.getItem('employeeToken');
+              if (!token) token = await AsyncStorage.getItem('employee_auth_token');
+              if (!token) token = await AsyncStorage.getItem('employee_token');
+              if (!token) token = await AsyncStorage.getItem('adminToken');
               if (!token) token = await AsyncStorage.getItem('admin_token');
               
-              const response = await fetch(`${API_BASE_URL}/api/reminder/dismiss/${reminder._id}`, {
+              if (!token) {
+                Alert.alert('Error', 'No authentication token found');
+                return;
+              }
+              
+              const url = `${API_BASE_URL}/employee/reminders/dismiss/${reminder._id}`;
+              console.log('📤 Dismiss reminder URL:', url);
+              
+              const response = await fetch(url, {
                 method: 'PUT',
                 headers: {
                   'Content-Type': 'application/json',
-                  'Authorization': token ? `Bearer ${token}` : '',
+                  'Authorization': `Bearer ${token}`,
                 },
               });
               
-              const result = await response.json();
-              if (result.success) {
+              console.log('📡 Response status:', response.status);
+              
+              if (!response.ok) {
+                const errorText = await response.text();
+                console.error('❌ Error response:', errorText);
+                try {
+                  const errorData = JSON.parse(errorText);
+                  Alert.alert('Error', errorData.message || 'Failed to dismiss reminder');
+                } catch (e) {
+                  Alert.alert('Error', errorText || 'Failed to dismiss reminder');
+                }
+              } else {
+                const data = await response.json();
+                console.log('✅ Success:', data);
                 Alert.alert('Success', 'Reminder dismissed');
                 fetchReminders(false);
-              } else {
-                Alert.alert('Error', result.message || 'Failed to dismiss reminder');
               }
             } catch (error) {
               console.error('❌ Dismiss reminder error:', error);
-              Alert.alert('Error', 'Failed to dismiss reminder');
+              Alert.alert('Error', error.message || 'Failed to dismiss reminder');
             }
           }
         }

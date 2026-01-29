@@ -20,6 +20,9 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import ReminderModal from '../../components/Enquiries/modals/ReminderModal';
+import FollowUpModal from '../../components/Enquiries/modals/FollowUpModal';
+import { createReminder } from '../../services/crmEnquiryApi';
 
 const API_BASE_URL = 'https://abc.bhoomitechzone.us';
 
@@ -37,6 +40,9 @@ const EmployeeLeads = ({ navigation }) => {
   const [showFavorites, setShowFavorites] = useState(false);
   const [favorites, setFavorites] = useState([]);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [reminderModalVisible, setReminderModalVisible] = useState(false);
+  const [followUpModalVisible, setFollowUpModalVisible] = useState(false);
+  const [selectedLead, setSelectedLead] = useState(null);
   const [statsData, setStatsData] = useState({
     total: 0,
     enquiry: 0,
@@ -327,11 +333,21 @@ const EmployeeLeads = ({ navigation }) => {
       const token = await getToken();
 
       console.log(`🔄 Updating ${lead.leadType} lead status to:`, newStatus);
+      console.log('🔑 Token present:', token ? 'Yes' : 'No');
+      console.log('📌 Assignment ID:', lead.assignmentId || lead._id);
+
+      if (!token) {
+        Alert.alert('Error', 'Authentication token not found. Please login again.');
+        return;
+      }
 
       // Different endpoints for different lead types
       const endpoint = lead.leadType === 'enquiry' 
         ? `${API_BASE_URL}/employee/leads/status/${lead.assignmentId}`
         : `${API_BASE_URL}/employee/user-leads/status/${lead.assignmentId}`;
+
+      console.log('📡 Request URL:', endpoint);
+      console.log('📤 Request Body:', { status: newStatus });
 
       const response = await fetch(endpoint, {
         method: 'PUT',
@@ -342,23 +358,120 @@ const EmployeeLeads = ({ navigation }) => {
         body: JSON.stringify({ status: newStatus }),
       });
 
-      const result = await response.json();
+      console.log('📡 Response Status:', response.status);
+      console.log('📡 Response OK:', response.ok);
 
-      if (result.success) {
+      let result;
+      const responseText = await response.text();
+      
+      console.log('📄 Raw Response Text:', responseText.substring(0, 300));
+      
+      try {
+        result = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('⚠️ Failed to parse JSON:', parseError.message);
+        console.error('⚠️ Raw text was:', responseText.substring(0, 500));
+        result = { success: false, message: 'Invalid server response: ' + responseText.substring(0, 100) };
+      }
+
+      console.log('📥 Parsed Response Data:', result);
+      console.log('📥 Response Success Field:', result.success);
+      console.log('📥 Response OK from HTTP:', response.ok);
+
+      // Check both success flag and HTTP status
+      const isSuccess = result.success === true || (response.ok && response.status < 300);
+      
+      if (isSuccess) {
         // Update local state
         setLeads(prev =>
           prev.map(l =>
             l._id === lead._id ? { ...l, status: newStatus } : l
           )
         );
+        console.log('✅ Status updated successfully');
         Alert.alert('Success', 'Lead status updated successfully');
+        // Refresh the list to sync with backend
+        setTimeout(() => loadLeads(), 500);
       } else {
-        Alert.alert('Error', result.message || 'Failed to update status');
+        console.log('❌ Status update failed:', result.message);
+        console.log('❌ Full error response:', result);
+        Alert.alert('Error', result.message || `Failed to update status (${response.status})`);
       }
     } catch (error) {
       console.error('❌ Status update error:', error);
-      Alert.alert('Error', 'Failed to update lead status');
+      console.error('❌ Error details:', error.message);
+      Alert.alert('Error', 'Failed to update lead status: ' + error.message);
     }
+  };
+
+  // ============================================
+  // SET REMINDER FOR LEAD
+  // ============================================
+  const handleSetReminder = (lead) => {
+    // Convert lead data to enquiry format for ReminderModal
+    const enquiryData = {
+      _id: lead._id,
+      leadId: lead._id,
+      leadType: lead.leadType,
+      clientName: lead.clientName,
+      email: lead.clientEmail,  // ReminderModal expects 'email' not 'clientEmail'
+      phone: lead.clientPhone,   // ReminderModal accepts both 'phone' and 'contactNumber'
+      contactNumber: lead.clientPhone,  // Adding both for compatibility
+      propertyLocation: lead.propertyLocation,
+      location: lead.propertyLocation,  // Adding fallback for compatibility
+      propertyType: lead.propertyType,
+      message: lead.notes || lead.message || '',
+      enquiryType: lead.leadType === 'enquiry' ? 'Inquiry' : 'ClientLead',
+      source: lead.leadType,
+    };
+
+    console.log('📞 Setting reminder for lead:', enquiryData);
+    setSelectedLead(enquiryData);
+    setReminderModalVisible(true);
+  };
+
+  const handleReminderSuccess = (lead) => {
+    console.log('✅ Reminder set successfully for lead:', lead.clientName);
+    // You can add additional logic here if needed
+  };
+
+  // ============================================
+  // CREATE FOLLOW-UP FOR LEAD
+  // ============================================
+  const handleCreateFollowUp = (lead) => {
+    // Convert lead data to enquiry format for FollowUpModal
+    // For enquiry leads: propertyType and propertyLocation from property
+    // For client leads: propertyLocation from city/state, propertyType from lead type
+    const enquiryData = {
+      _id: lead._id,
+      id: lead._id,
+      leadId: lead._id,
+      assignmentId: lead._id,
+      type: lead.leadType,
+      leadType: lead.leadType === 'enquiry' ? 'LeadAssignment' : 'UserLeadAssignment',
+      clientName: lead.clientName,
+      contactNumber: lead.clientPhone,
+      phone: lead.clientPhone,
+      email: lead.clientEmail,
+      propertyLocation: lead.propertyLocation && lead.propertyLocation !== 'N/A' 
+        ? lead.propertyLocation 
+        : (lead.city || '') + (lead.state ? (lead.city ? ', ' : '') + lead.state : '') || 'Not specified',
+      propertyType: lead.propertyType && lead.propertyType !== 'N/A' 
+        ? lead.propertyType 
+        : (lead.leadType === 'enquiry' ? 'Property Enquiry' : 'Client Lead'),
+      message: lead.notes || lead.message || '',
+      enquiryType: lead.leadType === 'enquiry' ? 'Inquiry' : 'ManualInquiry',
+      source: lead.leadType,
+    };
+
+    console.log('📋 Creating follow-up for lead:', enquiryData);
+    setSelectedLead(enquiryData);
+    setFollowUpModalVisible(true);
+  };
+
+  const handleFollowUpSuccess = (lead) => {
+    console.log('✅ Follow-up created successfully for lead:', lead.clientName);
+    // You can add additional logic here if needed
   };
 
   // ============================================
@@ -511,65 +624,62 @@ const EmployeeLeads = ({ navigation }) => {
         )}
 
         {/* Action Buttons */}
-        <View style={styles.actionsRow}>
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: '#10B98120' }]}
-            onPress={() => handleStatusChange(item, 'completed')}
-            disabled={item.status === 'completed'}
-          >
-            <Icon name="check-circle" size={16} color="#10B981" />
-            <Text style={[styles.actionText, { color: '#10B981' }]}>Complete</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: '#3B82F620' }]}
-            onPress={() => handleStatusChange(item, 'active')}
-            disabled={item.status === 'active'}
-          >
-            <Icon name="restore" size={16} color="#3B82F6" />
-            <Text style={[styles.actionText, { color: '#3B82F6' }]}>Reactivate</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: '#EF444420' }]}
-            onPress={() => handleStatusChange(item, 'cancelled')}
-            disabled={item.status === 'cancelled'}
-          >
-            <Icon name="close-circle" size={16} color="#EF4444" />
-            <Text style={[styles.actionText, { color: '#EF4444' }]}>Cancel</Text>
-          </TouchableOpacity>
+        <View style={styles.actionsContainer}>
+          {/* First Row - 3 buttons */}
+          <View style={styles.actionsRow}>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: '#10B98120' }]}
+              onPress={() => handleStatusChange(item, 'completed')}
+              disabled={item.status === 'completed'}
+            >
+              <Icon name="check-circle" size={18} color="#10B981" />
+              <Text style={[styles.actionText, { color: '#10B981' }]}>Complete</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: '#3B82F620' }]}
+              onPress={() => handleStatusChange(item, 'active')}
+              disabled={item.status === 'active'}
+            >
+              <Icon name="restore" size={18} color="#3B82F6" />
+              <Text style={[styles.actionText, { color: '#3B82F6' }]}>Reactivate</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: '#EF444420' }]}
+              onPress={() => handleStatusChange(item, 'cancelled')}
+              disabled={item.status === 'cancelled'}
+            >
+              <Icon name="close-circle" size={18} color="#EF4444" />
+              <Text style={[styles.actionText, { color: '#EF4444' }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Second Row - 2 buttons */}
+          <View style={styles.actionsRow}>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: '#F59E0B20' }]}
+              onPress={() => handleSetReminder(item)}
+            >
+              <Icon name="bell-outline" size={18} color="#F59E0B" />
+              <Text style={[styles.actionText, { color: '#F59E0B' }]}>Reminder</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: '#10B98120' }]}
+              onPress={() => handleCreateFollowUp(item)}
+            >
+              <Icon name="phone-callback" size={18} color="#10B981" />
+              <Text style={[styles.actionText, { color: '#10B981' }]}>Follow-up</Text>
+            </TouchableOpacity>
+
+            {/* Empty space for alignment */}
+            <View style={styles.actionButtonPlaceholder} />
+          </View>
         </View>
       </View>
     );
   };
-
-  // ============================================
-  // RENDER STATS BAR
-  // ============================================
-  const renderStatsBar = () => (
-    <View style={styles.statsBar}>
-      <View style={styles.statItem}>
-        <Text style={styles.statValue}>{statsData.total}</Text>
-        <Text style={styles.statLabel}>Total</Text>
-      </View>
-      <View style={styles.statItem}>
-        <Text style={[styles.statValue, { color: '#8B5CF6' }]}>{statsData.enquiry}</Text>
-        <Text style={styles.statLabel}>Enquiry</Text>
-      </View>
-      <View style={styles.statItem}>
-        <Text style={[styles.statValue, { color: '#06B6D4' }]}>{statsData.client}</Text>
-        <Text style={styles.statLabel}>Client</Text>
-      </View>
-      <View style={styles.statItem}>
-        <Text style={[styles.statValue, { color: '#3B82F6' }]}>{statsData.active}</Text>
-        <Text style={styles.statLabel}>Active</Text>
-      </View>
-      <View style={styles.statItem}>
-        <Text style={[styles.statValue, { color: '#10B981' }]}>{statsData.completed}</Text>
-        <Text style={styles.statLabel}>Done</Text>
-      </View>
-    </View>
-  );
 
   // ============================================
   // RENDER EMPTY STATE
@@ -606,7 +716,7 @@ const EmployeeLeads = ({ navigation }) => {
   // ============================================
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#4F46E5" />
+      <StatusBar barStyle="light-content" backgroundColor="#3730A3" />
       
       {/* Premium Header */}
       <View style={styles.header}>
@@ -629,9 +739,6 @@ const EmployeeLeads = ({ navigation }) => {
           </TouchableOpacity>
         </View>
       </View>
-
-      {/* Stats Bar */}
-      {renderStatsBar()}
 
       {/* Search Bar */}
       <View style={styles.searchContainer}>
@@ -666,7 +773,7 @@ const EmployeeLeads = ({ navigation }) => {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalContent}>
+            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
               {/* Type Filter */}
               <View style={styles.filterSection}>
                 <Text style={styles.filterSectionTitle}>Lead Type</Text>
@@ -771,16 +878,6 @@ const EmployeeLeads = ({ navigation }) => {
         </View>
       </Modal>
 
-      {/* Results Count */}
-      <View style={styles.resultsHeader}>
-        <Text style={styles.resultsText}>
-          {filteredLeads.length} {filteredLeads.length === 1 ? 'Lead' : 'Leads'}
-        </Text>
-        <TouchableOpacity onPress={() => loadLeads()}>
-          <Icon name="refresh" size={20} color="#4F46E5" />
-        </TouchableOpacity>
-      </View>
-
       {/* Leads List */}
       <FlatList
         data={filteredLeads}
@@ -800,6 +897,22 @@ const EmployeeLeads = ({ navigation }) => {
         ListEmptyComponent={renderEmpty}
         showsVerticalScrollIndicator={false}
       />
+
+      {/* Reminder Modal */}
+      <ReminderModal
+        visible={reminderModalVisible}
+        onClose={() => setReminderModalVisible(false)}
+        enquiry={selectedLead}
+        onSuccess={() => handleReminderSuccess(selectedLead)}
+      />
+
+      {/* Follow-up Modal */}
+      <FollowUpModal
+        visible={followUpModalVisible}
+        onClose={() => setFollowUpModalVisible(false)}
+        enquiry={selectedLead}
+        onSuccess={() => handleFollowUpSuccess(selectedLead)}
+      />
     </View>
   );
 };
@@ -809,198 +922,170 @@ export default EmployeeLeads;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F3F4F6',
   },
   
-  // Header Styles
+  // ============================================
+  // HEADER STYLES
+  // ============================================
   header: {
-    backgroundColor: '#4F46E5',
+    backgroundColor: '#3730A3',
     paddingTop: Platform.OS === 'ios' ? 50 : (StatusBar.currentHeight || 0) + 10,
-    elevation: 8,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    paddingBottom: 12,
+    elevation: 12,
+    shadowColor: '#3730A3',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
   },
   headerGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingBottom: 16,
+    paddingBottom: 8,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerContent: {
     flex: 1,
-    marginLeft: 16,
+    marginLeft: 14,
   },
   headerTitle: {
-    fontSize: 22,
-    fontWeight: '700',
+    fontSize: 26,
+    fontWeight: '800',
     color: '#fff',
-    letterSpacing: 0.5,
+    letterSpacing: -0.5,
   },
   headerSubtitle: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.8)',
+    color: 'rgba(255,255,255,0.85)',
     marginTop: 2,
+    fontWeight: '500',
   },
   headerAction: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   
-  // Loading Styles
+  // ============================================
+  // LOADING STATE
+  // ============================================
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F3F4F6',
   },
   loadingText: {
     marginTop: 16,
     fontSize: 18,
-    fontWeight: '700',
-    color: '#1E293B',
+    fontWeight: '800',
+    color: '#1F2937',
   },
   loadingSubtext: {
     marginTop: 8,
-    fontSize: 14,
-    color: '#64748B',
+    fontSize: 13,
+    color: '#6B7280',
   },
   
-  // Stats Bar
-  statsBar: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    paddingVertical: 20,
-    paddingHorizontal: 8,
-    justifyContent: 'space-around',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  statItem: {
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#1E293B',
-  },
-  statLabel: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 6,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  
-  // Search Container
+  // ============================================
+  // SEARCH CONTAINER
+  // ============================================
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fff',
-    marginHorizontal: 16,
-    marginTop: 16,
-    marginBottom: 12,
-    paddingHorizontal: 16,
+    marginHorizontal: 14,
+    marginTop: 10,
+    marginBottom: 14,
+    paddingHorizontal: 14,
     paddingVertical: 12,
-    borderRadius: 16,
+    borderRadius: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+  },
+  searchIcon: {
+    marginRight: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#111827',
+    fontWeight: '500',
+  },
+  
+  // ============================================
+  // LIST CONTENT
+  // ============================================
+  listContent: {
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    paddingBottom: 80,
+    flexGrow: 1,
+  },
+  
+  // ============================================
+  // LEAD CARD STYLES
+  // ============================================
+  leadCard: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 12,
     elevation: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 4,
     borderWidth: 1,
-    borderColor: '#F1F5F9',
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    color: '#111827',
-  },
-  
-  // Results Header
-  resultsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  resultsText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  
-  // List Content
-  listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 20,
-    flexGrow: 1,
-  },
-  
-  // Lead Card
-  leadCard: {
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 14,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    borderWidth: 1,
-    borderColor: '#F1F5F9',
+    borderColor: '#F3F4F6',
   },
   leadHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 12,
+    gap: 8,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
     flexWrap: 'wrap',
+    gap: 6,
   },
   typeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    marginRight: 8,
-    marginBottom: 4,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginRight: 0,
   },
   typeText: {
     fontSize: 12,
     fontWeight: '700',
-    marginLeft: 4,
+    marginLeft: 5,
   },
   priorityBadge: {
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-    marginBottom: 4,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
   priorityText: {
     fontSize: 11,
@@ -1010,21 +1095,22 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   clientName: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '800',
-    color: '#1E293B',
+    color: '#111827',
     marginBottom: 10,
-    letterSpacing: 0.3,
+    letterSpacing: -0.3,
   },
   contactRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 5,
+    marginBottom: 7,
   },
   contactText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#4B5563',
     marginLeft: 8,
+    fontWeight: '500',
   },
   propertyInfo: {
     flexDirection: 'row',
@@ -1033,38 +1119,36 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 8,
     marginBottom: 10,
+    gap: 12,
   },
   propertyLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#6B7280',
-    fontWeight: '600',
-    marginRight: 6,
+    fontWeight: '700',
   },
   propertyValue: {
     fontSize: 12,
-    color: '#111827',
-    fontWeight: '500',
-    marginRight: 12,
+    color: '#1F2937',
+    fontWeight: '600',
   },
   verificationInfo: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     marginBottom: 10,
+    gap: 6,
   },
   verifiedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#D1FAE5',
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    marginRight: 8,
-    marginBottom: 4,
+    paddingVertical: 5,
+    borderRadius: 6,
   },
   verifiedText: {
     fontSize: 11,
-    color: '#065F46',
-    fontWeight: '600',
+    color: '#047857',
+    fontWeight: '700',
     marginLeft: 4,
   },
   statusRow: {
@@ -1077,18 +1161,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
   statusText: {
     fontSize: 11,
     fontWeight: '700',
-    marginLeft: 4,
+    marginLeft: 5,
   },
   dateText: {
     fontSize: 12,
     color: '#9CA3AF',
-    fontWeight: '500',
+    fontWeight: '600',
   },
   notesContainer: {
     backgroundColor: '#FFFBEB',
@@ -1108,121 +1192,137 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#78350F',
     lineHeight: 18,
+    fontWeight: '500',
+  },
+  
+  // ============================================
+  // ACTION BUTTONS
+  // ============================================
+  actionsContainer: {
+    gap: 11,
   },
   actionsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 6,
+    gap: 8,
   },
   actionButton: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
+    paddingVertical: 13,
     paddingHorizontal: 8,
-    borderRadius: 12,
+    borderRadius: 10,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 2,
   },
+  actionButtonPlaceholder: {
+    flex: 1,
+  },
   actionText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
-    marginLeft: 4,
+    marginLeft: 0,
+    marginTop: 4,
+    letterSpacing: 0.2,
   },
   
-  // Empty State
+  // ============================================
+  // EMPTY STATE
+  // ============================================
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 80,
+    paddingVertical: 100,
     paddingHorizontal: 32,
   },
   emptyText: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#374151',
     marginTop: 20,
   },
   emptySubtext: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#9CA3AF',
     marginTop: 8,
     textAlign: 'center',
     lineHeight: 20,
   },
   
-  // Filter Modal
+  // ============================================
+  // FILTER MODAL
+  // ============================================
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     justifyContent: 'flex-end',
   },
   filterModal: {
     backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: '70%',
-    elevation: 10,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '75%',
+    elevation: 8,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 18,
+    paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: '#E5E7EB',
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1E293B',
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#111827',
   },
   modalContent: {
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
   filterSection: {
-    marginBottom: 24,
+    marginBottom: 22,
   },
   filterSectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1E293B',
-    marginBottom: 12,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 11,
   },
   filterChipsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: 8,
   },
   filterChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: '#F1F5F9',
-    marginRight: 10,
-    marginBottom: 10,
-    borderWidth: 2,
-    borderColor: '#E2E8F0',
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
   },
   filterChipActive: {
-    backgroundColor: '#4F46E5',
-    borderColor: '#4F46E5',
-    elevation: 3,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    backgroundColor: '#3730A3',
+    borderColor: '#3730A3',
+    elevation: 2,
+    shadowColor: '#3730A3',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   filterChipText: {
     fontSize: 13,
@@ -1235,46 +1335,46 @@ const styles = StyleSheet.create({
   modalFooter: {
     flexDirection: 'row',
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: 14,
     borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    gap: 12,
+    borderTopColor: '#E5E7EB',
+    gap: 10,
   },
   resetButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 12,
-    backgroundColor: '#F1F5F9',
+    paddingVertical: 12,
+    borderRadius: 9,
+    backgroundColor: '#F3F4F6',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#D1D5DB',
   },
   resetButtonText: {
     color: '#6B7280',
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
     marginLeft: 6,
   },
   applyButton: {
-    flex: 2,
-    backgroundColor: '#4F46E5',
-    paddingVertical: 14,
-    borderRadius: 12,
+    flex: 1.8,
+    backgroundColor: '#3730A3',
+    paddingVertical: 12,
+    borderRadius: 9,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 2,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    shadowColor: '#3730A3',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   applyButtonText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 6,
   },
 });

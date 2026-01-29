@@ -317,19 +317,89 @@ export const toggleEmployeePopup = async (employeeId, enabled) => {
   
   try {
     const headers = await getAuthHeaders();
-    const response = await fetch(
-      `${API_BASE_URL}/admin/reminders/employee/${employeeId}/toggle-popup`,
+    
+    // First, fetch the current employee data
+    console.log('📥 Fetching current employee data...');
+    const getResponse = await fetch(
+      `${API_BASE_URL}/admin/employees/${employeeId}`,
       {
-        method: 'PUT',
+        method: 'GET',
         headers,
-        body: JSON.stringify({ enabled }),
       }
     );
 
-    const result = await response.json();
-    console.log('🔔 Toggle Popup Response:', result);
+    if (!getResponse.ok) {
+      throw new Error(`Failed to fetch employee: ${getResponse.status}`);
+    }
+
+    const getResult = await getResponse.json();
+    console.log('📊 Fetched employee data:', JSON.stringify(getResult, null, 2));
+    
+    const employeeData = getResult.data || getResult.employee || getResult;
+
+    if (!employeeData) {
+      throw new Error('Employee data not found');
+    }
+
+    console.log('👤 Current employee:', employeeData.name, 'Current adminReminderPopupEnabled:', employeeData.adminReminderPopupEnabled);
+
+    // Update the employee with the new adminReminderPopupEnabled value
+    const updatePayload = {
+      name: employeeData.name,
+      email: employeeData.email,
+      phone: employeeData.phone,
+      department: employeeData.department,
+      role: employeeData.role?._id || employeeData.role,
+      giveAdminAccess: employeeData.giveAdminAccess,
+      adminReminderPopupEnabled: enabled, // Save the popup state
+      isActive: employeeData.isActive !== false,
+    };
+
+    console.log('📤 Sending update payload:', JSON.stringify(updatePayload, null, 2));
+
+    const updateResponse = await fetch(
+      `${API_BASE_URL}/admin/employees/${employeeId}`,
+      {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(updatePayload),
+      }
+    );
+
+    if (!updateResponse.ok) {
+      const errorText = await updateResponse.text();
+      console.error('❌ Update failed with status:', updateResponse.status, 'Error:', errorText);
+      throw new Error(`Failed to update employee: ${updateResponse.status}`);
+    }
+
+    const result = await updateResponse.json();
+    console.log('🔔 Toggle Popup Response:', JSON.stringify(result, null, 2));
 
     if (result.success) {
+      // Verify the update was saved
+      console.log('✅ Update successful, verifying...');
+      
+      // Verify by fetching again after a short delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const verifyResponse = await fetch(
+        `${API_BASE_URL}/admin/employees/${employeeId}`,
+        {
+          method: 'GET',
+          headers,
+        }
+      );
+
+      if (verifyResponse.ok) {
+        const verifyData = await verifyResponse.json();
+        const updated = verifyData.data || verifyData.employee || verifyData;
+        console.log('✅ Verified adminReminderPopupEnabled:', updated.adminReminderPopupEnabled, '(Expected:', enabled + ')');
+        
+        if (updated.adminReminderPopupEnabled !== enabled) {
+          console.warn('⚠️ WARNING: Value not persisted! Expected:', enabled, 'Got:', updated.adminReminderPopupEnabled);
+        }
+      }
+
       return { success: true, message: result.message || `Popup ${enabled ? 'enabled' : 'disabled'} successfully` };
     } else {
       return { success: false, message: result.message || 'Failed to toggle popup' };

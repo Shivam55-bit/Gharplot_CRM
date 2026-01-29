@@ -15,7 +15,7 @@ import Icon from "react-native-vector-icons/Ionicons";
 import LinearGradient from "react-native-linear-gradient";
 import { launchImageLibrary } from "react-native-image-picker";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CommonActions } from '@react-navigation/native';
+import { CommonActions, useFocusEffect } from '@react-navigation/native';
 // Import the regular property API
 import { addProperty } from "../services/propertyapi";
 import { simulatePropertyAddedNotification } from "../utils/testNotifications";
@@ -100,6 +100,36 @@ const AddSellScreen = ({ navigation }) => {
   useEffect(() => {
     checkUserRegistration();
   }, []);
+
+  // Clear form data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      // Clear all form fields
+      setPropertyLocation("");
+      setAreaDetails("");
+      setAvailability("Ready to Move");
+      setPrice("");
+      setDescription("");
+      setPhotosAndVideo([]);
+      setFurnishingStatus("Furnished");
+      setParking("Available");
+      setPurpose("Sell");
+      setPropertyType("Residential");
+      setCommercialType("Office");
+      setResidentialType("Apartment");
+      setBedrooms("");
+      setBathrooms("");
+      setBalconies("");
+      setFloorNumber("");
+      setTotalFloors("");
+      setFacingDirection("North");
+      setContactNumber("");
+      
+      return () => {
+        // Cleanup if needed
+      };
+    }, [])
+  );
 
   const checkUserRegistration = async () => {
     try {

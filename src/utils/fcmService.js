@@ -142,129 +142,85 @@ export const setupForegroundNotificationHandler = () => {
     }
     const notificationType = data.type || data.notificationType || 'system';
 
-    // Handle ALERT notifications - Navigate directly to EditAlertScreen
+    // Handle Employee Reminder to Admin notifications (CRM)
+    if (notificationType === 'employee_reminder_to_admin') {
+      console.log('🔔 Employee Reminder notification received for Admin');
+      
+      const employeeName = data.employeeName || 'Employee';
+      const clientName = data.clientName || 'Client';
+      const reminderTitle = data.reminderTitle || title || 'Reminder';
+      
+      // Use beautiful custom popup
+      const { showEmployeeNotificationPopup } = require('../services/EmployeePopupManager');
+      showEmployeeNotificationPopup({
+        type: 'reminder',
+        employeeName: employeeName,
+        title: reminderTitle,
+        clientName: clientName,
+      });
+      return;
+    }
+
+    // Handle Employee Alert to Admin notifications (CRM)
+    if (notificationType === 'employee_alert_to_admin') {
+      console.log('🔔 Employee Alert notification received for Admin');
+      
+      const employeeName = data.employeeName || 'Employee';
+      const alertTitle = data.alertTitle || title || 'Alert';
+      const alertReason = data.alertReason || body || 'New alert';
+      
+      // Use beautiful custom popup
+      const { showEmployeeNotificationPopup } = require('../services/EmployeePopupManager');
+      showEmployeeNotificationPopup({
+        type: 'alert',
+        employeeName: employeeName,
+        title: alertTitle,
+        reason: alertReason,
+      });
+      return;
+    }
+
+    // Handle ALERT notifications - Show custom popup
     if (notificationType === 'alert' || notificationType === 'system_alert') {
       console.log('🔔 ALERT notification received in foreground');
       
-      Alert.alert(
-        title || '🔔 अलर्ट सूचना',
-        body || 'आपके लिए एक अलर्ट है',
-        [
-          {
-            text: 'बाद में',
-            style: 'cancel',
-            onPress: () => console.log('Alert dismissed')
-          },
-          {
-            text: 'एडिट करें',
-            onPress: () => {
-              console.log('🎯 Navigating to EditAlertScreen from foreground alert');
-              const NavigationService = require('../services/NavigationService').default;
-              NavigationService.navigate('EditAlert', {
-                alertId: data.alertId?.replace('alert_', '') || Date.now().toString(),
-                originalReason: data.reason || body,
-                originalDate: data.date,
-                originalTime: data.time,
-                repeatDaily: data.repeatDaily === 'true' || data.repeatDaily === true
-              });
-            },
-          },
-        ],
-        { cancelable: true }
-      );
+      // Use beautiful custom popup
+      const { showEmployeeNotificationPopup } = require('../services/EmployeePopupManager');
+      showEmployeeNotificationPopup({
+        type: 'alert',
+        employeeName: 'System',
+        title: title || 'Alert',
+        reason: body || data.reason || 'New alert',
+      });
+      return;
     }
-    // Handle reminder notifications specially
+    // Handle reminder notifications - Show custom popup
     else if (notificationType === 'reminder') {
       console.log('🔔 Reminder notification received in foreground');
       
-      // For reminder notifications, show a specialized alert with reminder actions
-      const reminderTitle = title || '⏰ रिमाइंडर';
-      const reminderBody = body || 'आपके लिए एक रिमाइंडर है';
-      
-      Alert.alert(
-        reminderTitle,
-        reminderBody,
-        [
-          {
-            text: 'बाद में',
-            style: 'cancel',
-            onPress: () => {
-              console.log('Reminder dismissed');
-              // Optionally reschedule for later
-            }
-          },
-          {
-            text: 'कॉल करें',
-            onPress: () => {
-              console.log('Call reminder action triggered:', data);
-              // Import and use call functionality
-              if (data.phoneNumber || data.phone) {
-                const phoneNumber = data.phoneNumber || data.phone;
-                const { Linking } = require('react-native');
-                Linking.openURL(`tel:${phoneNumber}`);
-              }
-            },
-          },
-          {
-            text: 'विवरण देखें',
-            onPress: () => {
-              console.log('View reminder details:', data);
-              // Navigate directly to Enquiries screen for reminder notifications
-              const NavigationService = require('../services/NavigationService').default;
-              NavigationService.navigate('CRMStack', {
-                screen: 'AdminTabs',
-                params: {
-                  screen: 'EnquiriesTab',
-                  params: {
-                    screen: 'EnquiriesScreen',
-                    params: {
-                      fromNotification: true,
-                      reminderData: data,
-                      scrollToEnquiry: data.enquiryId || data.reminderId
-                    }
-                  }
-                }
-              });
-            },
-          },
-        ],
-        { 
-          cancelable: true,
-          userInterfaceStyle: 'light'
-        }
-      );
+      // Use beautiful custom popup
+      const { showEmployeeNotificationPopup } = require('../services/EmployeePopupManager');
+      showEmployeeNotificationPopup({
+        type: 'reminder',
+        employeeName: data.clientName || 'System',
+        title: title || 'Reminder',
+        clientName: data.clientName || '',
+      });
+      return;
     } else {
-      // Handle other notifications normally
+      // Handle other notifications - Show custom popup
       if (title || body) {
-        console.log('🚨 SHOWING FOREGROUND ALERT:', { title, body });
+        console.log('🚨 SHOWING FOREGROUND NOTIFICATION:', { title, body });
         
-        Alert.alert(
-          title || '🔔 नई सूचना',
-          body || 'आपके लिए एक नया मैसेज है',
-          [
-            {
-              text: 'बंद करें',
-              style: 'cancel',
-              onPress: () => console.log('Notification dismissed')
-            },
-            {
-              text: 'देखें',
-              onPress: () => {
-                console.log('User tapped View on notification:', data);
-                // Navigate based on notification data
-                const { handleNotificationAction } = require('../services/notificationService');
-                const navigationRef = require('../services/NavigationService').navigationRef;
-                if (navigationRef.current) {
-                  handleNotificationAction(data, navigationRef.current);
-                }
-              },
-            },
-          ],
-          { 
-            cancelable: true,
-            userInterfaceStyle: 'light'
-          }
-        );
+        // Use beautiful custom popup for all notifications
+        const { showEmployeeNotificationPopup } = require('../services/EmployeePopupManager');
+        showEmployeeNotificationPopup({
+          type: notificationType === 'chat' ? 'reminder' : 'alert',
+          employeeName: data.senderName || data.employeeName || 'System',
+          title: title || 'Notification',
+          reason: body || 'New notification',
+          clientName: data.clientName || '',
+        });
       } else {
         console.log('⚠️ No title/body in foreground notification');
       }

@@ -19,15 +19,13 @@ import Icon from "react-native-vector-icons/Ionicons";
 import LinearGradient from "react-native-linear-gradient";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Import your existing API functions and utilities
+// Import your existing utility functions
 import {
-    getRecentProperties,
     formatImageUrl, 
     formatPrice,
-    getFirstImageUrl,
-    getSavedPropertiesIds
-} from '../services/homeApi'; 
-import { toggleSaveProperty, removeSavedProperty, getMySellProperties } from '../services/propertyapi'; 
+    getFirstImageUrl
+} from '../services/homeApi';
+import { getRecentFeaturedProperties } from '../services/propertyapi'; 
 
 // --- Theme & Layout Constants (Enhanced with modern design) ---
 const { width, height } = Dimensions.get("window");
@@ -175,11 +173,11 @@ const AllPropertiesScreen = ({ navigation, route }) => {
         setFilteredProperties(filtered);
     }, [allProperties, applyFilters]);
 
-    // Load favorites from storage
+    // Load favorites from storage (API removed)
     const loadFavorites = useCallback(async () => {
         try {
-            const savedIds = await getSavedPropertiesIds();
-            setFavorites(savedIds);
+            setFavorites([]);
+            console.log('⚠️ Favorites API removed - no data loaded');
         } catch (e) {
             console.warn('Failed to load favorites:', e);
         }
@@ -193,27 +191,18 @@ const AllPropertiesScreen = ({ navigation, route }) => {
         try {
             let propertyData = [];
             
-            // Load data based on category with enhanced logic
+            // Load properties based on category
             if (category === 'Featured') {
-                propertyData = await getRecentProperties(100); // Load all properties when "See All" is clicked
-            } else if (category === 'Recent') {
-                // Load both general recent and user's own properties
-                const [recentProps, userProps] = await Promise.all([
-                    getRecentProperties(25),
-                    getMySellProperties().catch(() => [])
-                ]);
-                
-                // Combine with user properties first
-                const combined = [...(Array.isArray(userProps) ? userProps : [])];
-                (Array.isArray(recentProps) ? recentProps : []).forEach(prop => {
-                    if (!combined.find(p => p._id === prop._id)) {
-                        combined.push(prop);
-                    }
-                });
-                propertyData = combined.slice(0, 50);
+                console.log('📌 Loading Featured Properties...');
+                const response = await getRecentFeaturedProperties(15);
+                propertyData = response || [];
+            } else if (category === 'All') {
+                console.log('📋 Loading All Properties...');
+                const response = await getRecentFeaturedProperties(50);
+                propertyData = response || [];
             } else {
-                // Default: load recent properties
-                propertyData = await getRecentProperties(50);
+                console.log('⚠️ Unknown category:', category);
+                propertyData = [];
             }
 
             // Enhanced search filtering
@@ -235,7 +224,7 @@ const AllPropertiesScreen = ({ navigation, route }) => {
             setAllProperties(Array.isArray(propertyData) ? propertyData : []);
             
         } catch (e) {
-            console.error("Enhanced API Fetch Error:", e);
+            console.error("Error loading properties:", e);
             setError(e.message || "Failed to load properties. Please try again.");
         } finally {
             setIsLoading(false);
@@ -298,11 +287,8 @@ const AllPropertiesScreen = ({ navigation, route }) => {
         );
 
         try {
-            if (isCurrentlySaved) {
-                await removeSavedProperty(propertyId);
-            } else {
-                await toggleSaveProperty(propertyId);
-            }
+            // API calls removed - favorites functionality disabled
+            console.log('🚫 Favorite toggle API removed');
         } catch (error) {
             // Revert on error
             setFavorites(prev => 
@@ -340,10 +326,34 @@ const AllPropertiesScreen = ({ navigation, route }) => {
         }
     }, [navigation]);
 
+    // Helper function to get correct image URL based on property source
+    const getPropertyImageUrl = useCallback((imageData, isPostedByAdmin) => {
+        if (!imageData || typeof imageData !== 'string') return null;
+        
+        // If it's already a complete URL, return it
+        if (imageData.startsWith('http://') || imageData.startsWith('https://')) return imageData;
+        
+        // Handle uploads path
+        if (imageData.startsWith('uploads/') || imageData.startsWith('/uploads/')) {
+            if (isPostedByAdmin) {
+                const baseUrl = 'https://abc.bhoomitechzone.us';
+                const cleanPath = imageData.replace(/^\/+/, '');
+                return `${baseUrl}/${cleanPath}`;
+            } else {
+                const baseUrl = 'https://abc.ridealmobility.com';
+                const cleanPath = imageData.replace(/^\/+/, '');
+                return `${baseUrl}/${cleanPath}`;
+            }
+        }
+        
+        return null;
+    }, []);
+
     // Enhanced property card with modern design
     const renderPropertyCard = useCallback((item, index) => {
         const firstImage = getFirstImageUrl(item.photosAndVideo);
-        const imageUrl = formatImageUrl(firstImage) || 'https://placehold.co/300x200/CCCCCC/888888?text=No+Image';
+        const propertyImageUrl = getPropertyImageUrl(firstImage, item.isPostedByAdmin);
+        const imageUrl = propertyImageUrl || 'https://placehold.co/300x200/CCCCCC/888888?text=No+Image';
         const isFavorite = favorites.includes(item._id);
         
         return (

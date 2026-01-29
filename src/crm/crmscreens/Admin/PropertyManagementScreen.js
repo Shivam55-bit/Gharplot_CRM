@@ -44,6 +44,36 @@ const PropertyManagementScreen = ({ navigation }) => {
   const [imageErrors, setImageErrors] = useState({}); // Track image loading errors
   const [showPostModal, setShowPostModal] = useState(false);
   
+  // Helper function to get correct image URL based on property source
+  const getPropertyImageUrl = useCallback((imageData, isPostedByAdmin) => {
+    if (!imageData || typeof imageData !== 'string') {
+      return null; // Will use placeholder
+    }
+
+    // If already a complete URL, return as-is
+    if (imageData.startsWith('http://') || imageData.startsWith('https://')) {
+      return imageData;
+    }
+
+    // For relative paths (uploads/...), use appropriate base URL
+    if (imageData.startsWith('uploads/') || imageData.startsWith('/uploads/')) {
+      // Admin properties use .us domain
+      if (isPostedByAdmin) {
+        const baseUrl = 'https://abc.bhoomitechzone.us';
+        const cleanPath = imageData.replace(/^\/+/, '');
+        return `${baseUrl}/${cleanPath}`;
+      }
+      // User properties use .com domain
+      else {
+        const baseUrl = 'https://abc.ridealmobility.com';
+        const cleanPath = imageData.replace(/^\/+/, '');
+        return `${baseUrl}/${cleanPath}`;
+      }
+    }
+
+    return null;
+  }, []);
+  
   // Post Property Form States
   const [formData, setFormData] = useState({
     location: '',
@@ -298,19 +328,33 @@ const PropertyManagementScreen = ({ navigation }) => {
           }
           
           // Handle relative paths from backend (e.g., "uploads/...")
-          // Backend stores like: "uploads/1734263094837-house.jpg"
+          // Use getPropertyImageUrl helper to determine correct domain
           if (imageUrl.startsWith('uploads/') || imageUrl.startsWith('/uploads/')) {
-            const cleanPath = imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`;
-            return `https://abc.bhoomitechzone.us${cleanPath}`;
+            const isPostedByAdmin = item?.isPostedByAdmin || false;
+            const constructedUrl = getPropertyImageUrl(imageUrl, isPostedByAdmin);
+            if (constructedUrl) {
+              return constructedUrl;
+            }
           }
           
           // Handle paths with leading slash
           if (imageUrl.startsWith('/')) {
-            return `https://abc.bhoomitechzone.us${imageUrl}`;
+            const isPostedByAdmin = item?.isPostedByAdmin || false;
+            const cleanPath = imageUrl.replace(/^\/+/, '');
+            if (isPostedByAdmin) {
+              return `https://abc.bhoomitechzone.us/${cleanPath}`;
+            } else {
+              return `https://abc.ridealmobility.com/${cleanPath}`;
+            }
           }
           
           // Handle relative paths without leading slash
-          return `https://abc.bhoomitechzone.us/${imageUrl}`;
+          const isPostedByAdmin = item?.isPostedByAdmin || false;
+          if (isPostedByAdmin) {
+            return `https://abc.bhoomitechzone.us/${imageUrl}`;
+          } else {
+            return `https://abc.ridealmobility.com/${imageUrl}`;
+          }
         }
       }
       

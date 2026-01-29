@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import messaging from '@react-native-firebase/messaging';
 import { 
   getAllEmployees,
   createEmployee,
@@ -43,6 +44,13 @@ const EmployeeManagementScreen = ({ navigation }) => {
   const [passwordModalVisible, setPasswordModalVisible] = useState(false);
   const [uspModalVisible, setUspModalVisible] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+  
+  // Reminders modal states
+  const [remindersModalVisible, setRemindersModalVisible] = useState(false);
+  const [employeeReminders, setEmployeeReminders] = useState([]);
+  const [remindersLoading, setRemindersLoading] = useState(false);
+  const [previousReminderCount, setPreviousReminderCount] = useState(0);
+  const [pollingActive, setPollingActive] = useState(false);
 
   // Form states
   const [employeeFormData, setEmployeeFormData] = useState({
@@ -176,22 +184,44 @@ const EmployeeManagementScreen = ({ navigation }) => {
       setLoading(true);
       const response = await getAllEmployees();
       
+      console.log('👥 Loading employees - Response:', JSON.stringify(response, null, 2));
+      
       if (response && response.employees) {
-        const processedEmployees = response.employees.map(emp => ({
-          id: emp._id || emp.id,
-          name: emp.name || 'Unknown',
-          email: emp.email || '',
-          phone: emp.phone || '',
-          role: emp.role?.name || emp.role || 'Agent',
-          roleId: emp.role?._id || emp.role,
-          department: emp.department || 'General',
-          isActive: emp.isActive !== false,
-          joinDate: emp.createdAt ? new Date(emp.createdAt).toLocaleDateString('en-GB') : '',
-          giveAdminAccess: emp.giveAdminAccess || false,
-          popupEnabled: emp.popupEnabled || false,
-          address: emp.address || {}
-        }));
+        const processedEmployees = response.employees.map(emp => {
+          // Try to get popup enabled from multiple possible field names (backend uses adminReminderPopupEnabled)
+          const popupEnabledValue = 
+            emp.adminReminderPopupEnabled !== undefined ? emp.adminReminderPopupEnabled :
+            emp.popupEnabled !== undefined ? emp.popupEnabled :
+            emp.adminPopupEnabled !== undefined ? emp.adminPopupEnabled :
+            emp.enablePopupAccess !== undefined ? emp.enablePopupAccess :
+            emp.popupAccessEnabled !== undefined ? emp.popupAccessEnabled :
+            false; // Default to false if not found
+          
+          console.log('👤 Processing employee:', emp.name, '- Raw fields:', { 
+            adminReminderPopupEnabled: emp.adminReminderPopupEnabled,
+            popupEnabled: emp.popupEnabled,
+            adminPopupEnabled: emp.adminPopupEnabled,
+            enablePopupAccess: emp.enablePopupAccess,
+            popupAccessEnabled: emp.popupAccessEnabled
+          }, '- Final value:', popupEnabledValue);
+          
+          return {
+            id: emp._id || emp.id,
+            name: emp.name || 'Unknown',
+            email: emp.email || '',
+            phone: emp.phone || '',
+            role: emp.role?.name || emp.role || 'Agent',
+            roleId: emp.role?._id || emp.role,
+            department: emp.department || 'General',
+            isActive: emp.isActive !== false,
+            joinDate: emp.createdAt ? new Date(emp.createdAt).toLocaleDateString('en-GB') : '',
+            giveAdminAccess: emp.giveAdminAccess || false,
+            popupEnabled: popupEnabledValue === true || popupEnabledValue === 'true',
+            address: emp.address || {}
+          };
+        });
         
+        console.log('✅ Processed employees:', processedEmployees.map(e => ({ name: e.name, popupEnabled: e.popupEnabled })));
         setEmployees(processedEmployees);
       } else {
         showAlert('error', 'Error fetching employees. Please check your connection and try again.');
@@ -246,6 +276,40 @@ const EmployeeManagementScreen = ({ navigation }) => {
     loadEmployees();
     loadRoles();
   }, [loadEmployees, loadRoles]);
+
+  // Setup FCM listeners for reminder notifications from backend
+  useEffect(() => {
+    console.log('📱 Setting up FCM notification listeners for Admin...');
+    
+    // Listen for foreground notifications
+    const unsubscribeForeground = messaging().onMessage(async (remoteMessage) => {
+      console.log('📩 🔥 FOREGROUND notification received in EmployeeManagement:', remoteMessage);
+      
+      const title = remoteMessage.notification?.title || remoteMessage.data?.title || '🔔 सूचना';
+      const body = remoteMessage.notification?.body || remoteMessage.data?.body || '';
+      const data = remoteMessage.data || {};
+      
+      // Handle reminder notifications
+      if (data.type === 'reminder' || data.notificationType === 'reminder') {
+        console.log('🎯 Reminder notification received:', {title, body});
+        
+        Alert.alert(
+          title,
+          body,
+          [
+            { text: 'बंद करें', style: 'cancel' },
+            { text: 'ठीक है', style: 'default' }
+          ]
+        );
+      }
+    });
+    
+    // Return cleanup function
+    return () => {
+      console.log('🛑 Cleaning up FCM listeners');
+      unsubscribeForeground();
+    };
+  }, []);
 
   // Open create modal
   const openCreateModal = () => {
@@ -393,19 +457,54 @@ const EmployeeManagementScreen = ({ navigation }) => {
 
   // Handle toggle popup
   const handleTogglePopup = async (employee, currentValue) => {
+    const newValue = !currentValue;
+    
     try {
-      const result = await toggleEmployeePopup(employee.id, !currentValue);
+      console.log('🔄 Toggle popup handler - Employee:', employee.name, 'Current:', currentValue, 'New:', newValue);
+      
+      // Update local state FIRST for instant UI feedback
+      setEmployees(prev => {
+        const updated = prev.map(e => 
+          e.id === employee.id ? {...e, popupEnabled: newValue} : e
+        );
+        console.log('✅ Local state updated immediately - New popupEnabled:', newValue);
+        return updated;
+      });
+      
+      // Then call API to save to backend
+      console.log('📤 Calling API to save popupEnabled:', newValue);
+      const result = await toggleEmployeePopup(employee.id, newValue);
+      
+      console.log('📋 Toggle result:', result);
+      
       if (result.success) {
-        // Update local state immediately
-        setEmployees(prev => prev.map(e => 
-          e.id === employee.id ? {...e, popupEnabled: !currentValue} : e
-        ));
-        showAlert('success', `Popup ${!currentValue ? 'enabled' : 'disabled'} for ${employee.name}`);
+        showAlert('success', `Popup ${newValue ? 'enabled' : 'disabled'} successfully!`);
+        
+        // Verify the state was actually saved by re-fetching employee
+        console.log('🔍 Verifying backend saved the change...');
+        setTimeout(() => {
+          loadEmployees(); // Reload to verify from backend
+        }, 2000);
       } else {
-        showAlert('error', result.message || 'Failed to toggle popup');
+        // If API failed, revert the local state
+        console.error('❌ API failed, reverting local state');
+        setEmployees(prev => {
+          const reverted = prev.map(e => 
+            e.id === employee.id ? {...e, popupEnabled: currentValue} : e
+          );
+          console.log('⚠️ Reverted to:', currentValue);
+          return reverted;
+        });
+        showAlert('error', result.message || 'Failed to save popup setting');
       }
     } catch (error) {
-      console.error('Error toggling popup:', error);
+      console.error('❌ Error toggling popup:', error);
+      // Revert on error
+      setEmployees(prev => {
+        return prev.map(e => 
+          e.id === employee.id ? {...e, popupEnabled: currentValue} : e
+        );
+      });
       showAlert('error', error.message || 'Failed to toggle popup');
     }
   };
@@ -472,6 +571,190 @@ const EmployeeManagementScreen = ({ navigation }) => {
       ]
     );
   };
+
+  // Load reminders for employee
+  const loadEmployeeReminders = async (employeeId) => {
+    try {
+      setRemindersLoading(true);
+      
+      const token = await AsyncStorage.getItem('adminToken') ||
+                   await AsyncStorage.getItem('crm_auth_token') ||
+                   await AsyncStorage.getItem('employee_auth_token');
+      
+      if (!token) {
+        Alert.alert('Error', 'No authentication token found');
+        return;
+      }
+
+      const response = await fetch(
+        `https://abc.bhoomitechzone.us/api/reminder/employee/${employeeId}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch reminders: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.success && data.data) {
+        setEmployeeReminders(data.data);
+        setPreviousReminderCount(data.data.length); // Set initial count
+        console.log('✅ Reminders loaded:', data.data.length);
+      } else {
+        setEmployeeReminders([]);
+        setPreviousReminderCount(0);
+      }
+    } catch (error) {
+      console.error('❌ Load reminders error:', error);
+      setEmployeeReminders([]);
+      setPreviousReminderCount(0);
+    } finally {
+      setRemindersLoading(false);
+    }
+  };
+
+  // Handle view reminders
+  const handleViewReminders = async (employee) => {
+    setSelectedEmployee(employee);
+    console.log('📱 Opening reminders for:', employee.name);
+    // Load reminders first
+    await loadEmployeeReminders(employee._id || employee.id);
+    // Then open modal - this will trigger polling via useEffect
+    setRemindersModalVisible(true);
+  };
+
+  // Polling for new reminders - only notify when count increases
+  useEffect(() => {
+    if (!pollingActive || !selectedEmployee) {
+      console.log('❌ Polling not active or no employee selected. Active:', pollingActive, 'Employee:', selectedEmployee?.name);
+      return;
+    }
+
+    console.log('✅ Polling STARTED for:', selectedEmployee.name, 'Current reminders count:', previousReminderCount);
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const token = await AsyncStorage.getItem('adminToken') ||
+                     await AsyncStorage.getItem('crm_auth_token') ||
+                     await AsyncStorage.getItem('employee_auth_token');
+
+        if (!token) {
+          console.log('❌ No token found');
+          return;
+        }
+
+        const response = await fetch(
+          `https://abc.bhoomitechzone.us/api/reminder/employee/${selectedEmployee._id || selectedEmployee.id}`,
+          {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (!response.ok) {
+          console.log('❌ API response not ok:', response.status);
+          return;
+        }
+
+        const data = await response.json();
+
+        if (data.success && data.data) {
+          const newReminders = data.data;
+          const newCount = newReminders.length;
+          
+          console.log('📊 API returned:', newCount, 'reminders. Previous count was:', previousReminderCount);
+          
+          // Check if new reminder was added (count increased)
+          if (newCount > previousReminderCount) {
+            console.log('🎯 Count increased! Old:', previousReminderCount, 'New:', newCount);
+            
+            // Find the newly added reminder
+            const newReminder = newReminders.find(r => 
+              !employeeReminders.some(er => er._id === r._id)
+            ) || newReminders[0];
+            
+            console.log('🔔 NEW REMINDER DETECTED!', newReminder.title);
+            
+            // Show notification immediately with employee name
+            Alert.alert(
+              `🔔 New Reminder Set - ${selectedEmployee?.name}`,
+              `Reminder: ${newReminder.title}\nClient: ${newReminder.clientName}\n\n⏰ ${new Date(newReminder.reminderDateTime).toLocaleString()}`,
+              [
+                { text: 'OK', style: 'default' }
+              ]
+            );
+            
+            // Tell backend to schedule notification at reminder time (NOT using setTimeout)
+            try {
+              const token = await AsyncStorage.getItem('adminToken') ||
+                           await AsyncStorage.getItem('crm_auth_token') ||
+                           await AsyncStorage.getItem('employee_auth_token');
+              
+              // Call backend to schedule FCM notification at reminder time
+              const scheduleResponse = await fetch(
+                'https://abc.bhoomitechzone.us/api/reminder/schedule-notification',
+                {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                  },
+                  body: JSON.stringify({
+                    reminderId: newReminder._id,
+                    scheduledTime: newReminder.reminderDateTime,
+                    title: `⏰ Reminder Time - ${selectedEmployee?.name}`,
+                    message: `Time to follow up!\n\n${newReminder.title}\nClient: ${newReminder.clientName}`,
+                  })
+                }
+              );
+              
+              if (scheduleResponse.ok) {
+                console.log('✅ Scheduled notification on backend for:', new Date(newReminder.reminderDateTime).toLocaleString());
+              } else {
+                console.log('⚠️ Backend notification scheduling failed');
+              }
+            } catch (error) {
+              console.error('❌ Error scheduling backend notification:', error);
+            }
+            
+            // Update reminders list silently (no loading spinner)
+            setEmployeeReminders(newReminders);
+            // Update count
+            setPreviousReminderCount(newCount);
+            console.log('✅ Reminders updated, new count:', newCount);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Polling error:', error);
+      }
+    }, 2000); // Poll every 2 seconds for quick detection
+
+    return () => {
+      console.log('🛑 Polling STOPPED for:', selectedEmployee?.name);
+      clearInterval(pollInterval);
+    };
+  }, [pollingActive, selectedEmployee, selectedEmployee?.name]);
+
+  // Handle modal open/close
+  useEffect(() => {
+    if (!remindersModalVisible) {
+      setPollingActive(false);
+      setPreviousReminderCount(0);
+      setSelectedEmployee(null);
+    } else {
+      setPollingActive(true);
+    }
+  }, [remindersModalVisible]);
 
   // Filter employees based on search
   const filteredEmployees = employees.filter(employee =>
@@ -543,6 +826,14 @@ const EmployeeManagementScreen = ({ navigation }) => {
       </View>
       
       <View style={styles.cardActions}>
+        <TouchableOpacity 
+          style={styles.actionButton}
+          onPress={() => handleViewReminders(item)}
+        >
+          <Icon name="list" size={16} color="#3b82f6" />
+          <Text style={styles.actionText}>Reminders</Text>
+        </TouchableOpacity>
+        
         <TouchableOpacity 
           style={styles.actionButton}
           onPress={() => openEditModal(item)}
@@ -1079,6 +1370,117 @@ const EmployeeManagementScreen = ({ navigation }) => {
     </Modal>
   );
 
+  const RemindersModal = React.useMemo(() => () => (
+    <Modal
+      visible={remindersModalVisible}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setRemindersModalVisible(false)}
+    >
+      <SafeAreaView style={styles.reminderModalContainer}>
+        <View style={styles.reminderModalContent}>
+          {/* Modal Header */}
+          <View style={styles.reminderModalHeader}>
+            <View style={styles.reminderHeaderLeft}>
+              <Icon name="alarm-multiple" size={28} color="#3b82f6" />
+              <View style={{ marginLeft: 12 }}>
+                <Text style={styles.reminderModalTitle}>{selectedEmployee?.name}</Text>
+                <Text style={styles.reminderModalSubtitle}>
+                  {employeeReminders?.length || 0} reminders set
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.reminderCloseButton}
+              onPress={() => setRemindersModalVisible(false)}
+            >
+              <Icon name="close" size={24} color="#374151" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Modal Body */}
+          {remindersLoading && employeeReminders.length === 0 ? (
+            <View style={styles.reminderLoadingContainer}>
+              <ActivityIndicator size="large" color="#3b82f6" />
+              <Text style={styles.loadingText}>Loading reminders...</Text>
+            </View>
+          ) : employeeReminders && employeeReminders.length > 0 ? (
+            <ScrollView style={styles.remindersListContainer}>
+              {employeeReminders.map((reminder, index) => {
+                const reminderDate = new Date(reminder.reminderDateTime);
+                const isOverdue = new Date() > reminderDate;
+
+                return (
+                  <View key={reminder._id || index} style={[styles.reminderCard, isOverdue && styles.overdueCard]}>
+                    <View style={styles.reminderCardHeader}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.reminderTitle}>{reminder.title}</Text>
+                        <Text style={styles.reminderClient}>{reminder.clientName}</Text>
+                      </View>
+                      <View style={[styles.reminderBadge, { backgroundColor: isOverdue ? '#fed7d7' : '#dbeafe' }]}>
+                        <Text style={[styles.reminderBadgeText, { color: isOverdue ? '#991b1b' : '#1e40af' }]}>
+                          {isOverdue ? 'OVERDUE' : 'PENDING'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.reminderDetails}>
+                      <View style={styles.detailRow}>
+                        <Icon name="call" size={14} color="#6b7280" />
+                        <Text style={styles.detailText}>{reminder.phone}</Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Icon name="mail" size={14} color="#6b7280" />
+                        <Text style={styles.detailText} numberOfLines={1}>{reminder.email}</Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Icon name="calendar" size={14} color="#6b7280" />
+                        <Text style={styles.detailText}>
+                          {reminderDate.toLocaleDateString()} at {reminderDate.toLocaleTimeString()}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.reminderStats}>
+                      <View style={styles.statItem}>
+                        <Text style={styles.statLabel}>Triggered</Text>
+                        <Text style={styles.statValue}>{reminder.triggerCount || 0}x</Text>
+                      </View>
+                      <View style={styles.statItem}>
+                        <Text style={styles.statLabel}>Snoozed</Text>
+                        <Text style={styles.statValue}>{reminder.snoozeCount || 0}x</Text>
+                      </View>
+                      <View style={styles.statItem}>
+                        <Text style={styles.statLabel}>Status</Text>
+                        <Text style={styles.statValue}>{reminder.status}</Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          ) : (
+            <View style={styles.emptyRemindersContainer}>
+              <Icon name="inbox" size={64} color="#d1d5db" />
+              <Text style={styles.emptyRemindersTitle}>No Reminders</Text>
+              <Text style={styles.emptyRemindersText}>
+                {selectedEmployee?.name} hasn't set any reminders yet
+              </Text>
+            </View>
+          )}
+
+          {/* Modal Footer */}
+          <TouchableOpacity
+            style={styles.reminderCloseFooterButton}
+            onPress={() => setRemindersModalVisible(false)}
+          >
+            <Text style={styles.reminderCloseFooterButtonText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    </Modal>
+  ), [remindersModalVisible, selectedEmployee?.name, employeeReminders, remindersLoading]);
+
   return (
     <View style={styles.container}>
       <StatusBar 
@@ -1173,6 +1575,7 @@ const EmployeeManagementScreen = ({ navigation }) => {
       <CreateEditEmployeeModal />
       <PasswordModal />
       <UspModal />
+      <RemindersModal />
     </View>
   );
 };
@@ -1592,6 +1995,160 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#ffffff',
+  },
+  // Reminders Modal Styles
+  reminderModalContainer: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+  },
+  reminderModalContent: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+  },
+  reminderModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  reminderHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  reminderModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  reminderModalSubtitle: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 4,
+  },
+  reminderCloseButton: {
+    padding: 8,
+  },
+  reminderLoadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  remindersListContainer: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  reminderCard: {
+    backgroundColor: '#f9fafb',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: '#3b82f6',
+  },
+  overdueCard: {
+    backgroundColor: '#fef2f2',
+    borderLeftColor: '#ef4444',
+  },
+  reminderCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  reminderTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  reminderClient: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  reminderBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  reminderBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  reminderDetails: {
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  detailText: {
+    marginLeft: 8,
+    fontSize: 12,
+    color: '#374151',
+    flex: 1,
+  },
+  reminderStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  statValue: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  emptyRemindersContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyRemindersTitle: {
+    marginTop: 16,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  emptyRemindersText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+    paddingHorizontal: 20,
+  },
+  reminderCloseFooterButton: {
+    backgroundColor: '#3b82f6',
+    paddingVertical: 12,
+    marginHorizontal: 16,
+    marginVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  reminderCloseFooterButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 

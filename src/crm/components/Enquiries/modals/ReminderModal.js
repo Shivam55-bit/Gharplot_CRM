@@ -23,6 +23,7 @@ import ReminderNotificationService from '../../../../services/ReminderNotificati
 const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [showRepeatDropdown, setShowRepeatDropdown] = useState(false);
+  const [showCustomInput, setShowCustomInput] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -34,6 +35,7 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
     period: 'AM',
     note: '',
     repeatType: 'none',
+    customIntervalMinutes: 60,
   });
 
   // Repeat Options
@@ -44,6 +46,7 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
     { label: 'Monthly', value: 'monthly', icon: '🗓️' },
     { label: 'Yearly', value: 'yearly', icon: '🌐' },
     { label: 'Working Days (Mon-Fri)', value: 'working_days', icon: '💼' },
+    { label: 'Custom', value: 'custom', icon: '⚙️' },
   ];
 
   // Populate form when enquiry changes
@@ -61,7 +64,9 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
         period: 'AM',
         note: '',
         repeatType: 'none',
+        customIntervalMinutes: 60,
       });
+      setShowCustomInput(false);
     }
   }, [enquiry]);
 
@@ -73,6 +78,21 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
       ...prev,
       [field]: value,
     }));
+    // Show custom input when custom repeat is selected
+    if (field === 'repeatType') {
+      setShowCustomInput(value === 'custom');
+    }
+  };
+
+  // Get custom interval label
+  const getCustomLabel = () => {
+    const mins = formData.customIntervalMinutes;
+    if (mins >= 60) {
+      const hours = Math.floor(mins / 60);
+      const remainingMins = mins % 60;
+      return remainingMins > 0 ? `Every ${hours}h ${remainingMins}m` : `Every ${hours} hour${hours > 1 ? 's' : ''}`;
+    }
+    return `Every ${mins} minute${mins > 1 ? 's' : ''}`;
   };
 
   const validateForm = () => {
@@ -135,6 +155,7 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
         enquiryId: enquiry._id,
         enquiry: enquiry,
         repeatType: formData.repeatType,
+        customIntervalMinutes: formData.repeatType === 'custom' ? formData.customIntervalMinutes : null,
         // Enhanced navigation configuration for notification click
         targetScreen: 'EnquiryDetails', // Navigate to specific enquiry details
         navigationType: 'nested',
@@ -149,7 +170,29 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
         },
       };
 
-      // 🔥 IMPORTANT: Send to backend for FCM scheduled notification
+      // �️ FIRST: Save reminder to database
+      console.log('💾 Saving reminder to database...');
+      const dbResult = await createReminder({
+        title: `Follow up with ${formData.name}`,
+        clientName: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        location: formData.location,
+        reminderDateTime: reminderDate.toISOString(),
+        note: formData.note || `Follow up with ${formData.name} regarding property inquiry`,
+        isRepeating: formData.repeatType !== 'none',
+        enquiryId: enquiry._id,
+        repeatType: formData.repeatType,
+        customIntervalMinutes: formData.repeatType === 'custom' ? formData.customIntervalMinutes : null,
+      });
+
+      if (!dbResult.success) {
+        console.warn('⚠️ Database save failed, but continuing with notifications');
+      } else {
+        console.log('✅ Reminder saved to database successfully');
+      }
+
+      // �🔥 IMPORTANT: Send to backend for FCM scheduled notification
       // This ensures notification works even when app is killed!
       console.log('📤 Sending reminder to backend for FCM scheduling...');
       const fcmResult = await sendScheduledReminderNotification(reminderData);
@@ -471,6 +514,32 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
                   </ScrollView>
                 </View>
               )}
+
+              {/* Custom Interval Input */}
+              {showCustomInput && (
+                <View style={styles.customIntervalContainer}>
+                  <Text style={styles.customIntervalLabel}>Set interval (in minutes):</Text>
+                  <View style={styles.customIntervalRow}>
+                    <TextInput
+                      style={styles.customIntervalInput}
+                      keyboardType="numeric"
+                      value={String(formData.customIntervalMinutes)}
+                      onChangeText={(value) => {
+                        const mins = parseInt(value) || 1;
+                        handleInputChange('customIntervalMinutes', mins > 0 ? mins : 1);
+                      }}
+                      placeholder="60"
+                    />
+                    <Text style={styles.customIntervalUnit}>minutes</Text>
+                  </View>
+                  <Text style={styles.customIntervalHint}>
+                    Tip: 60 = 1 hour, 120 = 2 hours, 1440 = 1 day
+                  </Text>
+                  <Text style={styles.customIntervalPreview}>
+                    Preview: {getCustomLabel()}
+                  </Text>
+                </View>
+              )}
             </View>
           </ScrollView>
 
@@ -701,6 +770,56 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#3b82f6',
     fontWeight: '700',
+  },
+  // Custom interval styles
+  customIntervalContainer: {
+    marginTop: 12,
+    padding: 16,
+    backgroundColor: '#f0f9ff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#0ea5e9',
+  },
+  customIntervalLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0369a1',
+    marginBottom: 12,
+  },
+  customIntervalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  customIntervalInput: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#0ea5e9',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#0369a1',
+    textAlign: 'center',
+  },
+  customIntervalUnit: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  customIntervalHint: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+  customIntervalPreview: {
+    fontSize: 13,
+    color: '#0369a1',
+    marginTop: 8,
+    fontWeight: '600',
   },
 });
 

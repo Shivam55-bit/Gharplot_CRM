@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
 import LinearGradient from "react-native-linear-gradient";
-import { get } from "../../services/api";
+import { getAllOtherProperties, getMySellProperties } from "../../services/propertyapi";
 import { formatImageUrl, formatPrice } from '../../services/homeApi';
 import MediaCard from "../../components/MediaCard";
 
@@ -70,30 +70,87 @@ const RentScreen = ({ navigation }) => {
     const load = async (showLoader = true) => {
       if (showLoader) setLoading(true);
       try {
-        // Fetch from /api/properties/other-rent endpoint
-        const response = await get('/api/properties/other-rent');
-        console.log('Rent properties response:', response);
+        // Fetch BOTH other properties AND user's rental properties
+        const [allProperties, userProperties] = await Promise.all([
+          getAllOtherProperties(),
+          getMySellProperties()
+        ]);
         
-        // Extract data array from response
-        const serverRentals = response?.data || [];
+        console.log('🏠 RentScreen - Other Properties:', { 
+          length: allProperties?.length,
+          firstItem: allProperties?.[0] 
+        });
+        console.log('🏠 RentScreen - User Properties:', { 
+          length: userProperties?.length,
+          firstItem: userProperties?.[0] 
+        });
+        
+        // Filter other properties for Rent/Lease and Paying Guest
+        const otherRentalProperties = Array.isArray(allProperties) 
+          ? allProperties.filter(p => 
+              p.purpose === "Rent/Lease" || 
+              p.purpose === "Paying Guest" ||
+              p.purpose?.includes("Rent") ||
+              p.purpose?.includes("Lease") ||
+              p.purpose?.includes("Paying")
+            )
+          : [];
 
-        if (mounted && Array.isArray(serverRentals) && serverRentals.length > 0) {
-          const mapped = serverRentals.map((p, idx) => ({
-            id: p._id || p.id || String(idx),
-            title: p.description || p.title || "Rental Property",
-            price: formatPrice(p.price),
-            location: p.propertyLocation || p.location || "Unknown",
-            type: p.residentialType || p.commercialType || p.propertyType || "Rent",
-            image: formatImageUrl(p.photosAndVideo && p.photosAndVideo[0] ? p.photosAndVideo[0] : null),
-            beds: p.beds || 2,
-            baths: p.baths || 2,
-            sqft: p.areaDetails || p.area || 1000,
-            propertyType: p.propertyType || "Residential",
-          }));
+        // Filter user's properties for Rent/Lease and Paying Guest
+        const userRentalProperties = Array.isArray(userProperties) 
+          ? userProperties.filter(p => 
+              p.purpose === "Rent/Lease" || 
+              p.purpose === "Paying Guest" ||
+              p.purpose?.includes("Rent") ||
+              p.purpose?.includes("Lease") ||
+              p.purpose?.includes("Paying")
+            )
+          : [];
+
+        // Combine both lists
+        const rentalProperties = [...otherRentalProperties, ...userRentalProperties];
+
+        if (mounted && rentalProperties.length > 0) {
+          console.log('📋 RentScreen - Found', rentalProperties.length, 'rental properties');
+          const mapped = rentalProperties.map((p, idx) => {
+            console.log(`Rental Property ${idx}:`, {
+              description: p.description,
+              purpose: p.purpose,
+              propertyLocation: p.propertyLocation,
+              price: p.price,
+              beds: p.beds,
+              bedrooms: p.bedrooms,
+              baths: p.baths,
+              bathrooms: p.bathrooms,
+              areaDetails: p.areaDetails,
+              area: p.area,
+              photosAndVideo: p.photosAndVideo?.length,
+              isPostedByAdmin: p.isPostedByAdmin,
+            });
+            
+            return {
+              id: p._id || p.id || String(idx),
+              title: p.description || p.title || "Rental Property",
+              price: formatPrice(p.price),
+              location: p.propertyLocation || p.location || "Unknown",
+              type: p.residentialType || p.commercialType || p.propertyType || "Rent",
+              image: formatImageUrl(p.photosAndVideo && p.photosAndVideo[0] ? p.photosAndVideo[0] : null),
+              beds: p.beds || p.bedrooms || "-",
+              baths: p.baths || p.bathrooms || "-",
+              sqft: p.areaDetails || p.area || "-",
+              propertyType: p.propertyType || "Residential",
+              raw: p,
+            };
+          });
+          console.log('✅ RentScreen - Mapped Properties:', mapped.length, 'items');
+          console.log('📊 First mapped rental:', mapped[0]);
           setRentals(mapped);
+        } else {
+          console.log('⚠️ RentScreen - No rental properties found (filter matched 0 items from', allProperties?.length, 'total properties)');
+          setRentals([]);
         }
       } catch (e) {
-        console.warn("Could not load rent properties:", e.message || e);
+        console.error("❌ RentScreen - Could not load rent properties:", e.message || e);
         setRentals([]);
       } finally {
         if (mounted) setLoading(false);
@@ -138,15 +195,48 @@ const RentScreen = ({ navigation }) => {
     setModalVisible(true);
   }, []);
 
+  // Helper function to get correct image URL based on property source
+  const getPropertyImageUrl = (imageData, isPostedByAdmin) => {
+    if (!imageData || typeof imageData !== 'string') return null;
+    
+    // If it's already a complete URL, return it
+    if (imageData.startsWith('http://') || imageData.startsWith('https://')) return imageData;
+    
+    // Handle uploads path
+    if (imageData.startsWith('uploads/') || imageData.startsWith('/uploads/')) {
+      if (isPostedByAdmin) {
+        const baseUrl = 'https://abc.bhoomitechzone.us';
+        const cleanPath = imageData.replace(/^\/+/, '');
+        return `${baseUrl}/${cleanPath}`;
+      } else {
+        const baseUrl = 'https://abc.ridealmobility.com';
+        const cleanPath = imageData.replace(/^\/+/, '');
+        return `${baseUrl}/${cleanPath}`;
+      }
+    }
+    
+    return null;
+  };
+
   // --- Render Each Property Card (omitted for brevity, keep existing logic) ---
   const renderRental = ({ item }) => {
-    // Prepare media items for MediaCard
-    const mediaItems = item.photosAndVideo && item.photosAndVideo.length > 0 
-      ? item.photosAndVideo.map(media => ({
-          uri: formatImageUrl(media.uri || media) || media.uri || media,
-          type: media.type || (media.uri?.includes('.mp4') || media.uri?.includes('.mov') || media.uri?.includes('.avi') ? 'video' : 'image')
-        }))
-      : item.image ? [{ uri: item.image, type: 'image' }] : [];
+    // Get correct image URL based on property source
+    const propertyImageUrl = getPropertyImageUrl(item.raw?.photosAndVideo?.[0], item.raw?.isPostedByAdmin);
+    
+    // Prepare media items for MediaCard with correct domain routing
+    const mediaItems = item.raw?.photosAndVideo && item.raw.photosAndVideo.length > 0 
+      ? item.raw.photosAndVideo.map(media => {
+          const imageUrl = getPropertyImageUrl(media.uri || media, item.raw?.isPostedByAdmin) || 
+                          formatImageUrl(media.uri || media) || 
+                          media.uri || 
+                          media;
+          return {
+            uri: imageUrl,
+            type: media.type || (media.uri?.includes('.mp4') || media.uri?.includes('.mov') || media.uri?.includes('.avi') ? 'video' : 'image')
+          };
+        })
+      : propertyImageUrl ? [{ uri: propertyImageUrl, type: 'image' }] : 
+      item.image ? [{ uri: item.image, type: 'image' }] : [];
 
     return (
       <TouchableOpacity
@@ -360,47 +450,74 @@ const RentScreen = ({ navigation }) => {
           showsVerticalScrollIndicator={false}
           refreshing={refreshing}
           ListEmptyComponent={
-            <View style={{ padding: 20, alignItems: 'center' }}>
-              <Text style={{ color: COLORS.textSecondary, fontSize: 16 }}>No rental properties found</Text>
-            </View>
-          }
-          onRefresh={() => {
-            setRefreshing(true);
-            (async () => {
-              try {
-                const response = await get('/api/properties/other-rent');
-                const serverRentals = response?.data || [];
-                
-                if (Array.isArray(serverRentals) && serverRentals.length > 0) {
-                  const mapped = serverRentals.map((p, idx) => ({
-                    id: p._id || p.id || String(idx),
-                    title: p.description || p.title || "Rental Property",
-                    price: formatPrice(p.price),
-                    location: p.propertyLocation || p.location || "Unknown",
-                    type: p.residentialType || p.commercialType || p.propertyType || "Rent",
-                    image: formatImageUrl(p.photosAndVideo && p.photosAndVideo[0] ? p.photosAndVideo[0] : null),
-                    beds: p.beds || 2,
-                    baths: p.baths || 2,
-                    sqft: p.areaDetails || p.area || 1000,
-                    propertyType: p.propertyType || "Residential",
-                  }));
-                  setRentals(mapped);
-                }
-              } catch (e) {
-                console.warn('Refresh failed:', e.message || e);
-              } finally {
-                setRefreshing(false);
-              }
-            })();
-          }}
-          ListEmptyComponent={() => (
             <View style={styles.emptyContainer}>
               <Icon name="sad-outline" size={50} color={COLORS.textSecondary} />
               <Text style={styles.emptyText}>
                 No rentals found for this type.
               </Text>
             </View>
-          )}
+          }
+          onRefresh={() => {
+            setRefreshing(true);
+            (async () => {
+              try {
+                // Fetch BOTH other properties AND user's rental properties
+                const [allProperties, userProperties] = await Promise.all([
+                  getAllOtherProperties(),
+                  getMySellProperties()
+                ]);
+
+                // Filter other properties for Rent/Lease and Paying Guest
+                const otherRentalProperties = Array.isArray(allProperties) 
+                  ? allProperties.filter(p => 
+                      p.purpose === "Rent/Lease" || 
+                      p.purpose === "Paying Guest" ||
+                      p.purpose?.includes("Rent") ||
+                      p.purpose?.includes("Lease") ||
+                      p.purpose?.includes("Paying")
+                    )
+                  : [];
+
+                // Filter user's properties for Rent/Lease and Paying Guest
+                const userRentalProperties = Array.isArray(userProperties) 
+                  ? userProperties.filter(p => 
+                      p.purpose === "Rent/Lease" || 
+                      p.purpose === "Paying Guest" ||
+                      p.purpose?.includes("Rent") ||
+                      p.purpose?.includes("Lease") ||
+                      p.purpose?.includes("Paying")
+                    )
+                  : [];
+
+                // Combine both lists
+                const rentalProperties = [...otherRentalProperties, ...userRentalProperties];
+                
+                if (rentalProperties.length > 0) {
+                  const mapped = rentalProperties.map((p, idx) => ({
+                    id: p._id || p.id || String(idx),
+                    title: p.description || p.title || "Rental Property",
+                    price: formatPrice(p.price),
+                    location: p.propertyLocation || p.location || "Unknown",
+                    type: p.residentialType || p.commercialType || p.propertyType || "Rent",
+                    image: formatImageUrl(p.photosAndVideo && p.photosAndVideo[0] ? p.photosAndVideo[0] : null),
+                    beds: p.beds || p.bedrooms || "-",
+                    baths: p.baths || p.bathrooms || "-",
+                    sqft: p.areaDetails || p.area || "-",
+                    propertyType: p.propertyType || "Residential",
+                    raw: p,
+                  }));
+                  setRentals(mapped);
+                  console.log('✅ RentScreen - Refresh: Loaded', mapped.length, 'rentals');
+                } else {
+                  setRentals([]);
+                }
+              } catch (e) {
+                console.warn('❌ RentScreen - Refresh failed:', e.message || e);
+              } finally {
+                setRefreshing(false);
+              }
+            })();
+          }}
         />
       )}
     </View>
