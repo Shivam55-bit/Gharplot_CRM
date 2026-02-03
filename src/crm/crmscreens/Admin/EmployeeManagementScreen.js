@@ -29,6 +29,8 @@ import {
 } from '../../services/crmEmployeeManagementApi';
 import { getAllRoles } from '../../services/crmRoleApi';
 import * as UspService from '../../services/crmUSPApi';
+import EmployeeForm from '../../components/EmployeeForm';
+import { prepareEmployeeSubmitData } from '../../utils/employeeFormValidation';
 
 const EmployeeManagementScreen = ({ navigation }) => {
   const [employees, setEmployees] = useState([]);
@@ -311,44 +313,22 @@ const EmployeeManagementScreen = ({ navigation }) => {
     };
   }, []);
 
-  // Open create modal
-  const openCreateModal = () => {
-    setEmployeeFormData({
-      name: '',
-      email: '',
-      phone: '',
-      role: '',
-      password: '',
-      department: '',
-      giveAdminAccess: false,
-      address: {
-        street: '',
-        city: '',
-        state: '',
-        zipCode: '',
-        country: ''
-      }
+  // Open create employee screen
+  const openCreateEmployee = () => {
+    navigation.navigate('CreateEmployee', {
+      isEditing: false,
+      employee: null,
+      onRefresh: loadEmployees,
     });
-    setFormErrors({});
-    setSelectedEmployee(null);
-    setCreateEditModalVisible(true);
   };
 
-  // Open edit modal
-  const openEditModal = (employee) => {
-    setEmployeeFormData({
-      name: employee.name,
-      email: employee.email,
-      phone: employee.phone,
-      role: employee.roleId,
-      password: '',
-      department: employee.department,
-      giveAdminAccess: employee.giveAdminAccess,
-      address: employee.address || {}
+  // Open edit employee screen
+  const openEditEmployee = (employee) => {
+    navigation.navigate('CreateEmployee', {
+      isEditing: true,
+      employee: employee,
+      onRefresh: loadEmployees,
     });
-    setFormErrors({});
-    setSelectedEmployee(employee);
-    setCreateEditModalVisible(true);
   };
 
   // Open password modal
@@ -379,21 +359,10 @@ const EmployeeManagementScreen = ({ navigation }) => {
     setUspModalVisible(true);
   };
   // Handle employee form submission
-  const handleEmployeeSubmit = async () => {
-    if (!validateEmployeeForm()) {
-      return;
-    }
-
+  const handleEmployeeSubmit = async (submitData) => {
     try {
       setSubmitting(true);
-      
-      const submitData = { ...employeeFormData };
-      
-      // Don't send password if it's empty during edit
-      if (selectedEmployee && !submitData.password.trim()) {
-        delete submitData.password;
-      }
-      
+
       if (selectedEmployee) {
         // Update employee
         const response = await updateEmployee(selectedEmployee.id, submitData);
@@ -825,337 +794,47 @@ const EmployeeManagementScreen = ({ navigation }) => {
         />
       </View>
       
-      <View style={styles.cardActions}>
-        <TouchableOpacity 
-          style={styles.actionButton}
-          onPress={() => handleViewReminders(item)}
-        >
-          <Icon name="list" size={16} color="#3b82f6" />
-          <Text style={styles.actionText}>Reminders</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.actionButton}
-          onPress={() => openEditModal(item)}
-        >
-          <Icon name="create" size={16} color="#3b82f6" />
-          <Text style={styles.actionText}>Edit</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.actionButton}
-          onPress={() => openPasswordModal(item)}
-        >
-          <Icon name="key" size={16} color="#f59e0b" />
-          <Text style={styles.actionText}>Password</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.actionButton}
-          onPress={() => openUspModal(item)}
-        >
-          <Icon name="star" size={16} color="#f59e0b" />
-          <Text style={styles.actionText}>USP</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.actionButton}
-          onPress={() => handleDeleteEmployee(item)}
-        >
-          <Icon name="trash" size={16} color="#ef4444" />
-          <Text style={styles.actionText}>Delete</Text>
-        </TouchableOpacity>
-      </View>
-    </TouchableOpacity>
-  );
-
-  // Create/Edit Employee Modal
-  const CreateEditEmployeeModal = () => (
-    <Modal
-      animationType="slide"
-      transparent={true}
-      visible={createEditModalVisible}
-      onRequestClose={() => setCreateEditModalVisible(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={[styles.modalContent, { height: '90%' }]}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>
-              {selectedEmployee ? 'Edit Employee' : 'Create New Employee'}
-            </Text>
-            <TouchableOpacity
-              onPress={() => setCreateEditModalVisible(false)}
-              style={styles.closeButton}
-            >
-              <Icon name="close" size={24} color="#6b7280" />
-            </TouchableOpacity>
-          </View>
+      <ScrollView 
+        style={styles.cardActionsContainer}
+        horizontal={true}
+        showsHorizontalScrollIndicator={false}
+        scrollEventThrottle={16}
+      >
+        <View style={styles.cardActions}>
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => handleViewReminders(item)}
+          >
+            <Icon name="list" size={16} color="#3b82f6" />
+            <Text style={styles.actionText}>Reminders</Text>
+          </TouchableOpacity>
           
-          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-            {/* Name */}
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Full Name *</Text>
-              <TextInput
-                style={[styles.formInput, formErrors.name && styles.formInputError]}
-                placeholder="Enter full name"
-                value={employeeFormData.name}
-                onChangeText={(text) => {
-                  setEmployeeFormData(prev => ({ ...prev, name: text }));
-                  if (formErrors.name) setFormErrors(prev => ({ ...prev, name: null }));
-                }}
-                placeholderTextColor="#9ca3af"
-              />
-              {formErrors.name && (
-                <Text style={styles.errorText}>{formErrors.name}</Text>
-              )}
-            </View>
-
-            {/* Email */}
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Email *</Text>
-              <TextInput
-                style={[styles.formInput, formErrors.email && styles.formInputError]}
-                placeholder="Enter email address"
-                value={employeeFormData.email}
-                onChangeText={(text) => {
-                  setEmployeeFormData(prev => ({ ...prev, email: text }));
-                  if (formErrors.email) setFormErrors(prev => ({ ...prev, email: null }));
-                }}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                placeholderTextColor="#9ca3af"
-              />
-              {formErrors.email && (
-                <Text style={styles.errorText}>{formErrors.email}</Text>
-              )}
-            </View>
-
-            {/* Phone */}
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Phone *</Text>
-              <TextInput
-                style={[styles.formInput, formErrors.phone && styles.formInputError]}
-                placeholder="Enter phone number"
-                value={employeeFormData.phone}
-                onChangeText={(text) => {
-                  setEmployeeFormData(prev => ({ ...prev, phone: text }));
-                  if (formErrors.phone) setFormErrors(prev => ({ ...prev, phone: null }));
-                }}
-                keyboardType="phone-pad"
-                placeholderTextColor="#9ca3af"
-              />
-              {formErrors.phone && (
-                <Text style={styles.errorText}>{formErrors.phone}</Text>
-              )}
-            </View>
-
-            {/* Role */}
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Role *</Text>
-              <View style={[styles.formInput, { paddingVertical: 0 }]}>
-                <TouchableOpacity
-                  style={styles.roleSelector}
-                  onPress={() => {
-                    Alert.alert(
-                      'Select Role',
-                      '',
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        ...roles.map(role => ({
-                          text: role.name,
-                          onPress: () => {
-                            setEmployeeFormData(prev => ({ ...prev, role: role._id }));
-                            if (formErrors.role) setFormErrors(prev => ({ ...prev, role: null }));
-                          }
-                        }))
-                      ]
-                    );
-                  }}
-                >
-                  <Text style={[styles.roleSelectorText, !employeeFormData.role && { color: '#9ca3af' }]}>
-                    {employeeFormData.role 
-                      ? roles.find(r => r._id === employeeFormData.role)?.name || 'Select Role'
-                      : 'Select Role'
-                    }
-                  </Text>
-                  <Icon name="chevron-down" size={20} color="#6b7280" />
-                </TouchableOpacity>
-              </View>
-              {formErrors.role && (
-                <Text style={styles.errorText}>{formErrors.role}</Text>
-              )}
-            </View>
-
-            {/* Password */}
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>
-                Password {selectedEmployee ? '' : '*'}
-              </Text>
-              {selectedEmployee && (
-                <Text style={styles.formSubLabel}>Leave blank to keep current password</Text>
-              )}
-              <TextInput
-                style={[styles.formInput, formErrors.password && styles.formInputError]}
-                placeholder={selectedEmployee ? "Leave blank to keep current" : "Enter password"}
-                value={employeeFormData.password}
-                onChangeText={(text) => {
-                  setEmployeeFormData(prev => ({ ...prev, password: text }));
-                  if (formErrors.password) setFormErrors(prev => ({ ...prev, password: null }));
-                }}
-                secureTextEntry
-                placeholderTextColor="#9ca3af"
-              />
-              {formErrors.password && (
-                <Text style={styles.errorText}>{formErrors.password}</Text>
-              )}
-            </View>
-
-            {/* Department */}
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Department</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="Enter department"
-                value={employeeFormData.department}
-                onChangeText={(text) => setEmployeeFormData(prev => ({ ...prev, department: text }))}
-                placeholderTextColor="#9ca3af"
-              />
-            </View>
-
-            {/* Admin Access */}
-            <View style={styles.formGroup}>
-              <View style={styles.switchContainer}>
-                <Text style={styles.formLabel}>Give Admin Access</Text>
-                <Switch
-                  value={employeeFormData.giveAdminAccess}
-                  onValueChange={(value) => setEmployeeFormData(prev => ({ ...prev, giveAdminAccess: value }))}
-                  trackColor={{ false: '#e5e7eb', true: '#3b82f6' }}
-                  thumbColor={employeeFormData.giveAdminAccess ? '#ffffff' : '#f4f3f4'}
-                />
-              </View>
-            </View>
-
-            {/* Address */}
-            <Text style={styles.sectionTitle}>Address (Optional)</Text>
-            
-            <View style={styles.formGroup}>
-              <Text style={styles.formLabel}>Street</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="Enter street address"
-                value={employeeFormData.address.street}
-                onChangeText={(text) => 
-                  setEmployeeFormData(prev => ({ 
-                    ...prev, 
-                    address: { ...prev.address, street: text }
-                  }))
-                }
-                placeholderTextColor="#9ca3af"
-              />
-            </View>
-
-            <View style={styles.formRow}>
-              <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
-                <Text style={styles.formLabel}>City</Text>
-                <TextInput
-                  style={styles.formInput}
-                  placeholder="City"
-                  value={employeeFormData.address.city}
-                  onChangeText={(text) => 
-                    setEmployeeFormData(prev => ({ 
-                      ...prev, 
-                      address: { ...prev.address, city: text }
-                    }))
-                  }
-                  placeholderTextColor="#9ca3af"
-                />
-              </View>
-
-              <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
-                <Text style={styles.formLabel}>State</Text>
-                <TextInput
-                  style={styles.formInput}
-                  placeholder="State"
-                  value={employeeFormData.address.state}
-                  onChangeText={(text) => 
-                    setEmployeeFormData(prev => ({ 
-                      ...prev, 
-                      address: { ...prev.address, state: text }
-                    }))
-                  }
-                  placeholderTextColor="#9ca3af"
-                />
-              </View>
-            </View>
-
-            <View style={styles.formRow}>
-              <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
-                <Text style={styles.formLabel}>Zip Code</Text>
-                <TextInput
-                  style={styles.formInput}
-                  placeholder="Zip"
-                  value={employeeFormData.address.zipCode}
-                  onChangeText={(text) => 
-                    setEmployeeFormData(prev => ({ 
-                      ...prev, 
-                      address: { ...prev.address, zipCode: text }
-                    }))
-                  }
-                  placeholderTextColor="#9ca3af"
-                />
-              </View>
-
-              <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
-                <Text style={styles.formLabel}>Country</Text>
-                <TextInput
-                  style={styles.formInput}
-                  placeholder="Country"
-                  value={employeeFormData.address.country}
-                  onChangeText={(text) => 
-                    setEmployeeFormData(prev => ({ 
-                      ...prev, 
-                      address: { ...prev.address, country: text }
-                    }))
-                  }
-                  placeholderTextColor="#9ca3af"
-                />
-              </View>
-            </View>
-          </ScrollView>
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => openEditEmployee(item)}
+          >
+            <Icon name="create" size={16} color="#3b82f6" />
+            <Text style={styles.actionText}>Edit</Text>
+          </TouchableOpacity>
           
-          {/* Fixed Action Buttons */}
-          <View style={styles.modalActionButtons}>
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={() => setCreateEditModalVisible(false)}
-              disabled={submitting}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.submitButton,
-                (!employeeFormData.name.trim() || !employeeFormData.email.trim() || 
-                 !employeeFormData.phone.trim() || !employeeFormData.role || 
-                 (!selectedEmployee && !employeeFormData.password.trim()) || submitting) && styles.submitButtonDisabled
-              ]}
-              onPress={handleEmployeeSubmit}
-              disabled={!employeeFormData.name.trim() || !employeeFormData.email.trim() || 
-                       !employeeFormData.phone.trim() || !employeeFormData.role || 
-                       (!selectedEmployee && !employeeFormData.password.trim()) || submitting}
-            >
-              {submitting ? (
-                <ActivityIndicator size="small" color="#ffffff" />
-              ) : (
-                <Text style={styles.submitButtonText}>
-                  {selectedEmployee ? 'Update Employee' : 'Create Employee'}
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => openUspModal(item)}
+          >
+            <Icon name="star" size={16} color="#f59e0b" />
+            <Text style={styles.actionText}>USP</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => handleDeleteEmployee(item)}
+          >
+            <Icon name="trash" size={16} color="#ef4444" />
+            <Text style={styles.actionText}>Delete</Text>
+          </TouchableOpacity>
         </View>
-      </View>
-    </Modal>
+      </ScrollView>
+    </TouchableOpacity>
   );
 
   // Password Change Modal
@@ -1496,9 +1175,9 @@ const EmployeeManagementScreen = ({ navigation }) => {
           <Icon name="arrow-back" size={24} color="#ffffff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Employee Management</Text>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.addButton}
-          onPress={openCreateModal}
+          onPress={openCreateEmployee}
         >
           <Icon name="add" size={24} color="#ffffff" />
         </TouchableOpacity>
@@ -1572,7 +1251,6 @@ const EmployeeManagementScreen = ({ navigation }) => {
         )}
       </View>
       
-      <CreateEditEmployeeModal />
       <PasswordModal />
       <UspModal />
       <RemindersModal />
@@ -1774,25 +1452,31 @@ const styles = StyleSheet.create({
     color: '#1e40af',
     marginLeft: 10,
   },
+  cardActionsContainer: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+    backgroundColor: '#ffffff',
+  },
   cardActions: {
     flexDirection: 'row',
     justifyContent: 'flex-start',
     alignItems: 'center',
-    paddingTop: 14,
-    paddingHorizontal: 0,
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
+    gap: 8,
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
     backgroundColor: '#f8fafc',
-    marginRight: 8,
     borderWidth: 1,
     borderColor: '#e5e7eb',
+    minWidth: 110,
+    justifyContent: 'center',
+    flexShrink: 0,
   },
   editButton: {
     borderColor: '#dbeafe',

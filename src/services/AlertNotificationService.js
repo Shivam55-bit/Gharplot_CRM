@@ -129,13 +129,13 @@ class AlertNotificationService {
       });
 
       // Create timestamp trigger with alarmManager for background/killed state
-      // Note: Local notifications don't support daily repeats with TIMESTAMP triggers
-      // Repeat daily alerts are handled by backend FCM notifications
+      // 🔥 Use exact timing to minimize delays
       const trigger = {
         type: TriggerType.TIMESTAMP,
         timestamp: notificationDate.getTime(),
         alarmManager: {
           allowWhileIdle: true, // Critical for background notifications
+          exact: true, // Use exact alarm for precise timing
         },
       };
 

@@ -78,9 +78,37 @@ class NotificationHandler {
           return;
         }
         
-        // 🔥 For reminder - SKIP foreground navigation, let AppState handler do it
+        // 🔥 For REMINDER notifications - Navigate IMMEDIATELY in foreground
         if (notifType === 'reminder' || notifType === 'enquiry_reminder') {
-          console.log('⏭️ SKIPPING foreground navigation for reminder - AppState will handle');
+          console.log('🚀 REMINDER notification pressed in FOREGROUND - Navigating immediately');
+          
+          // 🔥 Lock navigation
+          this.isNavigating = true;
+          this.lastNavigationTime = now;
+          
+          const reminderId = detail.notification?.data?.reminderId;
+          const clientName = detail.notification?.data?.clientName || detail.notification?.title || '';
+          const message = detail.notification?.data?.message || detail.notification?.body || '';
+          const enquiryId = detail.notification?.data?.enquiryId;
+          
+          const params = {
+            reminderId: reminderId,
+            clientName: clientName,
+            originalMessage: message,
+            enquiryId: enquiryId,
+            fromNotification: true
+          };
+          
+          console.log('📤 Foreground reminder navigation params:', params);
+          
+          // Navigate directly using NavigationService
+          setTimeout(() => {
+            NavigationService.navigate('EditReminder', params);
+            console.log('✅ Reminder navigation completed');
+          }, 100);
+          
+          // Unlock after delay
+          setTimeout(() => { this.isNavigating = false; }, this.NAVIGATION_COOLDOWN);
           return;
         }
         
@@ -98,9 +126,26 @@ class NotificationHandler {
         const actionId = detail.pressAction?.id;
         console.log('🎯 Action pressed:', actionId);
         
-        // 🔥 For reminder actions - SKIP foreground, let AppState handle
+        // 🔥 For reminder action - Navigate immediately
         if (actionId === 'edit_reminder') {
-          console.log('⏭️ SKIPPING foreground action for reminder edit - AppState will handle');
+          console.log('🚀 REMINDER action pressed in FOREGROUND - Navigating immediately');
+          
+          const reminderId = detail.notification?.data?.reminderId;
+          const clientName = detail.notification?.data?.clientName || detail.notification?.title || '';
+          const message = detail.notification?.data?.message || detail.notification?.body || '';
+          const enquiryId = detail.notification?.data?.enquiryId;
+          
+          const params = {
+            reminderId: reminderId,
+            clientName: clientName,
+            originalMessage: message,
+            enquiryId: enquiryId,
+            fromNotification: true
+          };
+          
+          setTimeout(() => {
+            NavigationService.navigate('EditReminder', params);
+          }, 100);
           return;
         }
         

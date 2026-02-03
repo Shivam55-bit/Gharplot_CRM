@@ -98,29 +98,37 @@ const CreateAlertScreen = ({ navigation, route }) => {
       // Format time for backend
       const timeStr = formatTime(formData.time); // HH:MM
       
+      // ✅ Helper function to format date without timezone conversion
+      const formatDateLocal = (date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+      
       // Prepare date and metadata based on repeat frequency
       let dateStr;
       let repeatMetadata = {};
       
       if (formData.repeatFrequency === 'none') {
-        // One-time alert: use exact selected date
-        dateStr = formData.date.toISOString().split('T')[0]; // YYYY-MM-DD
+        // One-time alert: use exact selected date (NO timezone conversion)
+        dateStr = formatDateLocal(formData.date);
         console.log('📅 One-time alert - using selected date:', dateStr);
       } else if (formData.repeatFrequency === 'daily') {
         // Daily: ignore date, use current date, only time matters
-        dateStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        dateStr = formatDateLocal(new Date());
         console.log('🔄 Daily alert - using current date, time matters:', timeStr);
       } else if (formData.repeatFrequency === 'weekly') {
         // Weekly: store day of week (0=Sunday, 1=Monday, etc)
         const dayOfWeek = formData.date.getDay();
-        dateStr = new Date().toISOString().split('T')[0]; // Use current date
+        dateStr = formatDateLocal(new Date()); // Use current date
         repeatMetadata.dayOfWeek = dayOfWeek;
         const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
         console.log(`🔄 Weekly alert - every ${dayNames[dayOfWeek]} at ${timeStr}`);
       } else if (formData.repeatFrequency === 'monthly') {
         // Monthly: store day of month (1-31)
         const dayOfMonth = formData.date.getDate();
-        dateStr = new Date().toISOString().split('T')[0]; // Use current date
+        dateStr = formatDateLocal(new Date()); // Use current date
         repeatMetadata.dayOfMonth = dayOfMonth;
         console.log(`🔄 Monthly alert - every ${dayOfMonth} of month at ${timeStr}`);
       } else if (formData.repeatFrequency === 'yearly') {

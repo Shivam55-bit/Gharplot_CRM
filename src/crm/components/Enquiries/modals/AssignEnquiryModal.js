@@ -15,7 +15,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 // import Icon from 'react-native-vector-icons/MaterialIcons';
-import { getAvailableEmployees, assignEnquiriesToEmployee } from '../../../services/assignmentService';
+import { assignEnquiriesToEmployee } from '../../../services/assignmentService';
+import { getAllEmployees } from '../../../services/crmEmployeeManagementApi';
 
 const AssignEnquiryModal = ({ visible, onClose, selectedEnquiries, onSuccess }) => {
   const [loading, setLoading] = useState(false);
@@ -38,14 +39,28 @@ const AssignEnquiryModal = ({ visible, onClose, selectedEnquiries, onSuccess }) 
 
   const fetchEmployees = async () => {
     try {
-      const result = await getAvailableEmployees();
-      if (result.success) {
-        setEmployees(result.data);
+      console.log('👥 Fetching ALL employees for assignment...');
+      
+      // Use getAllEmployees to get ALL employees without filters
+      const result = await getAllEmployees({ 
+        page: 1, 
+        limit: 999, // Get up to 999 employees
+        isActive: true // Only get active employees
+      });
+      
+      if (result && result.employees && Array.isArray(result.employees)) {
+        setEmployees(result.employees);
+        console.log('✅ Employees fetched successfully:', result.employees.length);
+        console.log('👥 Employee list:', result.employees.map(e => ({ id: e._id, name: e.fullName || e.name })));
       } else {
+        console.warn('⚠️ No employees data returned:', result);
         Alert.alert('Error', 'Failed to fetch employees');
+        setEmployees([]);
       }
     } catch (error) {
+      console.error('❌ Error fetching employees:', error);
       Alert.alert('Error', 'Failed to fetch employees');
+      setEmployees([]);
     }
   };
 
@@ -123,8 +138,8 @@ const AssignEnquiryModal = ({ visible, onClose, selectedEnquiries, onSuccess }) 
                   onPress={() => setSelectedEmployee(employee._id)}
                 >
                   <View style={styles.employeeInfo}>
-                    <Text style={styles.employeeName}>{employee.fullName}</Text>
-                    <Text style={styles.employeeRole}>{employee.role?.name}</Text>
+                    <Text style={styles.employeeName}>{employee.fullName || employee.name || 'Unknown Employee'}</Text>
+                    <Text style={styles.employeeRole}>{employee.role?.name || employee.department || 'Employee'}</Text>
                   </View>
                   {selectedEmployee === employee._id && (
                     <Text style={{ fontSize: 20, color: '#3b82f6' }}>✓</Text>

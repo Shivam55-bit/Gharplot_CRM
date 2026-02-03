@@ -23,6 +23,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import ReminderPopup from '../../Reminders/ReminderPopup';
 import ReminderNotificationService from '../../../../services/ReminderNotificationService';
 import { createManualEnquiry } from '../../../services/enquiryService';
+import { assignEnquiriesToEmployee } from '../../../services/assignmentService';
+import { getAllEmployees } from '../../../services/crmEmployeeManagementApi';
 
 const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnquiries = 0, navigation }) => {
   const [loading, setLoading] = useState(false);
@@ -39,6 +41,12 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [weekActionDate, setWeekActionDate] = useState(new Date());
   const [weekActionTime, setWeekActionTime] = useState(new Date());
+  
+  // Assignment states
+  const [employees, setEmployees] = useState([]);
+  const [selectedEmployee, setSelectedEmployee] = useState('');
+  const [assignmentPriority, setAssignmentPriority] = useState('medium');
+  const [employeesLoading, setEmployeesLoading] = useState(false);
   
   const [formData, setFormData] = useState({
     s_No: 1,
@@ -190,6 +198,7 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
   useEffect(() => {
     if (visible) {
       generateNextCodes();
+      fetchEmployeesForAssignment();
       
       // ✅ DEBUG: Add debugging capabilities for reminder testing
       if (__DEV__) {
@@ -254,6 +263,34 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
       }
     }
   }, [visible, totalEnquiries]);
+
+  const fetchEmployeesForAssignment = async () => {
+    try {
+      setEmployeesLoading(true);
+      console.log('👥 Fetching ALL employees for assignment...');
+      
+      // Use getAllEmployees to get ALL employees without filters
+      const result = await getAllEmployees({ 
+        page: 1, 
+        limit: 999, // Get up to 999 employees
+        isActive: true // Only get active employees
+      });
+      
+      if (result && result.employees && Array.isArray(result.employees)) {
+        setEmployees(result.employees);
+        console.log('✅ Employees fetched successfully:', result.employees.length);
+        console.log('👥 Employee list:', result.employees.map(e => ({ id: e._id, name: e.fullName || e.name })));
+      } else {
+        console.warn('⚠️ No employees data returned:', result);
+        setEmployees([]);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching employees:', error);
+      setEmployees([]);
+    } finally {
+      setEmployeesLoading(false);
+    }
+  };
 
   const generateNextCodes = async () => {
     try {
@@ -491,6 +528,32 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
       console.log('📡 API Response:', JSON.stringify(result, null, 2));
       
       if (result && result.success) {
+        // ✅ ASSIGNMENT: If an employee is selected, assign the enquiry
+        if (selectedEmployee) {
+          try {
+            console.log('👤 Assigning enquiry to employee:', selectedEmployee);
+            
+            const assignmentData = {
+              enquiries: [result.data._id],
+              employeeId: selectedEmployee,
+              priority: assignmentPriority,
+              notes: 'Auto-assigned during enquiry creation'
+            };
+            
+            const assignmentResult = await assignEnquiriesToEmployee(assignmentData);
+            
+            if (assignmentResult.success) {
+              console.log('✅ Enquiry assigned successfully');
+            } else {
+              console.warn('⚠️ Assignment failed:', assignmentResult.message);
+              // Don't fail the whole operation, just warn
+            }
+          } catch (assignmentError) {
+            console.error('❌ Assignment error:', assignmentError);
+            // Continue without failing, assignment is secondary
+          }
+        }
+        
         // ✅ ENHANCED: If Week/Action Date/Time is provided, create reminder with guaranteed alert
         if (formData.weekOrActionTaken && formData.weekOrActionTaken.trim()) {
           console.log('🔔 Creating reminder with FORM date/time...');
@@ -722,6 +785,8 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
       actionPlan: '',
       referenceBy: '',
     });
+    setSelectedEmployee('');
+    setAssignmentPriority('medium');
     onClose();
   };
 
@@ -921,6 +986,74 @@ const AddEnquiryModal = ({ visible, onClose, onSuccess, addEnquiryAPI, totalEnqu
             </View>
             
             {renderInput('Action Plan', 'actionPlan', 'Enter action plan...', { multiline: true, numberOfLines: 2 })}
+            
+            {/* Assignment Section */}
+            <View style={styles.sectionDivider} />
+            <Text style={styles.sectionHeader}>👤 Assign to Employee (Optional)</Text>
+            
+            {/* Employee Selection */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Select Employee</Text>
+              {employeesLoading ? (
+                <ActivityIndicator size="small" color="#3b82f6" />
+              ) : employees.length > 0 ? (
+                <ScrollView style={styles.employeesList} nestedScrollEnabled={true}>
+                  {employees.map((employee) => (
+                    <TouchableOpacity
+                      key={employee._id}
+                      style={[
+                        styles.employeeOption,
+                        selectedEmployee === employee._id && styles.employeeOptionActive,
+                      ]}
+                      onPress={() => setSelectedEmployee(employee._id)}
+                    >
+                      <View style={styles.employeeInfo}>
+                        <Text style={styles.employeeName}>{employee.fullName || employee.name || 'Unknown Employee'}</Text>
+                        <Text style={styles.employeeRole}>{employee.role?.name || employee.department || 'Employee'}</Text>
+                      </View>
+                      {selectedEmployee === employee._id && (
+                        <Text style={{ fontSize: 18, color: '#3b82f6' }}>✓</Text>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              ) : (
+                <Text style={styles.noEmployeesText}>No employees available</Text>
+              )}
+            </View>
+            
+            {/* Priority Selection */}
+            {selectedEmployee && (
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Assignment Priority</Text>
+                <View style={styles.priorityContainer}>
+                  {[
+                    { value: 'low', label: 'Low', color: '#10b981' },
+                    { value: 'medium', label: 'Medium', color: '#f59e0b' },
+                    { value: 'high', label: 'High', color: '#ef4444' }
+                  ].map((p) => (
+                    <TouchableOpacity
+                      key={p.value}
+                      style={[
+                        styles.priorityOption,
+                        assignmentPriority === p.value && { 
+                          backgroundColor: p.color,
+                          borderColor: p.color
+                        },
+                      ]}
+                      onPress={() => setAssignmentPriority(p.value)}
+                    >
+                      <Text style={[
+                        styles.priorityText,
+                        assignmentPriority === p.value && styles.priorityTextActive,
+                      ]}>
+                        {p.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
           </ScrollView>
 
           {/* Footer */}
@@ -1134,6 +1267,80 @@ const styles = StyleSheet.create({
     borderColor: '#d1d5db',
     borderRadius: 6,
     backgroundColor: '#f8fafc',
+  },
+  sectionDivider: {
+    height: 1,
+    backgroundColor: '#e5e7eb',
+    marginVertical: 20,
+  },
+  sectionHeader: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 16,
+  },
+  employeesList: {
+    maxHeight: 250,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    backgroundColor: '#f9fafb',
+  },
+  employeeOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    backgroundColor: '#ffffff',
+  },
+  employeeOptionActive: {
+    backgroundColor: '#f0f9ff',
+    borderBottomColor: '#3b82f6',
+  },
+  employeeInfo: {
+    flex: 1,
+  },
+  employeeName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  employeeRole: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  noEmployeesText: {
+    fontSize: 14,
+    color: '#9ca3af',
+    textAlign: 'center',
+    paddingVertical: 16,
+  },
+  priorityContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'space-around',
+  },
+  priorityOption: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+  },
+  priorityText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  priorityTextActive: {
+    color: '#ffffff',
   },
 });
 

@@ -16,6 +16,7 @@ import Alerts from '../crm/crmscreens/Admin/Alerts';
 // Reuse employee CreateAlert screen for both roles
 import CreateAlertScreen from '../crm/crmscreens/Employee/CreateAlertScreen';
 import EmployeeManagementScreen from '../crm/crmscreens/Admin/EmployeeManagementScreen';
+import CreateEmployeeScreen from '../crm/crmscreens/Admin/CreateEmployeeScreen';
 import AdminReminderControlScreen from '../crm/crmscreens/Admin/AdminReminderControlScreen';
 import AdminMyReminders from '../crm/crmscreens/Admin/AdminMyReminders';
 import AdminFollowUps from '../crm/crmscreens/Admin/AdminFollow-up';
@@ -71,6 +72,21 @@ const AdminNavigator = ({ onLogout }) => {
         options={{
           headerShown: true,
           title: 'Employee Management',
+          headerStyle: {
+            backgroundColor: '#007AFF',
+          },
+          headerTintColor: '#fff',
+          headerTitleStyle: {
+            fontWeight: 'bold',
+          },
+        }}
+      />
+      <Stack.Screen
+        name="CreateEmployee"
+        component={CreateEmployeeScreen}
+        options={{
+          headerShown: true,
+          title: 'Employee Details',
           headerStyle: {
             backgroundColor: '#007AFF',
           },

@@ -127,6 +127,7 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
     setLoading(true);
 
     try {
+
       // Create reminder date and time
       const reminderDateTime = createReminderDateTime(
         formData.date,
@@ -204,7 +205,27 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
       }
 
       // 🔔 Also schedule local notification as backup
+      console.log('📱 Scheduling local notification...');
+      
+      // 🔥 Just log permission status - don't block user with dialogs
+      try {
+        const permStatus = await ReminderNotificationService.getNotificationPermissionStatus();
+        console.log('📊 Permission Status:', permStatus);
+        
+        if (!permStatus || !permStatus.granted) {
+          console.warn('⚠️ Notification permission not granted - notifications may not work');
+        }
+        
+        if (permStatus && permStatus.canScheduleExactAlarms === false) {
+          console.warn('⚠️ Exact alarm permission not granted - background notifications may be delayed');
+        }
+      } catch (permError) {
+        console.error('❌ Permission check failed:', permError);
+        // Continue anyway - try to schedule
+      }
+      
       const result = await ReminderNotificationService.scheduleReminder(reminderData);
+      console.log('📱 Notification schedule result:', result);
       
       if (result.success) {
         // Also store legacy format for existing screens that might still check AsyncStorage
@@ -248,15 +269,36 @@ const ReminderModal = ({ visible, onClose, enquiry, onSuccess }) => {
         );
         onSuccess && onSuccess();
       } else {
+        console.error('❌ Notification scheduling failed:', result);
+        const errorMessage = result.error || result.message || 'Unknown error';
+        
+        // Provide specific error guidance
+        let userMessage = 'Failed to schedule notification.\n\n';
+        
+        if (errorMessage.includes('permission')) {
+          userMessage += '⚠️ Notification permissions may not be granted.\n\nPlease enable:\n• Notifications\n• Alarms & reminders\n\nin app settings.';
+        } else if (errorMessage.includes('past')) {
+          userMessage += '⏰ The selected time is in the past. Please choose a future date and time.';
+        } else if (errorMessage.includes('channel')) {
+          userMessage += '📢 Notification channel error. Please restart the app and try again.';
+        } else {
+          userMessage += `Error: ${errorMessage}\n\nTry:\n1. Restart the app\n2. Check notification settings\n3. Contact support if issue persists`;
+        }
+        
         Alert.alert(
           'Failed to Set Reminder',
-          result.message || 'Failed to schedule notification. Please check your notification permissions and try again.',
+          userMessage,
           [{ text: 'OK' }]
         );
       }
     } catch (error) {
       console.error('❌ Reminder creation error:', error);
-      Alert.alert('Error', 'Failed to create reminder. Please try again.');
+      const errorMsg = error.message || error.toString();
+      Alert.alert(
+        'Error', 
+        `Failed to create reminder.\n\n${errorMsg}\n\nPlease check:\n• Network connection\n• Notification permissions\n• App settings`,
+        [{ text: 'OK' }]
+      );
     } finally {
       setLoading(false);
     }

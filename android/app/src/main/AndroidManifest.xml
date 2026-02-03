@@ -19,6 +19,11 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    
+    <!-- 🔥 CRITICAL: Battery optimization permissions for background notifications -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
 
 
@@ -444,6 +449,19 @@
           <action android:name="com.google.firebase.MESSAGING_EVENT" />
         </intent-filter>
       </service>
+
+      <!-- 🔥 CRITICAL: Boot receiver to restore scheduled notifications after device restart -->
+      <receiver 
+        android:name="com.dieam.reactnativepushnotification.modules.RNPushNotificationBootEventReceiver"
+        android:exported="true"
+        android:enabled="true">
+        <intent-filter>
+          <action android:name="android.intent.action.BOOT_COMPLETED" />
+          <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+          <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+          <category android:name="android.intent.category.DEFAULT" />
+        </intent-filter>
+      </receiver>
 
       <!-- ✅ CRITICAL: Firebase Messaging Service for BACKGROUND notifications -->
       <activity

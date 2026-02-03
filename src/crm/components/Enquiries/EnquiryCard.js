@@ -189,6 +189,38 @@ const EnquiryCard = ({
         </View>
       </View>
 
+      {/* Assignment Details */}
+      {isAssigned && enquiry.assignment && (
+        <View style={styles.assignmentSection}>
+          <View style={styles.assignmentHeader}>
+            <Text style={styles.assignmentLabel}>👤 ASSIGNED TO</Text>
+          </View>
+          <View style={styles.assignmentContent}>
+            <Text style={styles.assignmentEmployee}>
+              {enquiry.assignment.employeeId?.fullName || enquiry.assignment.employeeId?.name || enquiry.assignment.employeeName || 'Unknown Employee'}
+            </Text>
+            {(enquiry.assignment.employeeId?.email || enquiry.assignment.employeeEmail) && (
+              <Text style={styles.assignmentEmail}>
+                📧 {enquiry.assignment.employeeId?.email || enquiry.assignment.employeeEmail}
+              </Text>
+            )}
+            <View style={styles.assignmentMetaRow}>
+              {enquiry.assignment.priority && (
+                <View style={[styles.assignmentPriorityBadge, { backgroundColor: getPriorityColor(enquiry.assignment.priority) }]}>
+                  <Text style={styles.assignmentPriorityText}>🚩 {enquiry.assignment.priority.toUpperCase()}</Text>
+                </View>
+              )}
+              {enquiry.assignment.assignedAt && (
+                <Text style={styles.assignmentDate}>📅 {formatDate(enquiry.assignment.assignedAt)}</Text>
+              )}
+            </View>
+            {enquiry.assignment.notes && (
+              <Text style={styles.assignmentNotes}>📝 {enquiry.assignment.notes}</Text>
+            )}
+          </View>
+        </View>
+      )}
+
       {/* Action Buttons */}
       <View style={styles.actionsSection}>
         {/* Custom Reminder Button */}
@@ -223,6 +255,16 @@ const getStatusColor = (status) => {
     case 'resolved': return '#10b981';
     case 'closed': return '#6b7280';
     case 'in progress': return '#3b82f6';
+    default: return '#6b7280';
+  }
+};
+
+const getPriorityColor = (priority) => {
+  switch (priority?.toLowerCase()) {
+    case 'low': return '#10b981';
+    case 'medium': return '#f59e0b';
+    case 'high': return '#ef4444';
+    case 'urgent': return '#dc2626';
     default: return '#6b7280';
   }
 };
@@ -382,6 +424,60 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     color: '#92400e',
+  },
+  assignmentSection: {
+    backgroundColor: '#f0fdf4',
+    borderRadius: 10,
+    padding: 12,
+    marginVertical: 12,
+    borderWidth: 2,
+    borderColor: '#86efac',
+  },
+  assignmentHeader: {
+    marginBottom: 8,
+  },
+  assignmentLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#15803d',
+  },
+  assignmentContent: {
+    gap: 6,
+  },
+  assignmentEmployee: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  assignmentEmail: {
+    fontSize: 13,
+    color: '#6b7280',
+  },
+  assignmentMetaRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+    alignItems: 'center',
+  },
+  assignmentPriorityBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  assignmentPriorityText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  assignmentDate: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  assignmentNotes: {
+    fontSize: 12,
+    color: '#4b5563',
+    fontStyle: 'italic',
+    marginTop: 4,
   },
 });
 

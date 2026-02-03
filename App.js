@@ -155,10 +155,36 @@ const AppMain = () => {
         // 🔔 Initialize ReminderNotificationService for background notifications
         const initializeNotifications = async () => {
           try {
+            // 🔥 Check if this is first-time setup
+            const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+            const isFirstLaunch = await AsyncStorage.getItem('app_first_launch');
+            
+            if (isFirstLaunch === null) {
+              console.log('🎉 First time app launch - Requesting all permissions...');
+              await AsyncStorage.setItem('app_first_launch', 'false');
+              
+              // 🔥 Request all permissions at once on first launch
+              try {
+                await ReminderNotificationService.requestNotificationPermissions();
+                console.log('✅ All permissions requested on first launch');
+              } catch (permError) {
+                console.warn('⚠️ Permission request failed:', permError);
+              }
+            }
+            
             console.log('🚀 Initializing ReminderNotificationService...');
             const initialized = await ReminderNotificationService.initialize();
             if (initialized) {
               console.log('✅ ReminderNotificationService ready for background reminders');
+              
+              // 🔥 Show permission status after initialization
+              const permStatus = await ReminderNotificationService.getNotificationPermissionStatus();
+              console.log('📊 Permission Status:', permStatus);
+              
+              if (permStatus && !permStatus.canScheduleExactAlarms) {
+                console.warn('⚠️ WARNING: Cannot schedule exact alarms - Background notifications may not work!');
+                console.warn('📱 User needs to grant "Alarms & reminders" permission in app settings');
+              }
             } else {
               console.warn('⚠️ Failed to initialize notification service');
             }

@@ -142,9 +142,21 @@ export const setupForegroundNotificationHandler = () => {
     }
     const notificationType = data.type || data.notificationType || 'system';
 
+    // 🚫 SKIP system-generated reminders - don't show popup
+    if (data.createdBy === 'System' || data.createdBy === 'system') {
+      console.log('⏭️ Skipping System-created reminder - not showing popup');
+      return;
+    }
+
     // Handle Employee Reminder to Admin notifications (CRM)
     if (notificationType === 'employee_reminder_to_admin') {
-      console.log('🔔 Employee Reminder notification received for Admin');
+      console.log('🔔 Employee Reminder notification received for Admin', { employeeName: data.employeeName, createdBy: data.createdBy });
+      
+      // 🚫 SKIP system-generated reminders - don't show popup
+      if (data.employeeName === 'System' || data.createdBy === 'System' || data.createdBy === 'system') {
+        console.log('⏭️ Skipping System-created Employee Reminder - not showing popup');
+        return;
+      }
       
       const employeeName = data.employeeName || 'Employee';
       const clientName = data.clientName || 'Client';
@@ -182,7 +194,13 @@ export const setupForegroundNotificationHandler = () => {
 
     // Handle ALERT notifications - Show custom popup
     if (notificationType === 'alert' || notificationType === 'system_alert') {
-      console.log('🔔 ALERT notification received in foreground');
+      console.log('🔔 ALERT notification received in foreground', { type: data.type, createdBy: data.createdBy, employeeName: data.employeeName });
+      
+      // 🚫 SKIP system alerts - don't show popup
+      if (data.createdBy === 'System' || data.createdBy === 'system' || notificationType === 'system_alert') {
+        console.log('⏭️ Skipping System alert - not showing popup');
+        return;
+      }
       
       // Use beautiful custom popup
       const { showEmployeeNotificationPopup } = require('../services/EmployeePopupManager');
@@ -196,7 +214,13 @@ export const setupForegroundNotificationHandler = () => {
     }
     // Handle reminder notifications - Show custom popup
     else if (notificationType === 'reminder') {
-      console.log('🔔 Reminder notification received in foreground');
+      console.log('🔔 Reminder notification received in foreground', { type: data.type, createdBy: data.createdBy, employeeName: data.employeeName });
+      
+      // 🚫 SKIP system-generated reminders - don't show popup
+      if (data.createdBy === 'System' || data.createdBy === 'system' || data.employeeName === 'System') {
+        console.log('⏭️ Skipping System-created reminder - not showing popup');
+        return;
+      }
       
       // Use beautiful custom popup
       const { showEmployeeNotificationPopup } = require('../services/EmployeePopupManager');

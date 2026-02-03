@@ -121,28 +121,150 @@ const EnquiryDetailScreen = ({ route, navigation }) => {
     try {
       const reminderDate = new Date();
       reminderDate.setHours(reminderDate.getHours() + 1);
-
-      const result = await ReminderNotificationService.scheduleReminder({
-        id: `reminder_${enquiry._id}_${Date.now()}`,
-        clientName: enquiry.clientName,
-        message: `Follow up with ${enquiry.clientName} regarding property inquiry`,
-        scheduledDate: reminderDate,
-        enquiryId: enquiry._id,
-        enquiry: enquiry,
-      });
-
-      if (result.success) {
-        Alert.alert(
-          '✅ Reminder Set!',
-          `Notification scheduled for ${reminderDate.toLocaleString()}\n\nYou'll be notified even if the app is closed.`,
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert('Error', result.message);
+      
+      // 🔥 STEP 1: Create Reminder in Backend Database FIRST (Like Alert System)
+      const authToken = await AsyncStorage.getItem('adminToken') || 
+                        await AsyncStorage.getItem('crm_auth_token') ||
+                        await AsyncStorage.getItem('employee_auth_token');
+      
+      if (!authToken) {
+        Alert.alert('Error', 'Authentication required. Please login again.');
+        return;
       }
+
+      console.log('💾 Creating reminder in backend database first...');
+      
+      const createResponse = await fetch('https://abc.bhoomitechzone.us/api/reminder/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          title: enquiry.clientName,
+          comment: `Follow up with ${enquiry.clientName} regarding property inquiry`,
+          reminderDateTime: reminderDate.toISOString(),
+          isRepeating: false,
+          repeatType: 'daily',
+          isActive: true,
+          enquiryId: enquiry._id,
+        }),
+      });
+      
+      if (!createResponse.ok) {
+        const errorText = await createResponse.text();
+        console.error('❌ Failed to create backend reminder:', errorText);
+        Alert.alert('Error', 'Failed to create reminder. Please try again.');
+        return;
+      }
+
+      const createResult = await createResponse.json();
+      if (!createResult.success || !createResult.data || !createResult.data._id) {
+        console.error('❌ Invalid backend response:', createResult);
+        Alert.alert('Error', 'Failed to create reminder. Invalid server response.');
+        return;
+      }
+
+      // 🔥 Use backend MongoDB ID for everything (Like Alert System)
+      const reminderId = createResult.data._id;
+      console.log('✅ Backend reminder created, ID:', reminderId);
+
+      // 🔥 STEP 2: Schedule FCM Notification via Backend (PRIMARY)
+      try {
+        const fcmToken = await AsyncStorage.getItem('fcmToken');
+        const employeeId = await AsyncStorage.getItem('employeeId') || await AsyncStorage.getItem('userId');
+        
+        console.log('🔍 Debug - FCM Token:', fcmToken ? 'Available ✅' : 'Missing ❌');
+        
+        if (fcmToken) {
+          console.log('🔔 Scheduling FCM notification via backend...');
+          
+          const requestBody = {
+            reminderId: reminderId, // Now using backend MongoDB ID
+            scheduledTime: reminderDate.toISOString(),
+            title: enquiry.clientName,
+            message: `Follow up with ${enquiry.clientName} regarding property inquiry`,
+            fcmToken: fcmToken,
+            data: {
+              type: 'reminder',
+              reminderId: reminderId, // Backend MongoDB ID
+              clientName: enquiry.clientName,
+              enquiryId: enquiry._id,
+              employeeId: employeeId,
+              notificationType: 'reminder',
+            }
+          };
+          
+          console.log('📤 Sending FCM request with backend ID:', reminderId);
+          
+          const fcmResponse = await fetch('https://abc.bhoomitechzone.us/api/reminder/schedule-notification', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${authToken}`,
+            },
+            body: JSON.stringify(requestBody),
+          });
+          
+          console.log('📥 FCM Response Status:', fcmResponse.status);
+          
+          const responseText = await fcmResponse.text();
+          console.log('📥 FCM Response Body:', responseText);
+          
+          if (fcmResponse.ok) {
+            try {
+              const fcmResult = JSON.parse(responseText);
+              if (fcmResult.success) {
+                console.log('✅ FCM notification scheduled successfully!');
+              } else {
+                console.warn('⚠️ FCM scheduling failed:', fcmResult.message);
+              }
+            } catch (parseError) {
+              console.error('❌ Failed to parse FCM response:', parseError);
+            }
+          } else {
+            console.error('❌ FCM API returned error status:', fcmResponse.status);
+            console.error('❌ Error response:', responseText);
+          }
+        } else {
+          console.warn('⚠️ Cannot schedule FCM - Missing FCM token');
+        }
+      } catch (fcmError) {
+        console.error('❌ FCM scheduling error:', fcmError);
+        console.error('❌ Error stack:', fcmError.stack);
+        // Don't fail the whole operation
+      }
+
+      // 🔥 STEP 3: Schedule Local Notification as BACKUP
+      try {
+        console.log('📱 Scheduling local backup notification...');
+        const localResult = await ReminderNotificationService.scheduleReminder({
+          id: reminderId,
+          clientName: enquiry.clientName,
+          message: `Follow up with ${enquiry.clientName} regarding property inquiry`,
+          scheduledDate: reminderDate,
+          enquiryId: enquiry._id,
+          enquiry: enquiry,
+        });
+
+        if (localResult.success) {
+          console.log('✅ Local backup notification scheduled');
+        } else {
+          console.error('❌ Failed to schedule local notification:', localResult.message);
+        }
+      } catch (localError) {
+        console.error('❌ Local notification error:', localError);
+        // Don't fail - FCM is primary
+      }
+
+      Alert.alert(
+        '✅ Reminder Set!',
+        `Notification scheduled for ${reminderDate.toLocaleString()}\n\n📋 Backend Reminder ID:\n${reminderId}\n\n🔔 You'll receive both FCM and local notifications.`,
+        [{ text: 'OK' }]
+      );
     } catch (error) {
       console.error('❌ Error setting reminder:', error);
-      Alert.alert('Error', 'Failed to set reminder.');
+      Alert.alert('Error', 'Failed to set reminder. Please try again.');
     }
   };
 

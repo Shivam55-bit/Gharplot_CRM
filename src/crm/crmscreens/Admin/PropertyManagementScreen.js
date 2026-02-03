@@ -395,6 +395,16 @@ const PropertyManagementScreen = ({ navigation }) => {
         </TouchableOpacity>
       )}
 
+      {/* View Details - Clickable card background */}
+      <TouchableOpacity 
+        style={[StyleSheet.absoluteFill, { zIndex: 0 }]}
+        onPress={() => {
+          console.log('🔍 Navigating to property details:', item._id || item.id);
+          navigation.navigate('PropertyDetailsScreen', { property: item });
+        }}
+        activeOpacity={0.7}
+      />
+
       {/* Status badge */}
       {item.status && (
         <View style={[styles.statusBadge, {
@@ -457,7 +467,7 @@ const PropertyManagementScreen = ({ navigation }) => {
   );
 
   const navigateToFullList = () => {
-    navigation.navigate('AllPropertiesScreen');
+    navigation.navigate('PropertyListingsScreen');
   };
 
   const navigateToAnalytics = () => {
@@ -1188,7 +1198,7 @@ const PropertyManagementScreen = ({ navigation }) => {
     backgroundColor: '#EF4444',
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 1,
+    zIndex: 10,
   },
 
   statusBadge: {

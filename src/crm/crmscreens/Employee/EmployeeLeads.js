@@ -42,6 +42,7 @@ const EmployeeLeads = ({ navigation }) => {
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [reminderModalVisible, setReminderModalVisible] = useState(false);
   const [followUpModalVisible, setFollowUpModalVisible] = useState(false);
+  const [overflowMenuVisible, setOverflowMenuVisible] = useState(false);
   const [selectedLead, setSelectedLead] = useState(null);
   const [statsData, setStatsData] = useState({
     total: 0,
@@ -475,6 +476,127 @@ const EmployeeLeads = ({ navigation }) => {
   };
 
   // ============================================
+  // OVERFLOW MENU FOR SECONDARY ACTIONS
+  // ============================================
+  const showLeadMenu = (lead) => {
+    setSelectedLead(lead);
+    setOverflowMenuVisible(true);
+  };
+
+  const handleMenuAction = (action) => {
+    if (!selectedLead) return;
+
+    setOverflowMenuVisible(false);
+
+    if (action === 'reactivate') {
+      if (selectedLead.status !== 'active') {
+        handleStatusChange(selectedLead, 'active');
+      }
+    } else if (action === 'cancel') {
+      Alert.alert(
+        'Cancel Lead',
+        `Are you sure you want to cancel the lead for ${selectedLead.clientName}?`,
+        [
+          { text: 'No', style: 'cancel' },
+          {
+            text: 'Yes, Cancel',
+            onPress: () => handleStatusChange(selectedLead, 'cancelled'),
+            style: 'destructive',
+          },
+        ]
+      );
+    } else if (action === 'reminder') {
+      handleSetReminder(selectedLead);
+    }
+  };
+
+  // Render Overflow Menu Modal
+  const renderOverflowMenu = () => (
+    <Modal
+      visible={overflowMenuVisible}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setOverflowMenuVisible(false)}
+    >
+      {/* Backdrop */}
+      <TouchableOpacity
+        style={styles.menuBackdrop}
+        activeOpacity={1}
+        onPress={() => setOverflowMenuVisible(false)}
+      >
+        {/* Menu Container */}
+        <View style={styles.menuContainer}>
+          {/* Menu Header */}
+          <View style={styles.menuHeader}>
+            <Text style={styles.menuTitle}>More Actions</Text>
+            <Text style={styles.menuSubtitle}>{selectedLead?.clientName}</Text>
+          </View>
+
+          {/* Menu Items */}
+          <View style={styles.menuItems}>
+            {/* Reactivate */}
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => handleMenuAction('reactivate')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.menuIconBox, { backgroundColor: '#DBEAFE' }]}>
+                <Icon name="restore" size={20} color="#3B82F6" />
+              </View>
+              <View style={styles.menuItemContent}>
+                <Text style={styles.menuItemText}>Reactivate</Text>
+                <Text style={styles.menuItemSubtext}>Mark as active again</Text>
+              </View>
+              <Icon name="chevron-right" size={20} color="#D1D5DB" />
+            </TouchableOpacity>
+
+            {/* Reminder */}
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => handleMenuAction('reminder')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.menuIconBox, { backgroundColor: '#FEF3C7' }]}>
+                <Icon name="bell-outline" size={20} color="#F59E0B" />
+              </View>
+              <View style={styles.menuItemContent}>
+                <Text style={styles.menuItemText}>Reminder</Text>
+                <Text style={styles.menuItemSubtext}>Set a follow-up reminder</Text>
+              </View>
+              <Icon name="chevron-right" size={20} color="#D1D5DB" />
+            </TouchableOpacity>
+
+            {/* Cancel - Destructive */}
+            <TouchableOpacity
+              style={[styles.menuItem, styles.menuItemDestructive]}
+              onPress={() => handleMenuAction('cancel')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.menuIconBox, { backgroundColor: '#FEE2E2' }]}>
+                <Icon name="close-circle" size={20} color="#EF4444" />
+              </View>
+              <View style={styles.menuItemContent}>
+                <Text style={[styles.menuItemText, { color: '#EF4444' }]}>Cancel Lead</Text>
+                <Text style={styles.menuItemSubtext}>Mark as cancelled</Text>
+              </View>
+              <Icon name="chevron-right" size={20} color="#FECACA" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Close Button */}
+          <TouchableOpacity
+            style={styles.menuCloseButton}
+            onPress={() => setOverflowMenuVisible(false)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.menuCloseText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+
+  // ============================================
   // HELPER FUNCTIONS
   // ============================================
   const getStatusColor = (status) => {
@@ -623,58 +745,42 @@ const EmployeeLeads = ({ navigation }) => {
           </View>
         )}
 
-        {/* Action Buttons */}
-        <View style={styles.actionsContainer}>
-          {/* First Row - 3 buttons */}
-          <View style={styles.actionsRow}>
+        {/* Action Buttons - Modern CRM Style */}
+        <View style={styles.actionBar}>
+          {/* Primary Actions Row */}
+          <View style={styles.primaryActionsRow}>
+            {/* Complete Button */}
             <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: '#10B98120' }]}
+              style={[
+                styles.primaryButton,
+                item.status === 'completed' && styles.buttonDisabled
+              ]}
               onPress={() => handleStatusChange(item, 'completed')}
               disabled={item.status === 'completed'}
+              activeOpacity={0.7}
             >
-              <Icon name="check-circle" size={18} color="#10B981" />
-              <Text style={[styles.actionText, { color: '#10B981' }]}>Complete</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: '#3B82F620' }]}
-              onPress={() => handleStatusChange(item, 'active')}
-              disabled={item.status === 'active'}
-            >
-              <Icon name="restore" size={18} color="#3B82F6" />
-              <Text style={[styles.actionText, { color: '#3B82F6' }]}>Reactivate</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: '#EF444420' }]}
-              onPress={() => handleStatusChange(item, 'cancelled')}
-              disabled={item.status === 'cancelled'}
-            >
-              <Icon name="close-circle" size={18} color="#EF4444" />
-              <Text style={[styles.actionText, { color: '#EF4444' }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Second Row - 2 buttons */}
-          <View style={styles.actionsRow}>
-            <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: '#F59E0B20' }]}
-              onPress={() => handleSetReminder(item)}
-            >
-              <Icon name="bell-outline" size={18} color="#F59E0B" />
-              <Text style={[styles.actionText, { color: '#F59E0B' }]}>Reminder</Text>
+              <Icon name="check" size={16} color="#10B981" />
+              <Text style={styles.primaryButtonText}>Complete</Text>
             </TouchableOpacity>
 
+            {/* Follow-up Button */}
             <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: '#10B98120' }]}
+              style={styles.primaryButton}
               onPress={() => handleCreateFollowUp(item)}
+              activeOpacity={0.7}
             >
-              <Icon name="phone-callback" size={18} color="#10B981" />
-              <Text style={[styles.actionText, { color: '#10B981' }]}>Follow-up</Text>
+              <Icon name="phone-callback" size={16} color="#3B82F6" />
+              <Text style={styles.primaryButtonText}>Follow-up</Text>
             </TouchableOpacity>
 
-            {/* Empty space for alignment */}
-            <View style={styles.actionButtonPlaceholder} />
+            {/* Overflow Menu */}
+            <TouchableOpacity
+              style={styles.overflowButton}
+              onPress={() => showLeadMenu(item)}
+              activeOpacity={0.7}
+            >
+              <Icon name="dots-vertical" size={18} color="#6B7280" />
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -913,6 +1019,9 @@ const EmployeeLeads = ({ navigation }) => {
         enquiry={selectedLead}
         onSuccess={() => handleFollowUpSuccess(selectedLead)}
       />
+
+      {/* Overflow Menu Modal */}
+      {renderOverflowMenu()}
     </View>
   );
 };
@@ -1196,39 +1305,50 @@ const styles = StyleSheet.create({
   },
   
   // ============================================
-  // ACTION BUTTONS
+  // ACTION BUTTONS - MODERN CRM STYLE
   // ============================================
-  actionsContainer: {
-    gap: 11,
+  actionBar: {
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
   },
-  actionsRow: {
+  primaryActionsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 8,
+    gap: 10,
+    alignItems: 'center',
   },
-  actionButton: {
+  primaryButton: {
     flex: 1,
-    flexDirection: 'column',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 13,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    gap: 6,
   },
-  actionButtonPlaceholder: {
-    flex: 1,
+  buttonDisabled: {
+    backgroundColor: '#F3F4F6',
+    opacity: 0.6,
   },
-  actionText: {
-    fontSize: 10,
+  primaryButtonText: {
+    fontSize: 12,
     fontWeight: '700',
-    marginLeft: 0,
-    marginTop: 4,
-    letterSpacing: 0.2,
+    color: '#374151',
+    letterSpacing: 0.3,
+  },
+  overflowButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   
   // ============================================
@@ -1376,5 +1496,98 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     marginLeft: 6,
+  },
+
+  // ============================================
+  // OVERFLOW MENU STYLES
+  // ============================================
+  menuBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  menuContainer: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 24,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+  },
+  menuHeader: {
+    marginBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+    paddingBottom: 16,
+  },
+  menuTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  menuSubtitle: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  menuItems: {
+    gap: 10,
+    marginBottom: 16,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+    gap: 12,
+  },
+  menuItemDestructive: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FEE2E2',
+  },
+  menuIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuItemContent: {
+    flex: 1,
+  },
+  menuItemText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  menuItemSubtext: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 3,
+    fontWeight: '500',
+  },
+  menuCloseButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  menuCloseText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#6B7280',
   },
 });

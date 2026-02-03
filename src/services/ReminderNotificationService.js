@@ -62,14 +62,27 @@ class ReminderNotificationService {
         }
       }
       
-      // Request exact alarm permission for Android 12+
+      // 🔥 Request exact alarm permission for Android 12+ (CRITICAL for background notifications)
       if (Platform.Version >= 31) {
         try {
           // Check if canScheduleExactAlarms function is available
           if (typeof notifee.canScheduleExactAlarms === 'function') {
             const canScheduleExactAlarms = await notifee.canScheduleExactAlarms();
-            if (!canScheduleExactAlarms && typeof notifee.requestExactAlarmsPermission === 'function') {
-              await notifee.requestExactAlarmsPermission();
+            console.log('🔔 Can schedule exact alarms:', canScheduleExactAlarms);
+            
+            if (!canScheduleExactAlarms) {
+              if (typeof notifee.requestExactAlarmsPermission === 'function') {
+                console.log('📱 Requesting exact alarm permission...');
+                await notifee.requestExactAlarmsPermission();
+                
+                // Verify permission was granted
+                const recheckPermission = await notifee.canScheduleExactAlarms();
+                if (recheckPermission) {
+                  console.log('✅ Exact alarm permission granted');
+                } else {
+                  console.warn('⚠️ User did not grant exact alarm permission');
+                }
+              }
             }
           } else {
             console.warn('⚠️ canScheduleExactAlarms not available in this notifee version');
@@ -78,6 +91,50 @@ class ReminderNotificationService {
           console.warn('⚠️ Failed to check exact alarm permissions:', error);
         }
       }
+      
+      // 🔥 Check battery optimization status (don't open settings automatically)
+      await this.checkBatteryOptimization();
+    }
+  }
+
+  /**
+   * Check battery optimization status
+   * Just checks and logs - doesn't open settings automatically
+   */
+  static async checkBatteryOptimization() {
+    try {
+      const powerManager = await notifee.getPowerManagerInfo();
+      
+      if (powerManager.activity) {
+        console.log('⚠️ Battery optimization is enabled for this app');
+        console.log('💡 Tip: For reliable background notifications, disable battery optimization');
+        console.log('📱 To disable: Settings > Apps > Gharplot > Battery > Unrestricted');
+        return false; // Battery optimization is ON
+      } else {
+        console.log('✅ Battery optimization already disabled or not applicable');
+        return true; // Battery optimization is OFF or N/A
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to check battery optimization:', error);
+      return null; // Unknown status
+    }
+  }
+
+  /**
+   * Manually open battery optimization settings
+   * Call this when user explicitly wants to change settings
+   */
+  static async openBatterySettings() {
+    try {
+      const powerManager = await notifee.getPowerManagerInfo();
+      if (powerManager.activity) {
+        await notifee.openBatteryOptimizationSettings();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Failed to open battery settings:', error);
+      return false;
     }
   }
 
@@ -146,11 +203,13 @@ class ReminderNotificationService {
       }
 
       // Create timestamp trigger with alarmManager for background/killed state
+      // 🔥 Use exact timing to minimize delays
       const trigger = {
         type: TriggerType.TIMESTAMP,
         timestamp: notificationDate.getTime(),
         alarmManager: {
           allowWhileIdle: true, // Critical for background notifications
+          exact: true, // Use exact alarm for precise timing
         },
       };
 
@@ -391,16 +450,28 @@ class ReminderNotificationService {
     try {
       if (Platform.OS === 'android') {
         const settings = await notifee.getNotificationSettings();
+        
+        // 🔥 Safe check for canScheduleExactAlarms function
+        let canSchedule = true; // Default to true
+        try {
+          if (typeof notifee.canScheduleExactAlarms === 'function') {
+            canSchedule = await notifee.canScheduleExactAlarms();
+          }
+        } catch (alarmError) {
+          console.warn('⚠️ canScheduleExactAlarms check failed:', alarmError);
+          canSchedule = true; // Assume true if check fails
+        }
+        
         return {
           granted: settings.authorizationStatus === 1, // AUTHORIZED
-          canScheduleExactAlarms: await notifee.canScheduleExactAlarms(),
+          canScheduleExactAlarms: canSchedule,
           settings,
         };
       }
       return { granted: true }; // iOS handles permissions differently
     } catch (error) {
       console.error('❌ Failed to get notification permission status:', error);
-      return { granted: false };
+      return { granted: true, canScheduleExactAlarms: true }; // Return true to avoid blocking
     }
   }
 }

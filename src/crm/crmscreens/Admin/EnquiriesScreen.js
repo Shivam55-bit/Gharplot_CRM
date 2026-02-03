@@ -29,7 +29,6 @@ import ReminderNotificationService from '../../../services/ReminderNotificationS
 // Import services
 import { 
   getAllEnquiriesMerged, 
-  getAvailableEmployees, 
   getAvailableRoles,
   assignEnquiriesToEmployee,
   unassignEnquiry,
@@ -39,6 +38,7 @@ import {
   getEnquiryDetails,
   getEnquiryReminders
 } from '../../services/crmEnquiryApi';
+import { getAllEmployees } from '../../services/crmEmployeeManagementApi';
 
 // Import components
 import EnquiryCard from '../../components/Enquiries/EnquiryCard';
@@ -361,20 +361,30 @@ const EnquiriesScreen = ({ navigation, route }) => {
     
     try {
       setEmployeesLoading(true);
-      const response = await getAvailableEmployees();
+      console.log('👥 Fetching ALL employees from EnquiriesScreen...');
       
-      if (response.success) {
-        setEmployees(response.data || []);
-        if (response.data.length === 0) {
+      // Use getAllEmployees to get ALL employees without filters
+      const result = await getAllEmployees({ 
+        page: 1, 
+        limit: 999, // Get up to 999 employees
+        isActive: true // Only get active employees
+      });
+      
+      if (result && result.employees && Array.isArray(result.employees)) {
+        setEmployees(result.employees);
+        console.log('✅ Employees fetched successfully:', result.employees.length);
+        console.log('👥 Employee list:', result.employees.map(e => ({ id: e._id, name: e.fullName || e.name })));
+        
+        if (result.employees.length === 0) {
           showInfoToast('No employees found. Please create employees in Employee Management first.');
         }
       } else {
-        console.warn('Failed to fetch employees:', response.message);
+        console.warn('⚠️ Failed to fetch employees:', result);
         showErrorToast('Failed to fetch employees');
         setEmployees([]);
       }
     } catch (error) {
-      console.error('Error fetching employees:', error);
+      console.error('❌ Error fetching employees:', error);
       showErrorToast('Failed to fetch employees. Make sure employees exist in the system.');
       setEmployees([]);
     } finally {
@@ -1155,7 +1165,7 @@ const EnquiriesScreen = ({ navigation, route }) => {
                     {selectedEnquiry.reminders && selectedEnquiry.reminders.length > 0 ? (
                       <>
                         {selectedEnquiry.reminders.map((reminder, index) => (
-                          <View key={reminder._id || index} style={{
+                          <View key={`reminder-${reminder._id || reminder.id || index}-${index}`} style={{
                             backgroundColor: '#f9fafb',
                             padding: 12,
                             borderRadius: 8,

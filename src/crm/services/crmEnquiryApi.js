@@ -463,7 +463,11 @@ export const assignEnquiriesToEmployee = async (assignmentData) => {
  */
 export const unassignEnquiry = async (enquiryId, enquiryType) => {
   try {
+    console.log('🔄 Unassigning enquiry:', enquiryId);
+    
     const adminToken = await AsyncStorage.getItem('adminToken');
+    
+    // Try the new format first with enquiryIds array
     const response = await fetch(`${CRM_BASE_URL}/admin/leads/unassign`, {
       method: 'POST',
       headers: {
@@ -471,14 +475,17 @@ export const unassignEnquiry = async (enquiryId, enquiryType) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        enquiryId,
+        enquiryIds: [enquiryId], // Send as array
         enquiryType
       }),
     });
     
-    return await handleCRMResponse(response);
+    const data = await handleCRMResponse(response);
+    console.log('✅ Unassign response:', data);
+    
+    return data;
   } catch (error) {
-    console.error('Error unassigning enquiry:', error);
+    console.error('❌ Error unassigning enquiry:', error);
     throw error;
   }
 };
