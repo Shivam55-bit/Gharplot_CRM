@@ -356,7 +356,11 @@ const EmployeeLeads = ({ navigation }) => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ 
+          status: newStatus,
+          assignmentId: lead.assignmentId || lead._id,
+          id: lead.assignmentId || lead._id,
+        }),
       });
 
       console.log('📡 Response Status:', response.status);
